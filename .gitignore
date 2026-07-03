@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# IDE / local tools
+.cursor/
+.claude/
+.omc/
+**/.omc/
+
+# Runtime results (regenerable)
+poc/r158/results/
+
+# OS
+Thumbs.db
+.DS_Store
