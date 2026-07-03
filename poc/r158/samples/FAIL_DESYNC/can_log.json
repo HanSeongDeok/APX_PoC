@@ -1,0 +1,24 @@
+{
+  "fps": 100,
+  "sr": 48000,
+  "events": [
+    {
+      "t": 1.0,
+      "signal": "GEAR",
+      "value": "R",
+      "desc": "R단 변속"
+    },
+    {
+      "t": 1.45,
+      "signal": "PDW_WARN_CAN",
+      "value": 1,
+      "desc": "경고 CAN 신호"
+    }
+  ],
+  "_truth": {
+    "t0": 1.0,
+    "popup": 1.45,
+    "beep": 1.52,
+    "warn_can": 1.45
+  }
+}

@@ -1,0 +1,15 @@
+﻿scenario,FAIL_LATE
+T0_Rshift_s,1.0
+popup_time_s,1.68,popup_similarity,0.987
+beep_time_s,1.6746666666666667
+warn_can_time_s,1.68
+popup_latency_ms,680.0
+beep_latency_ms,674.7
+sync_error_ms,5.3
+
+criterion,detail,result
+① 팝업 일치(영상),유사도 0.99 (기준 ≥0.7),PASS
+② 경고음 일치(음향),기대 주파수 대역 onset 검출,PASS
+③ 응답시간 ≤0.6s,"팝업 680ms, 경고음 675ms, 경고CAN 680ms (기준 ≤600ms)",FAIL
+④ 동기 오차 ≤30ms,5ms (기준 ≤30ms),PASS
+VERDICT,,FAIL
