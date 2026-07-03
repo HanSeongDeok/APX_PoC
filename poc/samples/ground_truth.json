@@ -1,0 +1,10 @@
+{
+  "fps": 60,
+  "duration": 5.0,
+  "sr": 48000,
+  "popup_time_s": 2.0,
+  "popup_frame": 120,
+  "beep_time_s": 2.02,
+  "video_audio_gap_ms": 20.0,
+  "frame_resolution_ms": 16.67
+}
