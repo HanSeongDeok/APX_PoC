@@ -10,6 +10,8 @@ import time
 import cv2
 import numpy as np
 
+from .evidence import EvidenceCapture
+
 # ---- 상수 (Java 상수로 그대로 이식) ----
 GC = 640            # 정면 캔버스 크기(정사각)
 MIN_MATCH = 12
@@ -146,7 +148,9 @@ class GearDetector:
         self.lock_inliers = None
         self.lock_ang = None
         self._prev_is_R = False
+        self._pass = None      # 전환 순간 (pass_ms, frame_gap, analysis) 기억
         self._t_prev_arrive = None
+        self._ev = EvidenceCapture(before=3, after=3)   # 판단 전후 ±3프레임 스냅샷
 
     def recalibrate_auto(self):
         self.cells, self.r_idx = calibrate_from_ref(self.ref_canon)
@@ -162,6 +166,15 @@ class GearDetector:
 
     def reset_alignment(self):
         self.locked_M = None
+
+    def reset_judgment(self):
+        """다음 not-R -> R 전환을 새로 측정."""
+        self._prev_is_R = False
+        self._pass = None
+        self._ev.reset()
+
+    def get_evidence(self):
+        return self._ev.evidence
 
     _last_canon = None
 
@@ -186,6 +199,7 @@ class GearDetector:
         if self.cells is None:
             return {"state": "need_calib", "canon": canon}
 
+        self._ev.push(canon.copy(), t_arrive)     # 증거용 링버퍼
         rt = ratios(canon, self.cells)
         order = sorted(range(len(rt)), key=lambda i: rt[i], reverse=True)
         top, second = order[0], (order[1] if len(order) > 1 else order[0])
@@ -193,16 +207,21 @@ class GearDetector:
         r_gap = rt[self.r_idx] - rt[second]
         is_R = (top == self.r_idx) and (r_gap >= self.margin)
 
-        pass_ms = analysis_ms = None
         if is_R and not self._prev_is_R:          # not-R -> R 전환 프레임
             analysis_ms = (time.perf_counter() - t_arrive) * 1000.0
-            pass_ms = gap_ms + analysis_ms
+            self._pass = (gap_ms + analysis_ms, gap_ms, analysis_ms)
+            self._ev.trigger()                    # 판단 순간 → 전후 수집 시작
+        else:
+            self._ev.step_after(canon.copy(), t_arrive)
         self._prev_is_R = is_R
 
+        pm = self._pass    # 전환 순간 값을 이후 프레임에도 유지(보고서용)
         return {
             "state": "ok", "canon": canon, "cells": self.cells, "r_idx": self.r_idx,
             "ratios": rt, "is_R": is_R, "r_ratio": r_ratio, "r_gap": r_gap,
             "second_ratio": rt[second], "margin": self.margin,
-            "frame_gap_ms": gap_ms, "analysis_ms": analysis_ms, "pass_ms": pass_ms,
+            "frame_gap_ms": pm[1] if pm else gap_ms,
+            "analysis_ms": pm[2] if pm else None,
+            "pass_ms": pm[0] if pm else None,
             "lock_inliers": self.lock_inliers, "lock_ang": self.lock_ang,
         }
