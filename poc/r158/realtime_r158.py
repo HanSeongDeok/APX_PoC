@@ -423,7 +423,8 @@ def main():
     t_prev_arrive = None            # [2] 직전 프레임 도착 시각
     frame_gap_ms = 0.0              # [2] 실측 프레임 간격(프레임 도착 지연 ~1/fps)
     analysis_ms = 0.0               # [2] 프레임 도착→매칭 판정 분석시간
-    pass_ms = None                  # [2] 전체 지연 = 프레임 도착 + 분석
+    pass_ms = None                  # [2] 연산 처리 지연 = 프레임 도착 + 분석 (개발용)
+    resp_ms = None                  # [★] end-to-end 응답시간 = 기어 R -> 팝업 PASS
     ncc = ssim = 0.0               # [2] 일치도 (NCC/SSIM)
     ncc_max = ssim_max = 0.0        # [2] 최고값
     popup_ncc = popup_ssim = None   # [2] 팝업 검출 순간 값
@@ -517,8 +518,11 @@ def main():
             popup_hit = psc >= popup_sim
         if gate and popup_t is None and popup_hit:
             popup_t = now()
-            analysis_ms = (popup_t - t_arrive) * 1000.0   # 프레임 도착→PASS 분석시간
-            pass_ms = frame_gap_ms + analysis_ms          # 전체 = 프레임 도착 + 분석
+            # [★] end-to-end 응답시간: 실제 기어 R 전환(T0) → 팝업이 실제로 뜨고 기대값 일치(PASS)까지
+            #     기어 검출이 켜져 있을 때만 의미 있음(T0 기준 존재). 팝업 단독이면 기준 없음 → None
+            resp_ms = (popup_t - t0) * 1000.0 if t0 is not None else None
+            analysis_ms = (popup_t - t_arrive) * 1000.0   # 프레임 도착→PASS 분석시간(연산)
+            pass_ms = frame_gap_ms + analysis_ms          # 연산 처리 지연 = 프레임 도착 + 분석
             if t0 is None:               # 기어 off: 팝업 뜬 시점을 기준(T0)으로
                 t0 = popup_t
             popup_img = canon.copy()     # 팝업 순간 스냅샷
@@ -560,6 +564,10 @@ def main():
                         def v(x, nd=1):
                             return "N/A" if x is None else round(x, nd)
                         sim_ok = "PASS" if psc_max >= popup_sim else "FAIL"
+                        # [★] end-to-end 응답시간: 기어 R 전환 → 팝업 PASS 전체 시간
+                        RESP_LIMIT_MS = RESP_LIMIT_S * 1000.0   # 내부목표 300ms (R158 법규 600ms)
+                        resp_ok = ("N/A" if resp_ms is None
+                                   else ("PASS" if resp_ms <= RESP_LIMIT_MS else "FAIL"))
                         gear_report = f"""========================================
  UN R158 기어 R 검출 (시간 검증)
 ========================================
@@ -568,6 +576,11 @@ def main():
 [1] 기어 R 검출 (Not R --> R)
   판단 시간       : {v(gear_ms)} ms
   결과            : {"PASS (R 검출)" if t0 is not None else "N/A"}
+
+[★] 응답시간 (기어 R --> 팝업 PASS, end-to-end)
+  전체 응답시간   : {v(resp_ms)} ms
+  기대(내부목표)  : <= {RESP_LIMIT_MS:.0f} ms  (R158 법규 600ms)
+  결과            : {resp_ok}
 
 스냅샷           : {dd}
 ========================================
@@ -578,8 +591,13 @@ def main():
 시각             : {ts}
 판정(팝업일치)   : {sim_ok}
 
+[★] 응답시간 (기어 R --> 팝업 PASS, end-to-end)
+  전체 응답시간   : {v(resp_ms)} ms  {"(기어검출 OFF: 기준 T0 없음)" if resp_ms is None else ""}
+  기대(내부목표)  : <= {RESP_LIMIT_MS:.0f} ms  (R158 법규 600ms)
+  결과            : {resp_ok}
+
 [2] 팝업 일치 판단
-  전체 지연       : {v(pass_ms)} ms  (프레임 도착 + 분석)
+  연산 처리 지연  : {v(pass_ms)} ms  (프레임 도착 + 분석, 촬영지연 제외 / 개발용)
    - 프레임 도착   : {v(frame_gap_ms)} ms  (실측 프레임 간격 ~1/fps)
    - 분석 시간     : {v(analysis_ms)} ms
   일치도 NCC      : {v(popup_ncc, 3)}
@@ -625,25 +643,38 @@ def main():
 
         def put(y, txt, col=(255, 255, 255)):
             cv2.putText(disp, txt, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
-        # [1] 기어: --gear 일 때만 (기본은 팝업만 인식 → OFF 표시)
-        if args.gear:
-            put(25, f"[1] gear Not R->R: {gear_ms:.0f} ms  result {'PASS' if t0 else '-'}",
-                (0, 255, 0) if t0 else ((0, 255, 255) if "R" in gtxt else (180, 180, 180)))
-        else:
-            put(25, "[1] gear check: OFF (popup only)", (140, 140, 140))
         _pcol = (0, 255, 0) if psc >= popup_sim else (180, 180, 180)
-        # [2] 팝업 일치 판단 (전체/로직 시간 + 결과)
+        # [1] 기어 R 검출 (Not R -> R). 판단속도(gear_ms)는 제외, 검출 결과만
+        if not args.gear:
+            put(25, "[1] gear R detect: OFF (--gear 필요, 응답시간 측정 불가)", (140, 140, 140))
+        elif t0 is not None:
+            put(25, "[1] gear R detect: PASS (Not R -> R)", (0, 255, 0))
+        elif "R" in gtxt:
+            put(25, "[1] gear R detect: R seen (전환 대기)", (0, 255, 255))
+        else:
+            put(25, "[1] gear R detect: waiting...", (180, 180, 180))
+        # [2] 팝업 일치 (유사도 + 결과). 판단속도(pass_ms)는 제외
         if args.popup_ocr:
             hit = any(k in ptxt for k in POPUP_KEYWORDS)
-            put(48, f"[2] popup match: OCR '{ptxt[:16]}'  [expect keyword]",
+            put(48, f"[2] popup match: OCR '{ptxt[:16]}'  result {'PASS' if hit else '-'}",
                 (0, 255, 0) if hit else (180, 180, 180))
         else:
-            _tot = (f"{pass_ms:.0f}ms (frame {frame_gap_ms:.0f} + analysis {analysis_ms:.1f})"
-                    if pass_ms is not None else "-")
-            put(48, f"[2] popup match: total {_tot}"
+            put(48, f"[2] popup match: ncc {ncc:.3f} ssim {ssim:.3f} [>= {popup_sim:.2f}]"
                     f"  result {'PASS' if psc >= popup_sim else '-'}", _pcol)
-        # [3] 일치도 (NCC / SSIM 분리)
-        put(71, f"[3] similarity: ncc {ncc:.3f}   ssim {ssim:.3f}   [>= {popup_sim:.2f}]", _pcol)
+        # [3] 실제 차량 응답 성능 (기어 R -> 팝업 PASS, end-to-end). 검출 전엔 경과 라이브
+        _rlimit = RESP_LIMIT_S * 1000.0
+        if not args.gear:
+            put(71, "[3] response(vehicle): N/A (needs --gear)", (140, 140, 140))
+        elif resp_ms is not None:                        # 팝업 PASS 확정 → 값 고정
+            _rcol = (0, 220, 0) if resp_ms <= _rlimit else (0, 0, 255)
+            put(71, f"[3] response(vehicle): {resp_ms:.0f} ms  [<= {_rlimit:.0f}ms]"
+                    f"  {'PASS' if resp_ms <= _rlimit else 'FAIL'}", _rcol)
+        elif t0 is not None:                             # 기어 R 잡힘, 팝업 대기 → 라이브 경과
+            _el = (now() - t0) * 1000.0
+            put(71, f"[3] response(vehicle): {_el:.0f} ms ... (waiting popup)",
+                (0, 220, 0) if _el <= _rlimit else (0, 165, 255))
+        else:
+            put(71, "[3] response(vehicle): waiting gear R->R ...", (150, 150, 150))
         # [4] ORB 정렬 매칭도 (각도 강건성)
         if aligner is not None:
             if locked_M is not None and lock_ang is not None:
@@ -672,7 +703,8 @@ def main():
             t0_img = popup_img = None
             saved = False
             gear_seen_notR = False   # 다음 테스트도 not-R->R 전환으로 새로 판정
-            pass_ms = None           # 전체 지연도 새로 측정
+            pass_ms = None           # 연산 처리 지연 새로 측정
+            resp_ms = None           # end-to-end 응답시간 새로 측정
             psc_max = ncc_max = ssim_max = 0.0
             popup_ncc = popup_ssim = None
             if audio: audio.reset()
