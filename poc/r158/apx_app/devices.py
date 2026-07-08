@@ -1,10 +1,21 @@
 """연결된 웹캠/마이크 열거 헬퍼 (세팅 화면용)."""
+import re
 import cv2
 
 try:
     import sounddevice as sd
 except Exception:
     sd = None
+
+
+def _clean_device_name(name):
+    """PortAudio가 한글 장치명(cp949)을 UTF-8로 잘못 변환해 앞부분('마이크')이
+    U+FFFD로 파괴된 경우 복구가 불가하므로, 성한 ASCII 제품명만 살려 우리말 라벨을 붙인다."""
+    if "�" not in name:
+        return name
+    m = re.search(r"\(([^)]*)\)", name)                 # 괄호 안 제품명(ASCII)
+    tail = m.group(1).strip() if m else re.sub(r"�+", "", name).strip(" ()-")
+    return f"마이크 ({tail})" if tail else "마이크"
 
 
 def list_cameras(max_index=6):
@@ -30,7 +41,12 @@ def list_microphones():
     try:
         for idx, d in enumerate(sd.query_devices()):
             if d.get("max_input_channels", 0) > 0:
-                out.append((idx, d["name"]))
+                name = _clean_device_name(d["name"])
+                try:
+                    ha = sd.query_hostapis(d["hostapi"])["name"]
+                except Exception:
+                    ha = ""
+                out.append((idx, f"{name} · {ha}" if ha else name))
     except Exception:
         pass
     return out
