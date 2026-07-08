@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<!-- 레거시 RCP(Eclipse 3.x) 스타일: Perspective + 4 View 로 파이썬 4탭 대응 -->
+<plugin>
+   <extension id="application" point="org.eclipse.core.runtime.applications">
+      <application>
+         <run class="com.suresofttech.apx.ui.Application"/>
+      </application>
+   </extension>
+   <extension id="product" point="org.eclipse.core.runtime.products">
+      <product application="com.suresofttech.apx.ui.application" name="R158 검증"/>
+   </extension>
+   <extension point="org.eclipse.ui.perspectives">
+      <perspective
+            class="com.suresofttech.apx.ui.ApxPerspective"
+            id="com.suresofttech.apx.ui.perspective"
+            name="R158 검증">
+      </perspective>
+   </extension>
+   <extension point="org.eclipse.ui.views">
+      <category id="com.suresofttech.apx.ui.category" name="R158"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.SettingsView"
+            id="com.suresofttech.apx.ui.view.settings"
+            name="① 설정"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.GearView"
+            id="com.suresofttech.apx.ui.view.gear"
+            name="② 기어봉"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.ClusterView"
+            id="com.suresofttech.apx.ui.view.cluster"
+            name="③ 클러스터"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.AudioView"
+            id="com.suresofttech.apx.ui.view.audio"
+            name="④ 음향"/>
+   </extension>
+</plugin>

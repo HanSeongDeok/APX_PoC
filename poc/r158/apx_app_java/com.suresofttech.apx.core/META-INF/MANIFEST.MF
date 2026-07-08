@@ -1,0 +1,9 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: APX Core (R158 검증 엔진)
+Bundle-SymbolicName: com.suresofttech.apx.core
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: SureSoftTech
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Export-Package: com.suresofttech.apx.core.audio,
+ com.suresofttech.apx.core.dsp

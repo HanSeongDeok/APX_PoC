@@ -1,0 +1,12 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: APX UI (R158 검증 RCP)
+Bundle-SymbolicName: com.suresofttech.apx.ui; singleton:=true
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: SureSoftTech
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Require-Bundle: org.eclipse.ui,
+ org.eclipse.core.runtime,
+ org.eclipse.equinox.app,
+ com.suresofttech.apx.core
+Bundle-ActivationPolicy: lazy

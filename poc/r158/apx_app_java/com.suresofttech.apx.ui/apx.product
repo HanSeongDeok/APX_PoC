@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?pde version="3.5"?>
+
+<product name="R158 검증" uid="com.suresofttech.apx.product" id="com.suresofttech.apx.ui.product" application="com.suresofttech.apx.ui.application" useFeatures="false" includeLaunchers="true">
+
+   <configIni use="default">
+   </configIni>
+
+   <launcherArgs>
+      <vmArgs>-Xms64m -Xmx512m
+      </vmArgs>
+   </launcherArgs>
+
+   <launcher name="apx">
+      <solaris/>
+      <win useIco="false">
+         <bmp/>
+      </win>
+   </launcher>
+
+   <plugins>
+      <plugin id="com.suresofttech.apx.core"/>
+      <plugin id="com.suresofttech.apx.ui"/>
+   </plugins>
+
+
+</product>
