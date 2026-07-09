@@ -7,7 +7,20 @@
 - **Java 8** (JavaSE-1.8) — `Bundle-RequiredExecutionEnvironment` 및 컴파일 타겟
 - **레거시 RCP** (Eclipse 3.x 계열: `IPerspectiveFactory`, `org.eclipse.ui.views` 확장점, 클래식 plugin.xml)
 - **번들 네이밍** `com.suresofttech.apx.*` (기존 제품 편입 대비)
-- **OpenCV** = JavaCV(bytedeco) 예정 (영상 엔진용, 오디오엔 불필요)
+- **원칙**: 유지보수를 위해 **외부 라이브러리 우선**(직접 구현 최소화), native 의존 회피(RCP p2 배포 단순화)
+
+## 라이브러리 스택 (확정)
+
+| 영역 | 선택 | 비고 |
+|---|---|---|
+| 비전/ROI/ORB 정렬 | **BoofCV** | 순수 Java(native 없음), 서브픽셀 정밀 |
+| 웹캠 캡처 | **webcam-capture(sarxos)** | native(bridj) 실장 검증 필요 |
+| FFT | **JTransforms** (자작 radix-2는 검증용 유지) | 임의 길이 rfft |
+| 행렬/수치 | **EJML** | BoofCV가 이미 의존 |
+| 실시간 차트 | **자체 SWT GC (ScopeCanvas)** | Mars SWT 3.104가 최신 Nebula(SWT 3.115+) 미충족 → 무의존 GC 채택 |
+| 설정 | **Gson** | |
+
+> 전부 Maven JAR → OSGi 번들 wrap 필요(bnd/p2-maven-plugin 정석, 또는 lib/+Bundle-ClassPath 간이).
 
 ## 번들 구조
 
@@ -34,7 +47,9 @@ apx_app_java/
 | FFT/상관 | numpy/scipy | ✅ 무의존 구현 (radix-2 FFT + NCC) |
 | 음향 View | ui/audio_tab.py | 🟡 배선 골격 (마이크→엔진→SWT) |
 | 설정/기어/클러스터 View | ui/*.py | 🟡 스켈레톤 |
-| 기어·클러스터 엔진 | engine/{gear,cluster}.py | 🔴 미착수 (OpenCV/JavaCV 필요) |
+| 실시간 파형·스펙트럼 | ui/scope.py | ✅ ScopeCanvas (SWT GC, 무의존) |
+| 검출 지연(콜드스타트) | (신규) | ✅ AudioView 표시 + LatencyCheck |
+| 기어·클러스터 엔진 | engine/{gear,cluster}.py | 🔴 미착수 (BoofCV 필요) |
 
 ## 빌드·검증
 
