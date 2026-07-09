@@ -18,3 +18,6 @@ poc/r158/results/
 # OS
 Thumbs.db
 .DS_Store
+
+# OpenCV JAR (>100MB, GitHub 제한) — 로컬 다운로드 (VISION_SETUP.md 참고)
+poc/r158/apx_app_java/com.suresofttech.apx.core/lib/opencv-*.jar
