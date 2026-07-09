@@ -17,7 +17,7 @@ PDE(Eclipse 플러그인) 프로젝트라 Maven이 없으므로, **jar를 각 �
 | `webcam-capture-0.3.12.jar` | `com.github.sarxos:webcam-capture:0.3.12` | 웹캠 열거·캡처 | ✅ |
 | `bridj-0.7.0.jar` | `com.nativelibs4java:bridj:0.7.0` | webcam-capture 기본 드라이버 | ✅ |
 | `slf4j-api-1.7.2.jar` | `org.slf4j:slf4j-api:1.7.2` | webcam-capture 로깅 API | ✅ |
-| `opencv-4.9.0-0.jar` | `io.github.openpnp:opencv:4.9.0-0` | OpenCV Java + 네이티브 번들 | ❌ (104MB, GitHub 100MB 제한) |
+| `opencv-4.9.0-0.jar` | `org.openpnp:opencv:4.9.0-0` | OpenCV Java + 네이티브 번들 | ❌ (104MB, GitHub 100MB 제한) |
 
 > `MANIFEST.MF`(Bundle-ClassPath)·`build.properties`(bin.includes: lib/)에 등록해 두었습니다.
 > **opencv JAR는 저장소에 없으므로** clone 후 위 좌표로 직접 받아 `lib/`에 넣어야 컴파일됩니다.
@@ -34,7 +34,7 @@ OpenCV JAR 받기 (PowerShell 예시):
 
 ```powershell
 cd poc/r158/apx_app_java/com.suresofttech.apx.core/lib
-Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/io/github/openpnp/opencv/4.9.0-0/opencv-4.9.0-0.jar" -OutFile opencv-4.9.0-0.jar
+Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/org/openpnp/opencv/4.9.0-0/opencv-4.9.0-0.jar" -OutFile opencv-4.9.0-0.jar
 ```
 
 ---
