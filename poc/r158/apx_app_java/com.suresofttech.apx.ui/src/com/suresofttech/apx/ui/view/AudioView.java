@@ -28,6 +28,7 @@ import com.suresofttech.apx.core.audio.AudioCapture;
 import com.suresofttech.apx.core.audio.BeepMatcher;
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.audio.WavIo;
+import com.suresofttech.apx.ui.widget.ScopeCanvas;
 
 /**
  * ④ 음향 검증 View — 파이썬 apx_app/ui/audio_tab.py 이식 (Step 1: 기능 UI).
@@ -44,6 +45,7 @@ public class AudioView extends ViewPart {
     private volatile MatchResult passed; // 최초 PASS 래치(오디오 콜백에서 설정) — 이 상태로 정지·표시
     private volatile long capturedSamples; // 측정 시작(버튼) 이후 누적 샘플 → 검출지연(콜드스타트) 계산
     private String beepPath;
+    private ScopeCanvas scope;             // 실시간 파형·스펙트럼 (SWT GC, 무의존)
 
     private Combo micCombo;
     private Label beepInfo;
@@ -64,6 +66,7 @@ public class AudioView extends ViewPart {
         parent.setLayout(gl);
 
         buildResultGroup(parent);
+        buildScope(parent);
         buildMicGroup(parent);
         buildBeepGroup(parent);
         buildThresholdGroup(parent);
@@ -101,6 +104,18 @@ public class AudioView extends ViewPart {
         detail = new Label(g, SWT.NONE);
         detail.setText("주파수/파형 일치도 대기");
         detail.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+    }
+
+    // ---- 실시간 파형·스펙트럼 스코프 ----
+    private void buildScope(Composite parent) {
+        Group g = new Group(parent, SWT.NONE);
+        g.setText("실시간 파형 · 스펙트럼");
+        g.setLayout(new GridLayout(1, false));
+        g.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));   // 남는 세로 차지
+        scope = new ScopeCanvas(g, 5000.0);
+        GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
+        gd.minimumHeight = 240;
+        scope.setLayoutData(gd);
     }
 
     private GridData mkValGridData() {
@@ -324,6 +339,10 @@ public class AudioView extends ViewPart {
             capture.stop();
             measureBtn.setSelection(false);
             measureBtn.setText("측정 시작");
+        }
+
+        if (matcher != null && scope != null && !scope.isDisposed()) {
+            scope.setData(matcher.getBuffer(), matcher.getSampleRate(), matcher.getTargetFreq());
         }
 
         MatchResult r = (passed != null) ? passed : latest;
