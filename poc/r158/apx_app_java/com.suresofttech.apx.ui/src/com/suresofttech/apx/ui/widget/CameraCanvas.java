@@ -86,15 +86,27 @@ public class CameraCanvas extends Canvas {
         }
     }
 
-    /** AWT BufferedImage → SWT ImageData (24bit RGB). 타입 무관.
-     *  getRGB로 ARGB를 한 번에 읽고 행 단위 벌크 setPixels로 채움(픽셀당 setPixel 루프 제거).
-     *  ARGB의 상위 알파바이트는 depth 24라 자동 절단, 팔레트가 R/G/B 추출. */
+    /** AWT BufferedImage → SWT ImageData (24bit RGB). 팔레트는 R/G/B 추출.
+     *  <p>웹캠/처리 프레임은 TYPE_3BYTE_BGR — 래스터 바이트(B,G,R 순)를 직접 int로 디코드해
+     *  {@code getRGB()}의 픽셀당 ColorModel 변환(640²에서 20~40ms)을 제거한다. 그 외 타입은
+     *  안전한 getRGB 폴백. 채움은 검증된 setPixels(팔레트) 경로 그대로 사용. */
     public static ImageData toImageData(BufferedImage bi) {
         int w = bi.getWidth();
         int h = bi.getHeight();
         PaletteData palette = new PaletteData(0xFF0000, 0x00FF00, 0x0000FF);
         ImageData data = new ImageData(w, h, 24, palette);
-        int[] argb = bi.getRGB(0, 0, w, h, null, 0, w);
+        int[] argb;
+        if (bi.getType() == BufferedImage.TYPE_3BYTE_BGR) {
+            byte[] src = ((java.awt.image.DataBufferByte) bi.getRaster().getDataBuffer()).getData();
+            argb = new int[w * h];
+            for (int p = 0, i = 0; p < argb.length; p++, i += 3) {
+                argb[p] = ((src[i + 2] & 0xFF) << 16)   // R
+                        | ((src[i + 1] & 0xFF) << 8)    // G
+                        | (src[i] & 0xFF);              // B
+            }
+        } else {
+            argb = bi.getRGB(0, 0, w, h, null, 0, w);   // 임의 타입 폴백(느림)
+        }
         for (int y = 0; y < h; y++) {
             data.setPixels(0, y, w, argb, y * w);
         }

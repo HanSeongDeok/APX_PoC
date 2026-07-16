@@ -45,6 +45,12 @@ public final class CameraService {
     private Webcam current;
     private int currentIndex = -1;
 
+    // 프레임 공유 캐시: 여러 뷰(기어·클러스터)가 짧은 시간에 latest()를 여러 번 불러도
+    // getImage()(프레임 복사)는 CACHE_NS 안에 1회만 → 부하↓ + 두 뷰가 같은 프레임 → 동기 정확.
+    private static final long CACHE_NS = 10_000_000L;   // 10ms
+    private BufferedImage cachedFrame;
+    private long cacheNanos;
+
     /** 연결된 웹캠 목록. 드라이버 없음/예외 시 빈 목록. */
     public synchronized List<Cam> list() {
         List<Cam> out = new ArrayList<Cam>();
@@ -80,13 +86,18 @@ public final class CameraService {
         }
     }
 
-    /** 지원 해상도 중 1280 폭에 가장 가까운 것(없으면 640x480). */
+    /**
+     * 지원 해상도 중 640 폭에 가장 가까운 것(없으면 640x480).
+     * <p>sarxos 기본 드라이버는 raw(YUY2) 포맷이라 고해상도(720p+)는 USB 대역폭상 15fps로 떨어진다.
+     * 최대 프레임(C930e 30fps)을 확보하려면 640x480 급을 선택. 고해상도+30fps가 필요하면
+     * OpenCV VideoCapture(MJPEG) 캡처로 전환해야 한다.
+     */
     private Dimension pickSize(Webcam cam) {
         Dimension best = null;
         Dimension[] sizes = cam.getViewSizes();
         if (sizes != null) {
             for (Dimension d : sizes) {
-                if (best == null || Math.abs(d.width - 1280) < Math.abs(best.width - 1280)) {
+                if (best == null || Math.abs(d.width - 640) < Math.abs(best.width - 640)) {
                     best = d;
                 }
             }
@@ -94,16 +105,34 @@ public final class CameraService {
         return best != null ? best : new Dimension(640, 480);
     }
 
-    /** 최신 프레임(BGR 아님, ARGB BufferedImage). 미오픈/미수신 시 null. */
+    /** 최신 프레임(BGR 아님, ARGB BufferedImage). 미오픈/미수신 시 null. CACHE_NS 안엔 캐시 공유. */
     public synchronized BufferedImage latest() {
+        if (current == null || !current.isOpen()) {
+            return null;
+        }
+        long now = System.nanoTime();
+        if (cachedFrame != null && (now - cacheNanos) < CACHE_NS) {
+            return cachedFrame;                 // 캐시 공유(여러 뷰가 같은 프레임 → getImage 부하↓·동기 정확)
+        }
+        try {
+            cachedFrame = current.getImage();
+            cacheNanos = now;
+            return cachedFrame;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 드라이버가 보고하는 실측 FPS(미오픈 시 0). 1000/fps ≈ 새 프레임 간격(ms). */
+    public synchronized double fps() {
         if (current != null && current.isOpen()) {
             try {
-                return current.getImage();
+                return current.getFPS();
             } catch (Throwable t) {
-                return null;
+                return 0;
             }
         }
-        return null;
+        return 0;
     }
 
     public synchronized int currentIndex() {
@@ -123,6 +152,7 @@ public final class CameraService {
             }
             current = null;
             currentIndex = -1;
+            cachedFrame = null;
         }
     }
 }

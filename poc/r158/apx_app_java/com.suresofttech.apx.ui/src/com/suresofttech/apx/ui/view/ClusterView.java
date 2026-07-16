@@ -8,6 +8,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.DisposeEvent;
+import org.eclipse.swt.events.DisposeListener;
 import org.eclipse.swt.events.MouseAdapter;
 import org.eclipse.swt.events.MouseEvent;
 import org.eclipse.swt.events.MouseMoveListener;
@@ -19,10 +21,13 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.ui.part.ViewPart;
 
@@ -30,6 +35,7 @@ import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.ui.widget.CameraCanvas;
+import com.suresofttech.apx.ui.widget.TestPlayerDialog;
 
 /**
  * ③ 클러스터 팝업 View — 파이썬 main_window.py 클러스터 탭 이식.
@@ -96,6 +102,60 @@ public class ClusterView extends ViewPart {
             setRef(DEFAULT_REF);
         }
         startPoll();
+        installShortcuts(parent);
+    }
+
+    /** 파이썬 앱과 동일 단축키 — 이 View에 포커스 있을 때만(4 View 동시 표시라 스코프 필요).
+     *  C=정렬리셋, R=판정리셋, −/+(=)=임계, D=보고서 저장. */
+    private void installShortcuts(final Composite root) {
+        final Listener f = new Listener() {
+            public void handleEvent(Event e) {
+                if (det == null || root.isDisposed()) {
+                    return;
+                }
+                Control fc = display.getFocusControl();
+                if (fc == null || !isDescendant(fc, root)) {
+                    return;                              // 다른 View 포커스면 무시
+                }
+                switch (Character.toLowerCase(e.character)) {
+                    case 'c':
+                        det.resetAlignment();
+                        break;
+                    case 'r':
+                        det.resetJudgment();
+                        break;
+                    case 'd':
+                        saveReport();
+                        break;
+                    case '-':
+                        det.setSimThr(det.getSimThr() - 0.02);
+                        break;
+                    case '+':
+                    case '=':
+                        det.setSimThr(det.getSimThr() + 0.02);
+                        break;
+                    default:
+                        return;
+                }
+                e.doit = false;
+            }
+        };
+        display.addFilter(SWT.KeyDown, f);
+        root.addDisposeListener(new DisposeListener() {
+            public void widgetDisposed(DisposeEvent ev) {
+                display.removeFilter(SWT.KeyDown, f);
+            }
+        });
+    }
+
+    private static boolean isDescendant(Control c, Control ancestor) {
+        while (c != null) {
+            if (c == ancestor) {
+                return true;
+            }
+            c = c.getParent();
+        }
+        return false;
     }
 
     private void buildSide(Composite parent) {
@@ -142,6 +202,23 @@ public class ClusterView extends ViewPart {
         addBtn(side, "보고서 저장 (D)", new Runnable() {
             public void run() {
                 saveReport();
+            }
+        });
+        addBtn(side, "웹캠 캡처 (기준 등록)", new Runnable() {
+            public void run() {
+                captureRef();
+            }
+        });
+
+        Button player = new Button(side, SWT.PUSH);
+        player.setText("▶ 테스트 화면 열기 (일반·팝업)");
+        player.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+        player.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                new TestPlayerDialog(canvas.getShell(), "클러스터 테스트 화면", new String[][] {
+                        { "일반", "c:/DEV/apx/hyundai_cluster.png" },
+                        { "팝업", "c:/DEV/apx/hyundai_cluster_popup.png" },
+                }).open();
             }
         });
 
@@ -195,6 +272,21 @@ public class ClusterView extends ViewPart {
         }
     }
 
+    /** 현재 웹캠 화면을 기준(기대) 이미지로 등록 — 파이썬 웹캠 캡처 대응. ROI·임계 유지. */
+    private void captureRef() {
+        java.awt.image.BufferedImage bi = CameraService.get().latest();
+        if (bi == null) {
+            info("웹캠 프레임이 없습니다 (① 설정에서 카메라를 켜세요)");
+            return;
+        }
+        int[] roi = (det != null) ? det.getRoi() : null;
+        double thr = (det != null) ? det.getSimThr() : RoiMatchDetector.DEFAULT_SIM;
+        det = new RoiMatchDetector(bi, roi, thr);
+        refPath = "(웹캠 캡처)";
+        refLabel.setText("(웹캠 캡처 화면)");
+        canvas.setPlaceholder("웹캠 화면을 기준으로 등록됨 · 팝업 영역 드래그");
+    }
+
     // ---- 드래그 → ROI ----
     private void commitRoiFromDrag() {
         if (det == null) {
@@ -229,14 +321,17 @@ public class ClusterView extends ViewPart {
     }
 
     // ---- 폴링 ----
+    /** 폴링 주기(ms). 카메라 장치 FPS(≥30, 이상적 60)보다 짧게 잡아 폴링 양자화 지연을 없앤다. */
+    private static final int POLL_MS = 4;   // 프레임(≈33ms)보다 촘촘히 폴링. 중복 프레임은 검출기가 스킵.
+
     private void startPoll() {
-        display.timerExec(60, new Runnable() {
+        display.timerExec(POLL_MS, new Runnable() {
             public void run() {
                 if (canvas == null || canvas.isDisposed()) {
                     return;
                 }
+                display.timerExec(POLL_MS, this);   // 재예약을 작업 앞으로 → 주기 = max(POLL_MS, 작업시간)
                 tick();
-                display.timerExec(60, this);
             }
         });
     }
@@ -247,6 +342,15 @@ public class ClusterView extends ViewPart {
             return;
         }
         RoiMatchResult r = det.process(bi);
+        if (r.hit) {
+            double judge = (r.passMs != null) ? r.passMs : Double.NaN;   // 판단 속도(전환지연 ms)
+            com.suresofttech.apx.core.sync.SyncBus.get()
+                    .mark(com.suresofttech.apx.core.sync.SyncBus.Event.CLUSTER_POPUP,
+                            com.suresofttech.apx.core.sync.SyncBus.now(), judge);   // 동기화 버스(최초만)
+        }
+        if (r == last) {
+            return;                              // 중복 프레임(캐시) → 재그리기·HUD 스킵 (UI 부하↓, 폴링 빠르게 유지)
+        }
         last = r;
         canvas.setFrame(r.canonImage);
         metrics.setText(hud(r));
@@ -278,15 +382,20 @@ public class ClusterView extends ViewPart {
             return "상태: 정렬 중 (ORB) — 웹캠에 클러스터를 비추세요";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("[1] 판정 : ").append(r.hit ? "팝업 등장  → PASS" : "팝업 없음  → 대기").append("\n\n");
+        sb.append(String.format("[1] 판정 : %s%n     매칭도(NCC) %.3f  %s  임계 %.2f%n%n",
+                r.hit ? "팝업 등장 → PASS" : "팝업 없음 → 대기",
+                r.psc, (r.psc >= r.simThr ? "≥" : "<"), r.simThr));
+        double camFps = com.suresofttech.apx.core.vision.CameraService.get().fps();
+        sb.append(String.format("[측정] 판단 속도 : %.1f ms/frame  ·  프레임 간격 %.0f ms%n"
+                + "        카메라 실측 : %.1f fps (≈%.0f ms/프레임)%n%n",
+                r.procMs, r.frameGapMs, camFps, camFps > 0 ? 1000.0 / camFps : 0));
         if (r.passMs != null) {
             sb.append(String.format("[2] 전환 지연 : %.0f ms  (frame %.0f + 분석 %.0f)%n%n",
                     r.passMs, r.frameGapMs, r.analysisMs));
         } else {
             sb.append("[2] 전환 지연 : (팝업 등장 대기)\n\n");
         }
-        sb.append(String.format("[3] 유사도(NCC) : %.3f  [>= %.2f]%n     (SSIM 참고 %.3f)%n%n",
-                r.psc, r.simThr, r.ssim));
+        sb.append(String.format("[3] SSIM (참고) : %.3f%n%n", r.ssim));
         if (r.lockAng != null) {
             sb.append(String.format("[4] ORB 정렬 : inliers %s%n     roll %.1f° / scale %.2f",
                     r.lockInliers, r.lockAng[0], r.lockAng[1]));

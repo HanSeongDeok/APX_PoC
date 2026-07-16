@@ -19,6 +19,7 @@ public final class RoiMatchResult {
     public double simThr;
     public boolean hit;
 
+    public double procMs;             // 이 프레임 판단(처리) 속도 — 매 프레임 라이브
     public double frameGapMs;
     public Double analysisMs;         // 전환 순간(없으면 null)
     public Double passMs;
