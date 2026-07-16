@@ -5,6 +5,8 @@ Bundle-SymbolicName: com.suresofttech.apx.ui; singleton:=true
 Bundle-Version: 0.1.0.qualifier
 Bundle-Vendor: SureSoftTech
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Bundle-ClassPath: .,
+ lib/xchart-3.8.8.jar
 Require-Bundle: org.eclipse.ui,
  org.eclipse.core.runtime,
  org.eclipse.equinox.app,

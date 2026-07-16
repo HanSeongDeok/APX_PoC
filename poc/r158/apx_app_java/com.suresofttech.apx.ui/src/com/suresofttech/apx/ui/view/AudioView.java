@@ -9,6 +9,8 @@ import java.util.Date;
 import java.util.List;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.DisposeEvent;
+import org.eclipse.swt.events.DisposeListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
@@ -16,19 +18,23 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.audio.AudioCapture;
+import com.suresofttech.apx.core.audio.AudioRecorder;
 import com.suresofttech.apx.core.audio.BeepMatcher;
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.audio.WavIo;
-import com.suresofttech.apx.ui.widget.ScopeCanvas;
+import com.suresofttech.apx.ui.widget.XChartScope;
 
 /**
  * ④ 음향 검증 View — 파이썬 apx_app/ui/audio_tab.py 이식 (Step 1: 기능 UI).
@@ -40,12 +46,13 @@ public class AudioView extends ViewPart {
     private Display display;
     private BeepMatcher matcher;
     private final AudioCapture capture = new AudioCapture();
+    private final AudioRecorder recorder = new AudioRecorder();   // 측정 원본 누적(WAV 저장·구간추출용)
     private List<AudioCapture.Device> devices;
     private volatile MatchResult latest;
     private volatile MatchResult passed; // 최초 PASS 래치(오디오 콜백에서 설정) — 이 상태로 정지·표시
     private volatile long capturedSamples; // 측정 시작(버튼) 이후 누적 샘플 → 검출지연(콜드스타트) 계산
     private String beepPath;
-    private ScopeCanvas scope;             // 실시간 파형·스펙트럼 (SWT GC, 무의존)
+    private XChartScope scope;             // 실시간 파형·스펙트럼 (XChart + SWT_AWT)
 
     private Combo micCombo;
     private Label beepInfo;
@@ -74,6 +81,57 @@ public class AudioView extends ViewPart {
 
         refreshMics();
         scheduleTick();
+        installShortcuts(parent);
+    }
+
+    /** 파이썬 앱과 동일 단축키 — 이 View 포커스 시만. S=측정 토글, R=리셋, D=보고서 저장.
+     *  임계 Spinner/마이크 Combo 입력 중엔 방해하지 않음. */
+    private void installShortcuts(final Composite root) {
+        final Listener f = new Listener() {
+            public void handleEvent(Event e) {
+                if (root.isDisposed()) {
+                    return;
+                }
+                Control fc = display.getFocusControl();
+                if (fc == null || !isDescendant(fc, root)) {
+                    return;
+                }
+                if (fc instanceof Spinner || fc instanceof Combo) {
+                    return;                              // 입력 위젯 방해 안 함
+                }
+                switch (Character.toLowerCase(e.character)) {
+                    case 's':
+                        measureBtn.setSelection(!measureBtn.getSelection());
+                        toggleMeasure(measureBtn.getSelection());
+                        break;
+                    case 'r':
+                        resetMeasure();
+                        break;
+                    case 'd':
+                        saveReport();
+                        break;
+                    default:
+                        return;
+                }
+                e.doit = false;
+            }
+        };
+        display.addFilter(SWT.KeyDown, f);
+        root.addDisposeListener(new DisposeListener() {
+            public void widgetDisposed(DisposeEvent ev) {
+                display.removeFilter(SWT.KeyDown, f);
+            }
+        });
+    }
+
+    private static boolean isDescendant(Control c, Control ancestor) {
+        while (c != null) {
+            if (c == ancestor) {
+                return true;
+            }
+            c = c.getParent();
+        }
+        return false;
     }
 
     // ---- 결과 ----
@@ -109,13 +167,24 @@ public class AudioView extends ViewPart {
     // ---- 실시간 파형·스펙트럼 스코프 ----
     private void buildScope(Composite parent) {
         Group g = new Group(parent, SWT.NONE);
-        g.setText("실시간 파형 · 스펙트럼");
+        g.setText("파형 · 주파수 오버레이 (기대 점선 vs 라이브 실선) · 일치도 추이");
         g.setLayout(new GridLayout(1, false));
         g.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));   // 남는 세로 차지
-        scope = new ScopeCanvas(g, 5000.0);
+
+        final Button waveOnly = new Button(g, SWT.CHECK);
+        waveOnly.setText("음정 추적 숨기기 (파형 · 일치도 추이만)");
+        waveOnly.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+
+        scope = new XChartScope(g, 5000.0);
         GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
         gd.minimumHeight = 240;
         scope.setLayoutData(gd);
+
+        waveOnly.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                scope.setWaveOnly(waveOnly.getSelection());
+            }
+        });
     }
 
     private GridData mkValGridData() {
@@ -192,11 +261,11 @@ public class AudioView extends ViewPart {
     // ---- 버튼 ----
     private void buildButtons(Composite parent) {
         Composite c = new Composite(parent, SWT.NONE);
-        c.setLayout(new GridLayout(3, true));
+        c.setLayout(new GridLayout(4, true));
         c.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         measureBtn = new Button(c, SWT.TOGGLE);
-        measureBtn.setText("측정 시작");
+        measureBtn.setText("측정 시작 (S)");
         measureBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         measureBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -204,7 +273,7 @@ public class AudioView extends ViewPart {
             }
         });
         Button reset = new Button(c, SWT.PUSH);
-        reset.setText("리셋");
+        reset.setText("리셋 (R)");
         reset.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         reset.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -212,13 +281,47 @@ public class AudioView extends ViewPart {
             }
         });
         Button save = new Button(c, SWT.PUSH);
-        save.setText("보고서 저장");
+        save.setText("보고서 저장 (D)");
         save.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         save.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 saveReport();
             }
         });
+        Button saveWav = new Button(c, SWT.PUSH);
+        saveWav.setText("WAV 저장");
+        saveWav.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        saveWav.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                saveWav();
+            }
+        });
+    }
+
+    /** 측정 원본 전체를 WAV로 저장. */
+    private void saveWav() {
+        if (recorder.getSampleCount() <= 0) {
+            if (beepInfo != null && !beepInfo.isDisposed()) {
+                beepInfo.setText("저장할 녹음이 없습니다 (측정을 먼저 하세요)");
+            }
+            return;
+        }
+        FileDialog dlg = new FileDialog(head.getShell(), SWT.SAVE);
+        dlg.setFilterExtensions(new String[] { "*.wav" });
+        dlg.setFilterNames(new String[] { "오디오 (*.wav)" });
+        dlg.setFileName("recording_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".wav");
+        dlg.setOverwrite(true);
+        String p = dlg.open();
+        if (p == null) {
+            return;
+        }
+        try {
+            WavIo.save(p, recorder.getSamples(), recorder.getSampleRate());
+            beepInfo.setText("WAV 저장: " + new File(p).getName()
+                    + "  (" + String.format("%.2fs", recorder.getDurationMs() / 1000.0) + ")");
+        } catch (Exception ex) {
+            beepInfo.setText("WAV 저장 실패: " + ex.getMessage());
+        }
     }
 
     private void resetMeasure() {
@@ -227,6 +330,9 @@ public class AudioView extends ViewPart {
         }
         latest = null;
         passed = null;                            // 래치 해제 → 다시 측정 가능
+        if (scope != null && !scope.isDisposed()) {
+            scope.clear();                        // 그래프(파형·음정·일치도) 전부 초기화
+        }
         if (head != null && !head.isDisposed()) {
             head.setText("파형 및 주파수 일치도 검증 [측정 시작]");
             head.setForeground(null);
@@ -260,11 +366,14 @@ public class AudioView extends ViewPart {
         try {
             WavIo.Wav wav = WavIo.load(p);
             matcher = new BeepMatcher(wav.samples, wav.sampleRate, 150.0, 4.0,
-                    freqSpin.getSelection() / 100.0, waveSpin.getSelection() / 100.0, 0.12);
+                    freqSpin.getSelection() / 100.0, waveSpin.getSelection() / 100.0, 0.015);  // 판정 창 15ms(검출~30ms 목표, 분해능 ~43Hz로 안전)
             beepPath = p;
             beepInfo.setText(new File(p).getName() + "  sr=" + wav.sampleRate
                     + "  " + String.format("%.2fs", wav.samples.length / (double) wav.sampleRate)
                     + "  주도 " + Math.round(matcher.getTargetFreq()) + "Hz");
+            if (scope != null && !scope.isDisposed()) {
+                scope.setExpected(matcher.getTemplate(), wav.sampleRate);   // 기대 파형(위쪽) 등록
+            }
         } catch (Exception ex) {
             beepInfo.setText("wav 로드 실패: " + ex.getMessage());
         }
@@ -294,9 +403,11 @@ public class AudioView extends ViewPart {
             latest = null;
             passed = null;                        // 새 측정 시작 → 래치 해제
             capturedSamples = 0;                  // 버튼 시점 = 샘플0 (콜드스타트 기준)
+            recorder.start(matcher.getSampleRate());   // 원본 녹음 시작(WAV 저장용)
             try {
                 capture.start(dev.info, matcher.getSampleRate(), new AudioCapture.BlockListener() {
                     public void onBlock(double[] block, double now) {
+                        recorder.feed(block);         // 원본 누적
                         // 벽시계(now) 대신 캡처 시작 이후 누적 샘플로 시각 계산 → 버튼 이후 경과(초)
                         capturedSamples += block.length;
                         double t = capturedSamples / (double) matcher.getSampleRate();
@@ -304,17 +415,21 @@ public class AudioView extends ViewPart {
                         latest = res;
                         if (res.match && passed == null) {
                             passed = res;         // 최초 확정 블록을 콜백에서 즉시 래치(놓침 방지)
+                            com.suresofttech.apx.core.sync.SyncBus.get()
+                                    .mark(com.suresofttech.apx.core.sync.SyncBus.Event.BEEP,
+                                            now, res.onsetT * 1000.0);   // 동기화 버스(공통시계 now + 판단속도 onset ms)
                         }
                     }
                 });
-                measureBtn.setText("측정 정지");
+                measureBtn.setText("측정 정지 (S)");
             } catch (Exception ex) {
                 beepInfo.setText("마이크 열기 실패: " + ex.getMessage());
                 measureBtn.setSelection(false);
             }
         } else {
             capture.stop();
-            measureBtn.setText("측정 시작");
+            recorder.stop();
+            measureBtn.setText("측정 시작 (S)");
         }
     }
 
@@ -334,15 +449,24 @@ public class AudioView extends ViewPart {
         if (head == null || head.isDisposed()) {
             return;
         }
+        boolean wasRunning = capture.isRunning();   // 정지 전에 캡처(검출 틱의 마지막 프레임 렌더용)
         // 래치(콜백에서 설정)됐는데 아직 측정 중이면 UI 스레드에서 정지(콜백 스레드 자기정지 회피).
         if (passed != null && measureBtn.getSelection()) {
             capture.stop();
+            recorder.stop();
             measureBtn.setSelection(false);
-            measureBtn.setText("측정 시작");
+            measureBtn.setText("측정 시작 (S)");
         }
 
-        if (matcher != null && scope != null && !scope.isDisposed()) {
-            scope.setData(matcher.getBuffer(), matcher.getSampleRate(), matcher.getTargetFreq());
+        // 이번 틱에 측정 중이었으면 갱신(검출 확정 틱까지 렌더). 정지 후 틱은 스킵 → 마지막 상태로 얼어붙음.
+        if (wasRunning && matcher != null && scope != null && !scope.isDisposed()) {
+            int sr = matcher.getSampleRate();
+            double elapsedSec = capturedSamples / (double) sr;   // 측정 시작 후 경과(초) = X축
+            scope.setData(matcher.getBuffer(), sr, matcher.getTargetFreq(), elapsedSec);
+            MatchResult mr = latest;                             // 추이는 실시간 값(래치 전)
+            if (mr != null) {
+                scope.setMatchTrend(mr.freqSim, mr.waveSim, mr.freqThr, mr.waveThr, elapsedSec);
+            }
         }
 
         MatchResult r = (passed != null) ? passed : latest;
