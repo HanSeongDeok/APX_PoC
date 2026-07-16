@@ -9,7 +9,11 @@ Bundle-ClassPath: .,
  lib/webcam-capture-0.3.12.jar,
  lib/bridj-0.7.0.jar,
  lib/slf4j-api-1.7.2.jar,
- lib/opencv-4.9.0-0.jar
+ lib/opencv-4.9.0-0.jar,
+ lib/JTransforms-3.1.jar,
+ lib/JLargeArrays-1.6.jar,
+ lib/commons-math3-3.6.1.jar
 Export-Package: com.suresofttech.apx.core.audio,
  com.suresofttech.apx.core.dsp,
+ com.suresofttech.apx.core.sync,
  com.suresofttech.apx.core.vision

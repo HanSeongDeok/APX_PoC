@@ -47,7 +47,7 @@ public final class BeepMatcher {
             t[i] = template[i] - mu;
         }
         // 파형 템플릿 = 에너지 최대 pulseSec 구간(삐 한 번). 주기 변화에도 각 펄스는 동일.
-        int plen = Math.min(t.length, Math.max((int) (0.03 * sr), (int) (pulseSec * sr)));
+        int plen = Math.min(t.length, Math.max((int) (0.01 * sr), (int) (pulseSec * sr)));   // 하한 10ms (pulseSec 15ms 반영)
         double[] pulse;
         if (t.length > plen) {
             double[] pre = new double[t.length + 1];
@@ -135,6 +135,11 @@ public final class BeepMatcher {
 
     public double[] getBuffer() {
         return buf;
+    }
+
+    /** 기대 파형(단위정규화 단일 펄스) — 스코프 '기대 그래프' 표시용. */
+    public double[] getTemplate() {
+        return tmpl.clone();
     }
 
     private double bandEnergy(double[] x) {

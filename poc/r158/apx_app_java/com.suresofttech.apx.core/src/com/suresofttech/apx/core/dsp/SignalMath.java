@@ -145,6 +145,49 @@ public final class SignalMath {
         return num;
     }
 
+    /**
+     * seg 위에서 tmpl 이 가장 잘 겹치는 지연(lag) 반환 — 위상 정렬(오버레이 표시)용.
+     * 부호 있는 정규화 상관을 최대화(peak↔peak, 극성 유지). 무음/불가 시 -1.
+     * lag 위치의 seg[lag..lag+L] 이 tmpl 과 위상이 맞는 구간.
+     */
+    public static int bestNccLag(double[] seg, double[] tmpl) {
+        int l = tmpl.length;
+        int s = seg.length;
+        if (s < l) {
+            return -1;
+        }
+        int outN = s - l + 1;
+        double[] num = crossCorrValid(seg, tmpl);
+        double[] pre = new double[s + 1];
+        for (int i = 0; i < s; i++) {
+            pre[i + 1] = pre[i] + seg[i] * seg[i];
+        }
+        double maxEng = 0.0;
+        double[] eng = new double[outN];
+        for (int k = 0; k < outN; k++) {
+            eng[k] = Math.sqrt(Math.max(pre[k + l] - pre[k], 0.0));
+            if (eng[k] > maxEng) {
+                maxEng = eng[k];
+            }
+        }
+        if (maxEng <= 0.0) {
+            return -1;
+        }
+        double thr = 0.1 * maxEng;
+        int bestK = -1;
+        double best = -Double.MAX_VALUE;
+        for (int k = 0; k < outN; k++) {
+            if (eng[k] >= thr) {
+                double v = num[k] / (eng[k] + 1e-9);   // 부호 유지(같은 극성으로 겹침)
+                if (v > best) {
+                    best = v;
+                    bestK = k;
+                }
+            }
+        }
+        return bestK;
+    }
+
     /** 직접 O(S·L) NCC (참조·동등성 검증용). 실시간 경로는 {@link #nccMax} 사용. */
     public static double nccMaxDirect(double[] seg, double[] tmpl) {
         int l = tmpl.length;
