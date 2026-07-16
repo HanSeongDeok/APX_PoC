@@ -14,6 +14,7 @@ public class ApxPerspective implements IPerspectiveFactory {
             "com.suresofttech.apx.ui.view.gear",
             "com.suresofttech.apx.ui.view.cluster",
             "com.suresofttech.apx.ui.view.audio",
+            "com.suresofttech.apx.ui.view.sync",
     };
 
     public void createInitialLayout(IPageLayout layout) {
@@ -24,5 +25,6 @@ public class ApxPerspective implements IPerspectiveFactory {
         layout.addView(VIEWS[1], IPageLayout.TOP, 0.5f, VIEWS[0]);
         layout.addView(VIEWS[2], IPageLayout.RIGHT, 0.5f, editor);
         layout.addView(VIEWS[3], IPageLayout.BOTTOM, 0.5f, VIEWS[2]);
+        layout.addView(VIEWS[4], IPageLayout.BOTTOM, 0.6f, VIEWS[0]);   // ⑤ 동기화 — 설정 아래
     }
 }

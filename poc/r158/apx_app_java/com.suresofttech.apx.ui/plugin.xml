@@ -39,5 +39,10 @@
             class="com.suresofttech.apx.ui.view.AudioView"
             id="com.suresofttech.apx.ui.view.audio"
             name="④ 음향"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.SyncView"
+            id="com.suresofttech.apx.ui.view.sync"
+            name="⑤ 동기화"/>
    </extension>
 </plugin>
