@@ -14,6 +14,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.ui.part.ViewPart;
 
+import com.suresofttech.apx.core.audio.AudioPlayer;
 import com.suresofttech.apx.core.sync.SyncBus;
 import com.suresofttech.apx.core.sync.SyncBus.Event;
 
@@ -33,7 +34,8 @@ public class SyncView extends ViewPart {
     private static final Event[] ALL =
             { Event.GEAR_R, Event.CLUSTER_POPUP, Event.BEEP, Event.CAN };
     private static final String[] NAMES = { "기어 R (T0)", "클러스터 팝업", "PDW 경고음", "CAN 신호" };
-    private static final Event[] SYNC = { Event.CLUSTER_POPUP, Event.BEEP };   // 동기 대상 (현재 CAN 미구현 → 비전+음향만)
+    // 동기 대상 = 화면 출력(기어봉 R 표시 / 클러스터 팝업) + 음향 (+ CAN 추후). 검출된 것끼리 max−min.
+    private static final Event[] SYNC = { Event.GEAR_R, Event.CLUSTER_POPUP, Event.BEEP };
 
     private Display display;
     private Label head;
@@ -44,8 +46,12 @@ public class SyncView extends ViewPart {
     private Label syncVal;        // 동기 오차(max−min)
     private Label syncVerdict;
     private Spinner tolSpin;      // 허용 오차(ms) — 판단·동기 공용
+    private Spinner freqCalSpin;  // 캘리브 발사 톤 주파수(Hz)
+    private Label calVal;         // 왕복 지연(발사→검출)
     private Color okColor;
     private Color ngColor;
+
+    private static final int PLAY_SR = 44100;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -99,11 +105,33 @@ public class SyncView extends ViewPart {
 
         // ── 동기 오차 (팝업·음향·CAN max − min ≤ 설정값) — 진짜 PASS 조건 ──
         Group gs = new Group(parent, SWT.NONE);
-        gs.setText("동기 오차 (발생시각 = PASS − 판단속도, 비전·음향 max − min · CAN 미구현)");
+        gs.setText("동기 오차 (발생시각=PASS−판단속도, 기어R·팝업·음향 max−min · CAN 추후)");
         gs.setLayout(new GridLayout(2, false));
         gs.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
         syncVal = mkVal(gs, 140);
         syncVerdict = mkVal(gs, 160);
+
+        // ── 캘리브 (음향 발사 → 검출 왕복 지연) ──
+        Group gc = new Group(parent, SWT.NONE);
+        gc.setText("캘리브 (음향 발사 → 검출 왕복 지연 = 출력버퍼+음향경로+D_mic+판단)");
+        gc.setLayout(new GridLayout(5, false));
+        gc.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        new Label(gc, SWT.NONE).setText("발사 주파수");
+        freqCalSpin = new Spinner(gc, SWT.BORDER);
+        freqCalSpin.setMinimum(200);
+        freqCalSpin.setMaximum(8000);
+        freqCalSpin.setIncrement(100);
+        freqCalSpin.setSelection(2000);
+        new Label(gc, SWT.NONE).setText("Hz");
+        Button fire = new Button(gc, SWT.PUSH);
+        fire.setText("🔊 음향 발사");
+        fire.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                double emit = AudioPlayer.playTone(freqCalSpin.getSelection(), 0.15, PLAY_SR);
+                SyncBus.get().setAudioEmit(emit);   // 발사시각 기록 — BEEP은 마이크 검출 시 실제 시각으로 기록됨
+            }
+        });
+        calVal = mkVal(gc, 200);
 
         Button reset = new Button(parent, SWT.PUSH);
         reset.setText("새 측정 (리셋)");
@@ -197,6 +225,21 @@ public class SyncView extends ViewPart {
             syncVal.setText(String.format("스프레드 %.1f ms", spread));
             boolean ok = spread <= tol;
             setVerdict(syncVerdict, ok ? ("≤" + tol + "ms  PASS ✅") : (">" + tol + "ms  FAIL ❌"), ok, true);
+        }
+
+        // 캘리브: 음향 발사(emit) → 마이크 검출(BEEP) 왕복 지연
+        double emit = bus.audioEmit();
+        double beep = bus.stampOf(Event.BEEP);
+        if (!Double.isNaN(emit) && !Double.isNaN(beep) && beep >= emit) {
+            double rt = (beep - emit) * 1000.0;                 // 출력버퍼+음향경로+D_mic+판단
+            double judge = bus.judgeMsOf(Event.BEEP);
+            String hw = Double.isNaN(judge)
+                    ? "" : String.format("  (판단 %.0f 제외 ≈ HW %.0f)", judge, rt - judge);
+            calVal.setText(String.format("왕복 %.0f ms%s", rt, hw));
+        } else if (!Double.isNaN(emit)) {
+            calVal.setText("발사됨 · 검출 대기");
+        } else {
+            calVal.setText("—");
         }
     }
 

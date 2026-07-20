@@ -38,6 +38,7 @@ public final class SyncBus {
 
     private final double[] stamp = new double[Event.values().length];   // 초 단위, NaN=미검출
     private final double[] latMs = new double[Event.values().length];   // 판단 속도(도구 검출 지연, ms)
+    private double audioEmit = Double.NaN;   // 음향 발사(재생 시작) 시각(초) — 캘리브용
 
     /** 공통 시계 현재 시각(초). */
     public static double now() {
@@ -76,6 +77,16 @@ public final class SyncBus {
         return latMs[e.ordinal()];
     }
 
+    /** 음향 발사(재생 시작) 시각 기록 — 캘리브용. */
+    public synchronized void setAudioEmit(double tSec) {
+        audioEmit = tSec;
+    }
+
+    /** 음향 발사 시각(초). 미발사면 NaN. */
+    public synchronized double audioEmit() {
+        return audioEmit;
+    }
+
     public synchronized boolean has(Event e) {
         return !Double.isNaN(stamp[e.ordinal()]);
     }
@@ -94,5 +105,6 @@ public final class SyncBus {
     public synchronized void reset() {
         Arrays.fill(stamp, Double.NaN);
         Arrays.fill(latMs, Double.NaN);
+        audioEmit = Double.NaN;
     }
 }
