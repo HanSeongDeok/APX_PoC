@@ -44,5 +44,10 @@
             class="com.suresofttech.apx.ui.view.SyncView"
             id="com.suresofttech.apx.ui.view.sync"
             name="⑤ 동기화"/>
+      <view
+            category="com.suresofttech.apx.ui.category"
+            class="com.suresofttech.apx.ui.view.RearGridView"
+            id="com.suresofttech.apx.ui.view.rear"
+            name="⑥ 후방 검증"/>
    </extension>
 </plugin>
