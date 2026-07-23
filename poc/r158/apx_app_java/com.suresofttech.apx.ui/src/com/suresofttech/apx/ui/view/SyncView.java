@@ -11,12 +11,24 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Monitor;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.ui.part.ViewPart;
 
-import com.suresofttech.apx.core.audio.AudioPlayer;
+import java.awt.image.BufferedImage;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.TargetDataLine;
+
+import com.suresofttech.apx.core.sync.Calibration;
+import com.suresofttech.apx.core.sync.Calibration.Modality;
 import com.suresofttech.apx.core.sync.SyncBus;
 import com.suresofttech.apx.core.sync.SyncBus.Event;
+import com.suresofttech.apx.core.vision.CameraService;
+import com.suresofttech.apx.core.vision.FlashProbe;
 
 /**
  * ⑤ 동기화 View — R158 정의(킥오프 p6 / R158_학습요약.md)의 세 시간을 구분해 판정. T0 = 기어 R 검출.
@@ -46,12 +58,35 @@ public class SyncView extends ViewPart {
     private Label syncVal;        // 동기 오차(max−min)
     private Label syncVerdict;
     private Spinner tolSpin;      // 허용 오차(ms) — 판단·동기 공용
-    private Spinner freqCalSpin;  // 캘리브 발사 톤 주파수(Hz)
-    private Label calVal;         // 왕복 지연(발사→검출)
+    private Label syncRawVal;     // 원(raw) 스프레드 — L1만
     private Color okColor;
     private Color ngColor;
 
-    private static final int PLAY_SR = 44100;
+    private final Calibration cal = new Calibration();
+    private Spinner nSpin;                     // 수집 반복 수(공용)
+    private Label dcapVal;                     // 비전 D_cap 절대 지연
+    private Label dmicVal;                     // 음향 D_mic 절대 지연(=D_cap+Δ)
+
+    // ── ① 비전 D_cap 화면플래시 보정 (무음) ──
+    private volatile boolean visionRunning;
+    private volatile int visionLeft;
+    private volatile int visionHits;          // 검출 성공 수(진단)
+    private volatile double visionMaxDelta;   // 관측된 최대 밝기 변화(진단)
+    private Shell flashShell;
+    private static final double FLASH_DELTA = 15.0;    // 밝기 상승 임계(카메라가 화면 일부만 봐도 잡히게)
+    private static final long FLASH_TIMEOUT_MS = 1200;
+    private static final long FLASH_BASE_MS = 250;
+    private static final long FLASH_GAP_MS = 500;
+
+    // ── ② 동시자극 보정 (폰 플래시+삐 → Δ, D_mic=D_cap+Δ) ──
+    private Label coincVal;                    // 진행/Δ
+    private volatile boolean coincRunning;
+    private volatile int coincPairs;
+    private volatile String coincStatus = "";
+    private static final double PAIR_WIN_S = 0.4;   // 플래시-삐 쌍 인정 시간창
+    private static final double REFRACT_S = 0.5;    // 재검출 금지 간격
+    private static final double FLASH_DELTA2 = 15;  // 밝기 상승 임계(폰 플래시)
+    private static final double BEEP_AMP_MIN = 0.06;// 삐 최소 진폭
 
     @Override
     public void createPartControl(Composite parent) {
@@ -105,39 +140,59 @@ public class SyncView extends ViewPart {
 
         // ── 동기 오차 (팝업·음향·CAN max − min ≤ 설정값) — 진짜 PASS 조건 ──
         Group gs = new Group(parent, SWT.NONE);
-        gs.setText("동기 오차 (발생시각=PASS−판단속도, 기어R·팝업·음향 max−min · CAN 추후)");
+        gs.setText("동기 오차 (발생시각 max−min · 기어R·팝업·음향 · CAN 추후)");
         gs.setLayout(new GridLayout(2, false));
         gs.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        new Label(gs, SWT.NONE).setText("raw (L1: 판단속도만 보정)");
+        syncRawVal = mkVal(gs, 200);
+        new Label(gs, SWT.NONE).setText("보정 (L2: +물리지연 제거)");
         syncVal = mkVal(gs, 140);
-        syncVerdict = mkVal(gs, 160);
+        new Label(gs, SWT.NONE).setText("판정");
+        syncVerdict = mkVal(gs, 200);
 
-        // ── 캘리브 (음향 발사 → 검출 왕복 지연) ──
-        Group gc = new Group(parent, SWT.NONE);
-        gc.setText("캘리브 (음향 발사 → 검출 왕복 지연 = 출력버퍼+음향경로+D_mic+판단)");
-        gc.setLayout(new GridLayout(5, false));
-        gc.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        new Label(gc, SWT.NONE).setText("발사 주파수");
-        freqCalSpin = new Spinner(gc, SWT.BORDER);
-        freqCalSpin.setMinimum(200);
-        freqCalSpin.setMaximum(8000);
-        freqCalSpin.setIncrement(100);
-        freqCalSpin.setSelection(2000);
-        new Label(gc, SWT.NONE).setText("Hz");
-        Button fire = new Button(gc, SWT.PUSH);
-        fire.setText("🔊 음향 발사");
-        fire.addSelectionListener(new SelectionAdapter() {
+        // ── L2 물리지연 보정 : ① 화면플래시=D_cap → ② 동시자극=D_mic(=D_cap+Δ) ──
+        Group gp = new Group(parent, SWT.NONE);
+        gp.setText("L2 물리지연 보정 (① 화면플래시=D_cap → ② 폰 동시자극=D_mic · median/MAD)");
+        gp.setLayout(new GridLayout(4, false));
+        gp.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+
+        new Label(gp, SWT.NONE).setText("반복 N");
+        nSpin = new Spinner(gp, SWT.BORDER);
+        nSpin.setValues(8, 1, 50, 0, 1, 5);
+        new Label(gp, SWT.NONE).setText("");   // 폰 화면·음향 지연은 거의 상쇄 → 보정 불필요
+        new Label(gp, SWT.NONE).setText("");
+
+        // ① 비전 D_cap
+        Button flashBtn = new Button(gp, SWT.PUSH);
+        flashBtn.setText("🎥 ① D_cap 보정 (화면플래시)");
+        flashBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                double emit = AudioPlayer.playTone(freqCalSpin.getSelection(), 0.15, PLAY_SR);
-                SyncBus.get().setAudioEmit(emit);   // 발사시각 기록 — BEEP은 마이크 검출 시 실제 시각으로 기록됨
+                startVisionCal();
             }
         });
-        calVal = mkVal(gc, 200);
+        new Label(gp, SWT.NONE).setText("비전 D_cap");
+        dcapVal = mkVal(gp, 180);
+        new Label(gp, SWT.NONE).setText("(웹캠을 이 화면으로)");
+
+        // ② 음향 D_mic
+        Button coinc = new Button(gp, SWT.PUSH);
+        coinc.setText("🎬 ② D_mic 보정 (폰 동시자극)");
+        coinc.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                startCoincidenceCal();
+            }
+        });
+        new Label(gp, SWT.NONE).setText("음향 D_mic");
+        dmicVal = mkVal(gp, 180);
+        coincVal = mkVal(gp, 240);
 
         Button reset = new Button(parent, SWT.PUSH);
         reset.setText("새 측정 (리셋)");
         reset.setLayoutData(new GridData(SWT.LEFT, SWT.TOP, false, false));
         reset.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
+                coincRunning = false;      // 동시자극 보정 중단
+                visionRunning = false;     // 화면플래시 보정 중단
                 SyncBus.get().reset();
                 refresh();
             }
@@ -216,8 +271,11 @@ public class SyncView extends ViewPart {
             }
         }
 
-        // 동기 오차 (검출된 다운스트림 max−min ≤ 설정값) — 진짜 PASS 조건
-        double spread = spreadMs();
+        // 동기 오차 — raw(L1) + 보정(L2). L2 = 각 모달 물리지연 상수 추가 제거.
+        double rawSpread = spreadMs(false);
+        syncRawVal.setText(Double.isNaN(rawSpread) ? "대기 (2개↑)"
+                : String.format("스프레드 %.1f ms", rawSpread));
+        double spread = spreadMs(true);
         if (Double.isNaN(spread)) {
             syncVal.setText("대기 (2개↑ 필요)");
             setVerdict(syncVerdict, "—", false, false);
@@ -227,20 +285,282 @@ public class SyncView extends ViewPart {
             setVerdict(syncVerdict, ok ? ("≤" + tol + "ms  PASS ✅") : (">" + tol + "ms  FAIL ❌"), ok, true);
         }
 
-        // 캘리브: 음향 발사(emit) → 마이크 검출(BEEP) 왕복 지연
-        double emit = bus.audioEmit();
-        double beep = bus.stampOf(Event.BEEP);
-        if (!Double.isNaN(emit) && !Double.isNaN(beep) && beep >= emit) {
-            double rt = (beep - emit) * 1000.0;                 // 출력버퍼+음향경로+D_mic+판단
-            double judge = bus.judgeMsOf(Event.BEEP);
-            String hw = Double.isNaN(judge)
-                    ? "" : String.format("  (판단 %.0f 제외 ≈ HW %.0f)", judge, rt - judge);
-            calVal.setText(String.format("왕복 %.0f ms%s", rt, hw));
-        } else if (!Double.isNaN(emit)) {
-            calVal.setText("발사됨 · 검출 대기");
-        } else {
-            calVal.setText("—");
+        // ① D_cap (비전) / ② D_mic (음향) 절대 지연
+        dcapVal.setText(visionRunning
+                ? String.format("남은%d · 검출%d · Δ밝기max %.0f", visionLeft, visionHits, visionMaxDelta)
+                : (cal.count(Modality.VISION) == 0 && visionMaxDelta > 0
+                        ? String.format("미검출 (Δ밝기max %.0f, 임계 %.0f)", visionMaxDelta, FLASH_DELTA)
+                        : calText(Modality.VISION)));
+        dmicVal.setText(calText(Modality.AUDIO));
+        // 동시자극 진행/Δ
+        coincVal.setText(coincRunning ? coincStatus : (coincStatus.isEmpty() ? "" : coincStatus));
+    }
+
+    /** 모달 상수±지터 표시 문자열. */
+    private String calText(Modality m) {
+        double c = cal.constMs(m);
+        if (Double.isNaN(c)) {
+            return "미측정";
         }
+        double j = cal.jitterMs(m);
+        String js = Double.isNaN(j) ? "" : String.format(" ±%.0f", j);
+        return String.format("%.0f ms%s  (n=%d)", c, js, cal.count(m));
+    }
+
+    /**
+     * ① 비전 D_cap 화면플래시 보정 — 워커에서 N회: 기준밝기 → 흰 플래시(발생시각) →
+     * 카메라 밝기 상승 검출 → D_cap=검출−발생. 무음. 전제: 카메라 오픈 + 웹캠을 이 화면으로.
+     */
+    private void startVisionCal() {
+        if (visionRunning || coincRunning) {
+            return;
+        }
+        final CameraService camsvc = CameraService.get();
+        if (!camsvc.isOpen()) {
+            dcapVal.setText("카메라 미오픈 (① 설정)");
+            return;
+        }
+        cal.clear(Modality.VISION);
+        visionRunning = true;
+        visionLeft = nSpin.getSelection();
+        visionHits = 0;
+        visionMaxDelta = 0;
+        final int n = visionLeft;
+        final FlashProbe probe = new FlashProbe(FLASH_DELTA);
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    for (int i = 0; i < n && visionRunning; i++) {
+                        runOneFlash(camsvc, probe);
+                        visionLeft--;
+                        sleepMs(FLASH_GAP_MS);
+                    }
+                } finally {
+                    visionRunning = false;
+                    uiExec(new Runnable() {
+                        public void run() {
+                            hideFlash();
+                        }
+                    });
+                }
+            }
+        }, "apx-vision-cal");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** 플래시 1회: 기준밝기 → 플래시 표시(발생시각) → 상승 검출 → D_cap 표본. 워커 전용. */
+    private void runOneFlash(final CameraService camsvc, FlashProbe probe) {
+        probe.arm();
+        uiExec(new Runnable() {
+            public void run() {
+                hideFlash();
+            }
+        });
+        sleepMs(120);
+        long tb = System.nanoTime();
+        while ((System.nanoTime() - tb) / 1_000_000 < FLASH_BASE_MS && visionRunning) {
+            probe.observeBaseline(camsvc.latest());
+            sleepMs(15);
+        }
+        uiExecSync(new Runnable() {
+            public void run() {
+                showFlash();
+            }
+        });
+        double flashT = SyncBus.now();
+        long t0 = System.nanoTime();
+        boolean got = false;
+        while ((System.nanoTime() - t0) / 1_000_000 < FLASH_TIMEOUT_MS && visionRunning) {
+            BufferedImage f = camsvc.latest();
+            if (f != null) {
+                double delta = FlashProbe.meanLuma(f) - probe.baseline();   // 진단: 밝기 변화
+                if (delta > visionMaxDelta) {
+                    visionMaxDelta = delta;
+                }
+            }
+            if (probe.detect(camsvc.latest(), SyncBus.now())) {
+                got = true;
+                break;
+            }
+            sleepMs(5);
+        }
+        uiExec(new Runnable() {
+            public void run() {
+                hideFlash();
+            }
+        });
+        if (got) {
+            visionHits++;
+            double hw = (probe.onsetT() - flashT) * 1000.0;   // 화면출력+D_cap
+            if (hw >= 0) {
+                cal.addSample(Modality.VISION, hw);
+            }
+        }
+    }
+
+    private void showFlash() {
+        if (display == null || display.isDisposed()) {
+            return;
+        }
+        if (flashShell == null || flashShell.isDisposed()) {
+            flashShell = new Shell(display, SWT.NO_TRIM | SWT.ON_TOP);
+            flashShell.setBackground(display.getSystemColor(SWT.COLOR_WHITE));
+            Monitor m = display.getPrimaryMonitor();
+            flashShell.setBounds(m.getBounds());
+        }
+        flashShell.setVisible(true);
+        flashShell.setActive();
+        flashShell.update();
+    }
+
+    private void hideFlash() {
+        if (flashShell != null && !flashShell.isDisposed()) {
+            flashShell.setVisible(false);
+        }
+    }
+
+    private void uiExec(Runnable r) {
+        if (display != null && !display.isDisposed()) {
+            display.asyncExec(r);
+        }
+    }
+
+    private void uiExecSync(Runnable r) {
+        if (display != null && !display.isDisposed()) {
+            display.syncExec(r);
+        }
+    }
+
+    private static void sleepMs(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * ② 음향 D_mic 보정 시작 — 폰 플래시+삐를 카메라·마이크가 동시 검출, Δ=삐−플래시 수집.
+     * <b>D_mic = D_cap + (Δ − 폰출력지연)</b> 를 AUDIO 상수로 저장(D_cap=① 화면플래시 결과).
+     * 전제: ① 먼저 D_cap 측정 + 카메라 오픈 + 폰을 웹캠에 보이고 마이크 근처에 둠.
+     */
+    private void startCoincidenceCal() {
+        if (coincRunning || visionRunning) {
+            return;
+        }
+        final CameraService cam = CameraService.get();
+        if (!cam.isOpen()) {
+            coincVal.setText("카메라 미오픈 (① 설정)");
+            return;
+        }
+        final double dcap = cal.constMs(Modality.VISION);   // ① 결과
+        if (Double.isNaN(dcap)) {
+            coincVal.setText("먼저 ① D_cap 보정하세요");
+            return;
+        }
+        cal.clear(Modality.AUDIO);
+        coincRunning = true;
+        coincPairs = 0;
+        coincStatus = "시작…";
+        final int target = nSpin.getSelection();
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                runCoincidence(cam, target, dcap);
+            }
+        }, "apx-coinc-cal");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** 마이크 라인 + 카메라 프레임을 동시 감시, 플래시·삐 쌍지어 D_mic=dcap+Δ 수집. 워커 전용. */
+    private void runCoincidence(CameraService cam, int target, double dcap) {
+        TargetDataLine line = null;
+        try {
+            AudioFormat fmt = new AudioFormat(44100f, 16, 1, true, false);
+            DataLine.Info info = new DataLine.Info(TargetDataLine.class, fmt);
+            if (!AudioSystem.isLineSupported(info)) {
+                coincStatus = "마이크 미지원";
+                return;
+            }
+            line = (TargetDataLine) AudioSystem.getLine(info);
+            line.open(fmt, 8192);
+            line.start();
+            byte[] buf = new byte[512];       // 256 샘플 ≈ 5.8ms
+            double baseLuma = Double.NaN;
+            double baseAmp = 0.02;
+            double pendFlash = Double.NaN;
+            double pendBeep = Double.NaN;
+            double lastFlash = -9;
+            double lastBeep = -9;
+            while (coincRunning && coincPairs < target) {
+                int n = line.read(buf, 0, buf.length);
+                double now = SyncBus.now();
+                // 삐(에너지 온셋)
+                double amp = peakAmp(buf, n);
+                baseAmp = 0.995 * baseAmp + 0.005 * amp;
+                if (amp > Math.max(BEEP_AMP_MIN, baseAmp * 5) && now - lastBeep > REFRACT_S) {
+                    lastBeep = now;
+                    pendBeep = now;
+                }
+                // 플래시(밝기 상승)
+                BufferedImage img = cam.latest();
+                if (img != null) {
+                    double luma = FlashProbe.meanLuma(img);
+                    if (Double.isNaN(baseLuma)) {
+                        baseLuma = luma;
+                    } else {
+                        if (luma > baseLuma + FLASH_DELTA2 && now - lastFlash > REFRACT_S) {
+                            lastFlash = now;
+                            pendFlash = now;
+                        }
+                        baseLuma = 0.98 * baseLuma + 0.02 * Math.min(luma, baseLuma + 5); // 플래시에 안 끌림
+                    }
+                }
+                // 쌍 매칭
+                if (!Double.isNaN(pendFlash) && !Double.isNaN(pendBeep)) {
+                    double d = pendBeep - pendFlash;
+                    if (Math.abs(d) <= PAIR_WIN_S) {
+                        // D_mic = D_cap + Δ  (폰 화면·음향 지연은 거의 상쇄 → 무보정)
+                        cal.addSample(Modality.AUDIO, dcap + d * 1000.0);
+                        coincPairs++;
+                        pendFlash = Double.NaN;
+                        pendBeep = Double.NaN;
+                    } else if (pendFlash < pendBeep) {
+                        pendFlash = Double.NaN;    // 오래된 쪽 폐기
+                    } else {
+                        pendBeep = Double.NaN;
+                    }
+                }
+                coincStatus = "수집 " + coincPairs + "/" + target;
+            }
+            coincStatus = (coincPairs >= target) ? "완료" : "중단";
+        } catch (Exception ex) {
+            coincStatus = "오류: " + ex.getClass().getSimpleName();
+        } finally {
+            if (line != null) {
+                try {
+                    line.stop();
+                    line.close();
+                } catch (Exception ignore) {
+                    // 무시
+                }
+            }
+            coincRunning = false;
+        }
+    }
+
+    /** 16bit LE 블록의 최대 진폭(0..1). */
+    private static double peakAmp(byte[] b, int n) {
+        int peak = 0;
+        for (int i = 0; i + 1 < n; i += 2) {
+            int s = (short) ((b[i] & 0xff) | (b[i + 1] << 8));
+            int a = Math.abs(s);
+            if (a > peak) {
+                peak = a;
+            }
+        }
+        return peak / 32768.0;
     }
 
     private void setVerdict(Label l, String text, boolean ok, boolean colored) {
@@ -250,10 +570,11 @@ public class SyncView extends ViewPart {
 
     /**
      * 동기 대상(비전 팝업·음향)의 <b>발생 시각</b> max − min (ms). 2개 미만이면 NaN.
-     * <p>L1 보정: 발생 ≈ PASS − 판단속도. 도구 검출 지연차를 빼서 "실제 발생 동기"에 근사.
-     * (하드웨어 D_cap/D_mic는 미보정 — L2 캘리브레이션 예정.)
+     * <p>L1: 발생 ≈ PASS − 판단속도(도구 검출 지연 제거).
+     * <p>L2({@code l2=true}): 추가로 모달 물리지연 상수(D_mic/D_cap, 중앙값)를 빼서
+     * 카메라·마이크 파이프라인 지연차까지 제거 → 진짜 상호 동기. 상수 미측정 모달은 그대로.
      */
-    private double spreadMs() {
+    private double spreadMs(boolean l2) {
         SyncBus bus = SyncBus.get();
         double min = Double.POSITIVE_INFINITY;
         double max = Double.NEGATIVE_INFINITY;
@@ -262,13 +583,29 @@ public class SyncView extends ViewPart {
             double t = bus.stampOf(e);
             if (!Double.isNaN(t)) {
                 double judge = bus.judgeMsOf(e);
-                double occ = Double.isNaN(judge) ? t : (t - judge / 1000.0);   // 발생 ≈ PASS − 판단속도
+                double occ = Double.isNaN(judge) ? t : (t - judge / 1000.0);   // L1
+                if (l2) {
+                    double cst = cal.constMs(Calibration.modalityOf(e));       // L2: 물리지연 상수
+                    if (!Double.isNaN(cst)) {
+                        occ -= cst / 1000.0;
+                    }
+                }
                 min = Math.min(min, occ);
                 max = Math.max(max, occ);
                 n++;
             }
         }
         return (n < 2) ? Double.NaN : (max - min) * 1000.0;
+    }
+
+    @Override
+    public void dispose() {
+        coincRunning = false;
+        visionRunning = false;
+        if (flashShell != null && !flashShell.isDisposed()) {
+            flashShell.dispose();
+        }
+        super.dispose();
     }
 
     @Override

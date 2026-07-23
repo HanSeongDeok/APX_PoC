@@ -101,6 +101,12 @@ public final class SyncBus {
         return (b - a) * 1000.0;
     }
 
+    /** 단일 이벤트 시각·판단속도만 초기화 — 자동보정 반복 측정에서 재검출 허용용. */
+    public synchronized void clearStamp(Event e) {
+        stamp[e.ordinal()] = Double.NaN;
+        latMs[e.ordinal()] = Double.NaN;
+    }
+
     /** 새 측정 시작 — 모든 이벤트 시각·판단속도 초기화. */
     public synchronized void reset() {
         Arrays.fill(stamp, Double.NaN);

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0a0d11">
+  <title>동기 캘리브 · 플래시+삐</title>
+  <style>
+    :root{
+      --bg:#0a0d11; --surface:#141a21; --text:#e6edf3; --muted:#7d8894;
+      --accent:#38e0a6; --line:#242c35; --ink:#04120c;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg)}
+    #app{
+      position:fixed; inset:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+      display:flex; flex-direction:column;
+      -webkit-user-select:none; user-select:none;
+      -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+    }
+    .stage{
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:.7rem; cursor:pointer; padding:1.2rem;
+    }
+    .count{
+      font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+      font-size:clamp(4rem,24vw,11rem); font-weight:700; line-height:.9;
+      font-variant-numeric:tabular-nums; letter-spacing:-.04em;
+    }
+    .label{
+      display:flex; align-items:center; gap:.55rem;
+      font-size:.82rem; letter-spacing:.3em; text-transform:uppercase; color:var(--muted);
+    }
+    .dot{width:.62rem; height:.62rem; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent)}
+    .hint{font-size:.82rem; color:var(--muted); max-width:32ch; text-align:center; line-height:1.6}
+    .bar{
+      display:flex; flex-wrap:wrap; gap:.5rem 1.1rem; align-items:center; justify-content:center;
+      padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom,0px));
+      background:var(--surface); border-top:1px solid var(--line);
+      font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.8rem; color:var(--muted);
+    }
+    .ctrl{display:flex; align-items:center; gap:.45rem}
+    .ctrl b{color:var(--text); font-weight:600; font-variant-numeric:tabular-nums; min-width:3.2ch; text-align:right; display:inline-block}
+    .step{
+      width:2rem; height:2rem; border:1px solid var(--line); background:#0e141a; color:var(--text);
+      border-radius:.55rem; font-size:1.05rem; line-height:1; cursor:pointer;
+    }
+    .step:active{background:var(--accent); color:var(--ink); border-color:var(--accent)}
+    .tog{
+      border:1px solid var(--line); background:#0e141a; color:var(--muted);
+      border-radius:.55rem; padding:.5rem .8rem; cursor:pointer; font:inherit;
+    }
+    .tog:active{color:var(--accent); border-color:var(--accent)}
+    #flash{position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:9}
+    #app.beep .dot{background:#fff; box-shadow:0 0 18px #fff}
+    @media (prefers-reduced-motion:no-preference){ #flash{transition:opacity .05s linear} }
+    :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="stage" id="stage" role="button" tabindex="0" aria-label="탭하면 플래시와 삐를 동시에 발생">
+      <div class="count" id="count">0</div>
+      <div class="label"><span class="dot" id="dot"></span>Tap to fire</div>
+      <p class="hint">화면을 웹캠에 보이게 두고 폰을 마이크 근처에 둔 뒤, 아무 곳이나 탭하세요.
+        탭마다 <b>흰 플래시 + 삐</b>가 동시에 나갑니다.</p>
+    </div>
+    <div class="bar">
+      <div class="ctrl">삐 <b id="freqv">3000</b>Hz
+        <button class="step" data-f="-100" aria-label="주파수 내림">–</button>
+        <button class="step" data-f="100" aria-label="주파수 올림">+</button></div>
+      <div class="ctrl">길이 <b id="durv">140</b>ms
+        <button class="step" data-d="-20" aria-label="길이 내림">–</button>
+        <button class="step" data-d="20" aria-label="길이 올림">+</button></div>
+      <div class="ctrl">출력지연 <b id="lat">–</b></div>
+      <button class="tog" id="fs">전체화면</button>
+    </div>
+  </div>
+  <div id="flash"></div>
+
+  <script>
+    (function(){
+      var freq = 3000, dur = 140, count = 0, ac = null;
+      var flash = document.getElementById('flash');
+      var stage = document.getElementById('stage');
+      var app   = document.getElementById('app');
+      var countEl = document.getElementById('count');
+      var latEl = document.getElementById('lat');
+
+      function ensureAudio(){
+        if(!ac){
+          var C = window.AudioContext || window.webkitAudioContext;
+          if(C) ac = new C();
+        }
+        if(ac && ac.state === 'suspended') ac.resume();
+        if(ac){
+          var l = (ac.outputLatency || ac.baseLatency || 0) * 1000;
+          latEl.textContent = l ? l.toFixed(0) + 'ms' : 'n/a';
+        }
+      }
+      function beep(){
+        if(!ac) return;
+        var t = ac.currentTime, len = dur/1000;
+        var o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'square';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.9, t + 0.002);   // 날카로운 어택(온셋 뚜렷)
+        g.gain.setValueAtTime(0.9, t + Math.max(0, len - 0.012));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        o.connect(g); g.connect(ac.destination);
+        o.start(t); o.stop(t + len + 0.02);
+      }
+      function fire(){
+        ensureAudio();
+        flash.style.opacity = '1';      // 시각
+        beep();                          // 소리 (동시)
+        app.classList.add('beep');
+        setTimeout(function(){ flash.style.opacity = '0'; app.classList.remove('beep'); }, dur);
+        count++; countEl.textContent = count;
+      }
+
+      stage.addEventListener('pointerdown', function(e){ e.preventDefault(); fire(); });
+      stage.addEventListener('keydown', function(e){ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); fire(); } });
+
+      var steps = document.querySelectorAll('.step');
+      for(var i=0;i<steps.length;i++){
+        steps[i].addEventListener('click', function(e){
+          e.stopPropagation();
+          var f = this.getAttribute('data-f'), d = this.getAttribute('data-d');
+          if(f){ freq = Math.max(500, Math.min(6000, freq + parseInt(f,10))); document.getElementById('freqv').textContent = freq; }
+          if(d){ dur = Math.max(40, Math.min(400, dur + parseInt(d,10))); document.getElementById('durv').textContent = dur; }
+        });
+      }
+      document.getElementById('fs').addEventListener('click', function(e){
+        e.stopPropagation();
+        var el = document.documentElement;
+        if(!document.fullscreenElement){ if(el.requestFullscreen) el.requestFullscreen().catch(function(){}); }
+        else if(document.exitFullscreen){ document.exitFullscreen(); }
+      });
+
+      if('wakeLock' in navigator){
+        stage.addEventListener('pointerdown', function once(){
+          try{ navigator.wakeLock.request('screen').catch(function(){}); }catch(e){}
+        }, {once:true});
+      }
+    })();
+  </script>
+</body>
+</html>
