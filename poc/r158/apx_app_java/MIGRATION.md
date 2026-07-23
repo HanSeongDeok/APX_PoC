@@ -99,7 +99,7 @@ com.suresofttech.apx.core   (엔진 · SWT 무의존)
 
 com.suresofttech.apx.ui     (RCP · OpenCV 무의존)
   ├ view   : SettingsView / GearView / ClusterView / AudioView
-  └ widget : CameraCanvas / ScopeCanvas / XChartScope / TestPlayerDialog
+  └ widget : CameraCanvas / ScopeCanvas / AudioScope / TestPlayerDialog
 ```
 
 - **경계 타입 = `BufferedImage`**: core는 OpenCV(Mat)만, ui는 SWT만 안다. `RoiMatchDetector.process(BufferedImage)`가 내부에서 Mat 변환·해제, `canonImage`(BufferedImage)로 반환. → 각 번들이 자기 라이브러리만 의존.

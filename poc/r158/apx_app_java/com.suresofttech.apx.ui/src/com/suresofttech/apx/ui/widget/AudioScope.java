@@ -30,7 +30,7 @@ import ChartDirector.XYChart;
  * <p>상단: ① 파형(좌) | ② 음정(우), 하단 전폭: ③ 추이. {@link #setWaveOnly}로 ②를 숨긴다(파형 전폭).
  * 판정 결과 텍스트/막대는 AudioView가 담당. ChartDirector multiline 방식(범례 박스 + dashLineColor 점선).
  */
-public class XChartScope extends Canvas {
+public class AudioScope extends Canvas {
 
     private static final double MATCH_WIN_MS = 10000.0;   // 흐르는 창 = 10초
     private static final double ENV_COL_MS = 4.0;         // 파형 포락선 열 폭(ms)
@@ -74,10 +74,12 @@ public class XChartScope extends Canvas {
     // 공통 흐르는 창(ms)
     private double winMin = 0;
     private double winMax = MATCH_WIN_MS;
+    private double axLo = 0;    // 눈금 그리드에 정렬된 X축 표시 범위(정수 라벨)
+    private double axHi = MATCH_WIN_MS;
 
     private Image composite;
 
-    public XChartScope(Composite parent, double fmax) {
+    public AudioScope(Composite parent, double fmax) {
         super(parent, SWT.DOUBLE_BUFFERED | SWT.NO_BACKGROUND);
         this.fmax = fmax;
         addPaintListener(new PaintListener() {
@@ -293,8 +295,15 @@ public class XChartScope extends Canvas {
         c.setPlotArea(52, 24, plotW, Math.max(1, h - 54), BG, -1, 0xdddddd, 0xf0f0f0, -1);
         c.addTitle(title, FONT, 9);
         c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
-        c.xAxis().setLinearScale(winMin, winMax, msTick(winMax - winMin, approxTicks));
-        c.xAxis().setLabelFormat("{value}ms");
+        // 눈금을 정수 그리드에 정렬(라이브 이동 시 소수점 라벨 방지) + 정수 ms 포맷
+        double tick = msTick(winMax - winMin, approxTicks);
+        axLo = Math.floor(winMin / tick) * tick;
+        axHi = Math.ceil(winMax / tick) * tick;
+        if (axHi - axLo < tick) {
+            axHi = axLo + tick;
+        }
+        c.xAxis().setLinearScale(axLo, axHi, tick);
+        c.xAxis().setLabelFormat("{value|0}ms");
         return c;
     }
 
@@ -310,7 +319,7 @@ public class XChartScope extends Canvas {
         for (int i = 0; i < n; i++) {
             int p = (eHead + i) % ENV_CAP;
             double t = eT[p];
-            if (t < winMin || t > winMax) {   // 창 밖 제외(오버플로 방지)
+            if (t < axLo || t > axHi) {   // 축 범위 밖 제외(오버플로 방지)
                 continue;
             }
             tx[m] = t;
@@ -332,7 +341,7 @@ public class XChartScope extends Canvas {
     private byte[] pitchPng(int w, int h) {
         XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", 5);
         c.yAxis().setLinearScale(0, fmax, 1000);
-        double[] edge = { winMin, winMax };
+        double[] edge = { axLo, axHi };
         int dashExp = c.dashLineColor(C_EXP, Chart.DashLine);
         LineLayer le = c.addLineLayer(new double[] { targetHz, targetHz }, dashExp, "기대");
         le.setXData(edge);
@@ -343,7 +352,7 @@ public class XChartScope extends Canvas {
         for (int i = 0; i < n; i++) {
             int p = (pHead + i) % CAP_M;
             double t = pT[p];
-            if (t < winMin || t > winMax) {
+            if (t < axLo || t > axHi) {   // 축 범위 밖 제외(오버플로 방지)
                 continue;
             }
             tx[m] = t;
@@ -370,7 +379,7 @@ public class XChartScope extends Canvas {
         for (int i = 0; i < nn; i++) {
             int p = (mHead + i) % CAP_M;
             double t = mT[p];
-            if (t < winMin || t > winMax) {
+            if (t < axLo || t > axHi) {   // 축 범위 밖 제외(오버플로 방지)
                 continue;
             }
             tx[m] = t;
@@ -387,7 +396,7 @@ public class XChartScope extends Canvas {
             lw.setXData(tX);
             lw.setLineWidth(2);
         }
-        double[] edge = { winMin, winMax };
+        double[] edge = { axLo, axHi };
         int dashF = c.dashLineColor(C_THR, Chart.DashLine);
         LineLayer fr = c.addLineLayer(new double[] { freqThr, freqThr }, dashF, "주파수 임계");
         fr.setXData(edge);

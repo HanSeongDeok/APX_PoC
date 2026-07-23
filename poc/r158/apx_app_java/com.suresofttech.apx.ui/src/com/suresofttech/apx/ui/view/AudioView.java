@@ -34,7 +34,7 @@ import com.suresofttech.apx.core.audio.AudioRecorder;
 import com.suresofttech.apx.core.audio.BeepMatcher;
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.audio.WavIo;
-import com.suresofttech.apx.ui.widget.XChartScope;
+import com.suresofttech.apx.ui.widget.AudioScope;
 
 /**
  * ④ 음향 검증 View — 파이썬 apx_app/ui/audio_tab.py 이식 (Step 1: 기능 UI).
@@ -52,7 +52,7 @@ public class AudioView extends ViewPart {
     private volatile MatchResult passed; // 최초 PASS 래치(오디오 콜백에서 설정) — 이 상태로 정지·표시
     private volatile long capturedSamples; // 측정 시작(버튼) 이후 누적 샘플 → 검출지연(콜드스타트) 계산
     private String beepPath;
-    private XChartScope scope;             // 실시간 파형·스펙트럼 (XChart + SWT_AWT)
+    private AudioScope scope;             // 실시간 파형·스펙트럼 (ChartDirector)
 
     private Combo micCombo;
     private Label beepInfo;
@@ -175,7 +175,7 @@ public class AudioView extends ViewPart {
         waveOnly.setText("음정 추적 숨기기 (파형 · 일치도 추이만)");
         waveOnly.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
 
-        scope = new XChartScope(g, 5000.0);
+        scope = new AudioScope(g, 5000.0);
         GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
         gd.minimumHeight = 240;
         scope.setLayoutData(gd);
