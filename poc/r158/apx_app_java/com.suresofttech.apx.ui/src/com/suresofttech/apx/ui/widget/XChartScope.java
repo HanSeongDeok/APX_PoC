@@ -1,227 +1,145 @@
 package com.suresofttech.apx.ui.widget;
 
-import java.awt.BasicStroke;
-import java.awt.Color;
-import java.awt.Frame;
+import java.io.ByteArrayInputStream;
 import java.util.Arrays;
-import java.util.function.Function;
-
-import javax.swing.SwingUtilities;
 
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.awt.SWT_AWT;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.events.PaintEvent;
+import org.eclipse.swt.events.PaintListener;
+import org.eclipse.swt.graphics.GC;
+import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.Rectangle;
+import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Composite;
-import org.knowm.xchart.XChartPanel;
-import org.knowm.xchart.XYChart;
-import org.knowm.xchart.XYChartBuilder;
-import org.knowm.xchart.XYSeries;
-import org.knowm.xchart.XYSeries.XYSeriesRenderStyle;
-import org.knowm.xchart.style.markers.SeriesMarkers;
 
 import com.suresofttech.apx.core.dsp.Fft;
 import com.suresofttech.apx.core.dsp.SignalMath;
 
+import ChartDirector.AreaLayer;
+import ChartDirector.Chart;
+import ChartDirector.LineLayer;
+import ChartDirector.XYChart;
+
 /**
- * 음향 스코프 — XChart + SWT_AWT. 레퍼런스-vs-라이브 오버레이 3패널:
- *  ① 파형 오버레이 (기대=점선, 라이브=실선. ~20ms, 라이브를 기대에 위상 정렬)
- *  ② 음정 추적 (X=경과시간, Y=주파수 Hz. 기대=수평 점선 @목표Hz, 라이브=검출 주 주파수 실선 — 선이 기대 높이에 붙으면 음정 일치)
- *  ③ 일치도 추이 (주파수·파형 일치도 + 각 임계선, X=시간) — 검출 시점 타임라인
+ * 음향 스코프 — <b>ChartDirector 렌더(→PNG→SWT Image)</b>. (구 XChart+SWT_AWT 구성을 라이브러리만 교체.)
+ * 화면 구성·축(경과시간 ms)·범례·점선·채움은 이전 그대로 유지. 3패널:
+ *  ① 파형 크기 포락선 (X=경과시간ms, Y=±1, 라이브 채움)
+ *  ② 음정 추적 (X=경과시간ms, Y=주파수 Hz, 기대=수평 점선 @목표Hz, 라이브=검출 주 주파수 실선)
+ *  ③ 일치도 추이 (주파수·파형 일치도 + 각 임계 점선, X=경과시간ms)
  *
- * <p>기대는 점선 고스트로 깔고 라이브를 덧그림(가라오케식). 판정 결과는 막대/텍스트(AudioView)가 담당.
- * {@link #setWaveOnly(boolean)}로 파형 오버레이만 남기고 나머지 패널을 숨길 수 있다.
+ * <p>상단: ① 파형(좌) | ② 음정(우), 하단 전폭: ③ 추이. {@link #setWaveOnly}로 ②를 숨긴다(파형 전폭).
+ * 판정 결과 텍스트/막대는 AudioView가 담당. ChartDirector multiline 방식(범례 박스 + dashLineColor 점선).
  */
-public class XChartScope extends Composite {
+public class XChartScope extends Canvas {
 
-    private static final double WAVE_MS = 40.0;          // 파형 오버레이 창(ms) — 모양 보이는 짧은 스케일
-    private static final double MATCH_WIN_MS = 10000.0;  // 일치도/음정 추이 창(ms) = 10초(초 단위 스케일)
-    private static final int TICK_HINT_PX = 80;          // X 눈금 최소 간격(px) — 3패널 밀도 통일(덜 촘촘)
-    private static final int CAP_M = 1200;               // 추이 링버퍼 점 수(≈틱당 1점)
-    private static final double ENV_COL_MS = 4.0;        // 파형 포락선 열 폭(ms) — 촘촘한 채움
-    private static final int ENV_CAP = (int) (MATCH_WIN_MS / ENV_COL_MS) + 600;  // 포락선 링 열 수
+    private static final double MATCH_WIN_MS = 10000.0;   // 흐르는 창 = 10초
+    private static final double ENV_COL_MS = 4.0;         // 파형 포락선 열 폭(ms)
+    private static final int CAP_M = 1200;                // 음정·추이 링 점 수
+    private static final int ENV_CAP = (int) (MATCH_WIN_MS / ENV_COL_MS) + 600;
 
-    private static final Color C_EXP = new Color(130, 130, 130);   // 기대(고스트)
-    private static final Color C_LIVE = new Color(30, 110, 220);   // 라이브
-    private static final Color C_WAVE = new Color(230, 120, 20);   // 파형 일치도
-    private static final Color C_THR = new Color(200, 60, 60);     // 임계
-    private static final BasicStroke DASH =
-            new BasicStroke(1.3f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f, new float[] { 5f, 5f }, 0f);
-    private static final BasicStroke DASH_THIN =
-            new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f, new float[] { 3f, 4f }, 0f);
-    private static final BasicStroke SOLID = new BasicStroke(1.6f);
+    private static final int C_EXP = 0x828282;    // 기대/보조(회색)
+    private static final int C_LIVE = 0x1e6edc;   // 라이브(파랑)
+    private static final int C_WAVE = 0xe67814;   // 파형 일치도(주황)
+    private static final int C_THR = 0xc83c3c;    // 임계(빨강)
+    private static final int C_FILL = 0x601e6edc; // 파형 포락선 채움(반투명 파랑)
+    private static final int BG = 0xffffff;
+    private static final String FONT = "Malgun Gothic";
+    private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
 
     private final double fmax;
-    private final XYChart waveChart;
-    private final XYChart pitchChart;
-    private final XYChart matchChart;
-    private final XChartPanel<XYChart> waveP;
-    private final XChartPanel<XYChart> pitchP;
-    private final XChartPanel<XYChart> matchP;
-    private final Composite waveHolder;
-    private final Composite pitchHolder;
-    private final Composite matchHolder;
+    private boolean waveOnly;
 
-    private double[] expWaveRef;   // 기대 파형 첫 20ms 원본(위상정렬 기준)
-    private double[] expWaveY;     // 기대 파형 정규화 표시값(이동 창에 매 틱 재배치)
+    // 파형 크기 포락선(시간축 ms) — 열당 max/min
+    private final double[] eT = new double[ENV_CAP];
+    private final double[] eHi = new double[ENV_CAP];
+    private final double[] eLo = new double[ENV_CAP];
+    private int eHead, eCount;
+    private double eLast = -1;
 
-    // 일치도 추이(시간축, 틱당 1점) — 주파수·파형
-    private final double[] mRingT = new double[CAP_M];
-    private final double[] mRingV = new double[CAP_M];   // freqSim
-    private final double[] mRingW = new double[CAP_M];   // waveSim
-    private int mHead;
-    private int mCount;
-    private double mLastT = -1;
+    // 음정 추적(시간축 ms) — 라이브 지배 주파수(Hz)
+    private final double[] pT = new double[CAP_M];
+    private final double[] pHz = new double[CAP_M];
+    private int pHead, pCount;
+    private double pLast = -1;
 
-    // 음정 추적(시간축, 틱당 1점) — 라이브 검출 주 주파수(Hz)
-    private final double[] pRingT = new double[CAP_M];
-    private final double[] pRingHz = new double[CAP_M];
-    private int pHead;
-    private int pCount;
-    private double pLastT = -1;
+    // 일치도 추이(시간축 ms) — 주파수·파형
+    private final double[] mT = new double[CAP_M];
+    private final double[] mF = new double[CAP_M];
+    private final double[] mW = new double[CAP_M];
+    private int mHead, mCount;
+    private double mLast = -1;
+    private double freqThr = 0.5, waveThr = 0.5;
+    private double targetHz = 0;   // 기대 주파수(음정 패널 수평 점선)
 
-    // 파형 크기 포락선(시간축, 열당 max/min) — 촘촘한 채움, 음정 추적과 동일 축
-    private final double[] eRingT = new double[ENV_CAP];
-    private final double[] eRingHi = new double[ENV_CAP];
-    private final double[] eRingLo = new double[ENV_CAP];
-    private int eHead;
-    private int eCount;
-    private double eLastT = -1;
+    // 공통 흐르는 창(ms)
+    private double winMin = 0;
+    private double winMax = MATCH_WIN_MS;
+
+    private Image composite;
 
     public XChartScope(Composite parent, double fmax) {
-        super(parent, SWT.NONE);
+        super(parent, SWT.DOUBLE_BUFFERED | SWT.NO_BACKGROUND);
         this.fmax = fmax;
-        setLayout(new GridLayout(2, true));   // 위: 파형 | 음정, 아래: 추이(전폭)
-
-        waveChart = build("파형 크기 포락선 (X=경과시간)", -1.0, 1.0);
-        msAxis(waveChart);
-        addArea(waveChart, "라이브", C_LIVE);                          // 위 경계(0→+peak)
-        addArea(waveChart, "라이브 하한", C_LIVE).setShowInLegend(false);   // 아래 경계(0→-peak) — 범례엔 '라이브' 하나만
-        waveHolder = newHolder(1);
-        waveP = embedInto(waveHolder, waveChart);
-
-        pitchChart = build("음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", 0.0, fmax);
-        msAxis(pitchChart);
-        addLine(pitchChart, "기대", C_EXP, DASH);
-        addLine(pitchChart, "라이브", C_LIVE, SOLID);
-        pitchHolder = newHolder(1);
-        pitchP = embedInto(pitchHolder, pitchChart);
-
-        matchChart = build("일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", 0.0, 1.0);
-        msAxis(matchChart);
-        addLine(matchChart, "주파수", C_LIVE, SOLID);
-        addLine(matchChart, "파형", C_WAVE, SOLID);
-        addLine(matchChart, "주파수 임계", C_THR, DASH_THIN);
-        addLine(matchChart, "파형 임계", C_EXP, DASH_THIN);
-        matchHolder = newHolder(2);
-        matchP = embedInto(matchHolder, matchChart);
-    }
-
-    private XYChart build(String title, double ymin, double ymax) {
-        XYChart c = new XYChartBuilder().title(title).build();
-        c.getStyler().setLegendVisible(true);
-        c.getStyler().setYAxisMin(Double.valueOf(ymin));
-        c.getStyler().setYAxisMax(Double.valueOf(ymax));
-        return c;
-    }
-
-    private static void addLine(XYChart c, String name, Color color, BasicStroke stroke) {
-        XYSeries s = c.addSeries(name, new double[] { 0, 1 }, new double[] { 0, 0 });
-        s.setXYSeriesRenderStyle(XYSeriesRenderStyle.Line);
-        s.setMarker(SeriesMarkers.NONE);
-        s.setLineColor(color);
-        s.setLineStyle(stroke);
-    }
-
-    /** 0 기준선까지 채우는 Area 시리즈(파형 포락선 — 꽉 찬 물결 모양). */
-    private static XYSeries addArea(XYChart c, String name, Color color) {
-        XYSeries s = c.addSeries(name, new double[] { 0, 1 }, new double[] { 0, 0 });
-        s.setXYSeriesRenderStyle(XYSeriesRenderStyle.Area);
-        s.setMarker(SeriesMarkers.NONE);
-        s.setLineColor(color);
-        s.setLineStyle(new BasicStroke(0.8f));
-        s.setFillColor(new Color(30, 110, 220, 90));   // 반투명 파랑 채움
-        return s;
-    }
-
-    /** 경과시간 축: 측정 시작 기준 ms 라벨(0ms … 3450ms …). X값 단위 ms. */
-    private static void msAxis(XYChart c) {
-        c.getStyler().setXAxisTickMarkSpacingHint(TICK_HINT_PX);   // 3패널 눈금 밀도 통일(2ms→덜 촘촘)
-        c.getStyler().setxAxisTickLabelsFormattingFunction(new Function<Double, String>() {
-            public String apply(Double v) {
-                return String.format("%.0fms", v);
+        addPaintListener(new PaintListener() {
+            public void paintControl(PaintEvent e) {
+                if (composite == null || composite.isDisposed()) {
+                    rebuild();
+                }
+                if (composite != null && !composite.isDisposed()) {
+                    e.gc.drawImage(composite, 0, 0);
+                } else {
+                    e.gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
+                    e.gc.fillRectangle(getClientArea());
+                }
             }
         });
+        addDisposeListener(e -> {
+            if (composite != null && !composite.isDisposed()) {
+                composite.dispose();
+            }
+        });
+        addListener(SWT.Resize, e -> rebuildAndRedraw());
     }
 
-    private Composite newHolder(int hspan) {
-        Composite holder = new Composite(this, SWT.EMBEDDED | SWT.NO_BACKGROUND);
-        GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        gd.horizontalSpan = hspan;
-        holder.setLayoutData(gd);
-        return holder;
+    /** 음정 추적 패널만 숨김(토글). 파형·추이는 유지·갱신. */
+    public void setWaveOnly(boolean b) {
+        this.waveOnly = b;
+        rebuildAndRedraw();
     }
 
-    private XChartPanel<XYChart> embedInto(Composite holder, XYChart chart) {
-        Frame frame = SWT_AWT.new_Frame(holder);
-        XChartPanel<XYChart> panel = new XChartPanel<XYChart>(chart);
-        frame.add(panel);
-        return panel;
-    }
-
-    /** 음정 추적 패널만 숨김(토글). 파형 오버레이와 일치도 추이는 계속 표시·갱신된다. */
-    public void setWaveOnly(boolean waveOnly) {
-        if (isDisposed()) {
-            return;
-        }
-        excludeHolder(pitchHolder, waveOnly);       // 음정 추적만 숨김 (일치도 추이는 유지)
-        ((GridData) waveHolder.getLayoutData()).horizontalSpan = waveOnly ? 2 : 1;
-        layout(true, true);
-    }
-
-    private static void excludeHolder(Composite holder, boolean hide) {
-        ((GridData) holder.getLayoutData()).exclude = hide;
-        holder.setVisible(!hide);
-    }
-
-    /** 기대 beep 등록(한 번): 파형 첫 20ms 저장(이동 창에 매 틱 표시). */
+    /** 기대 beep 등록 — 목표 주파수만 음정 패널 수평 점선으로. (파형은 라이브 포락선만 표시) */
     public void setExpected(double[] tmpl, int sr) {
-        if (isDisposed() || tmpl == null || tmpl.length < 2) {
+        if (tmpl == null || tmpl.length < 2) {
             return;
         }
-        int wlen = Math.min(tmpl.length, Math.max(2, (int) (WAVE_MS / 1000.0 * sr)));
-        expWaveRef = Arrays.copyOfRange(tmpl, 0, wlen);   // 정렬 기준(원본 스케일 무관)
-        double pk = 1e-9;
-        for (double v : expWaveRef) {
-            pk = Math.max(pk, Math.abs(v));
-        }
-        double[] y = new double[wlen];
-        for (int i = 0; i < wlen; i++) {
-            y[i] = expWaveRef[i] / pk;
-        }
-        expWaveY = y;                                     // 정규화 표시값(파형은 setData 이동 창에 그림)
+        this.targetHz = dominantHz(tmpl, sr);
+        rebuildAndRedraw();
     }
 
-    /** 매 틱: 라이브 파형(위상정렬 후 겹침) + 음정 추적(라이브 주 주파수). */
+    /** 매 틱: 라이브 파형 포락선 + 음정(지배 주파수)을 시간축(ms)에 누적. (렌더는 setMatchTrend에서 커밋) */
     public void setData(double[] w, int sr, double targetFreq, double elapsedSec) {
-        if (isDisposed() || w == null || w.length == 0) {
+        if (w == null || w.length == 0) {
             return;
+        }
+        if (targetFreq > 0) {
+            this.targetHz = targetFreq;
         }
         double elapsedMs = elapsedSec * 1000.0;
+        updateWindow(elapsedMs);
 
-        // ── 파형 크기 포락선: 새로 들어온 구간을 ENV_COL_MS 열로 잘게 쪼개 각 열 max/min push(촘촘) ──
-        if (elapsedMs < eLastT - 1e-6) {   // 리셋(되감김)
+        // ── 파형 포락선: 새 구간을 ENV_COL_MS 열로 잘게 쪼개 각 열 max/min push ──
+        if (elapsedMs < eLast - 1e-6) {   // 되감김(리셋)
             eHead = 0;
             eCount = 0;
-            eLastT = -1;
+            eLast = -1;
         }
-        double newMs = (eLastT < 0) ? ENV_COL_MS : Math.min(elapsedMs - eLastT, 500.0);
+        double newMs = (eLast < 0) ? ENV_COL_MS : Math.min(elapsedMs - eLast, 500.0);
         int ncols = Math.max(1, (int) Math.round(newMs / ENV_COL_MS));
         int colLen = Math.max(1, (int) (ENV_COL_MS / 1000.0 * sr));
         int take = Math.min(w.length, ncols * colLen);
         int base = w.length - take;
-        for (int c = 0; c < ncols; c++) {
-            int s0 = base + c * colLen;
+        for (int cIdx = 0; cIdx < ncols; cIdx++) {
+            int s0 = base + cIdx * colLen;
             int s1 = Math.min(w.length, s0 + colLen);
             double hi = 0, lo = 0;
             for (int i = s0; i < s1; i++) {
@@ -232,178 +150,266 @@ public class XChartScope extends Composite {
                     lo = w[i];
                 }
             }
-            double t = elapsedMs - (ncols - 1 - c) * ENV_COL_MS;
+            double t = elapsedMs - (ncols - 1 - cIdx) * ENV_COL_MS;
             int tail = (eHead + eCount) % ENV_CAP;
-            eRingT[tail] = t;
-            eRingHi[tail] = hi;
-            eRingLo[tail] = lo;
+            eT[tail] = t;
+            eHi[tail] = hi;
+            eLo[tail] = lo;
             if (eCount < ENV_CAP) {
                 eCount++;
             } else {
                 eHead = (eHead + 1) % ENV_CAP;
             }
         }
-        eLastT = elapsedMs;
+        eLast = elapsedMs;
 
-        final double[] ex = new double[eCount];
-        final double[] ehi = new double[eCount];
-        final double[] elo = new double[eCount];
-        for (int i = 0; i < eCount; i++) {
-            int p = (eHead + i) % ENV_CAP;
-            ex[i] = eRingT[p];
-            ehi[i] = eRingHi[p];
-            elo[i] = eRingLo[p];
-        }
-
-        // ── 음정 추적: 라이브 버퍼의 주 주파수(peak) 1점을 시간축 링버퍼에 push ──
-        double peakHz = dominantHz(w, sr);
-        if (elapsedMs < pLastT - 1e-6) {   // 리셋(되감김)
+        // ── 음정 추적: 라이브 지배 주파수 1점 push ──
+        if (elapsedMs < pLast - 1e-6) {
             pHead = 0;
             pCount = 0;
         }
-        int pTail = (pHead + pCount) % CAP_M;
-        pRingT[pTail] = elapsedMs;
-        pRingHz[pTail] = peakHz;
+        int ptail = (pHead + pCount) % CAP_M;
+        pT[ptail] = elapsedMs;
+        pHz[ptail] = dominantHz(w, sr);
         if (pCount < CAP_M) {
             pCount++;
         } else {
             pHead = (pHead + 1) % CAP_M;
         }
-        pLastT = elapsedMs;
-
-        final double[] px = new double[pCount];
-        final double[] py = new double[pCount];
-        for (int i = 0; i < pCount; i++) {
-            int p = (pHead + i) % CAP_M;
-            px[i] = pRingT[p];
-            py[i] = pRingHz[p];
-        }
-
-        // 파형·음정 공통 시간축(음정 추적과 동일한 sliding 창)
-        final double winMin = Math.max(0, elapsedMs - MATCH_WIN_MS);
-        final double winMax = Math.max(MATCH_WIN_MS, elapsedMs);
-        final double tgt = targetFreq;   // 기대 주파수 수평선 높이
-
-        SwingUtilities.invokeLater(new Runnable() {
-            public void run() {
-                if (ex.length >= 2) {
-                    waveChart.updateXYSeries("라이브", ex, ehi, null);
-                    waveChart.updateXYSeries("라이브 하한", ex, elo, null);
-                }
-                waveChart.getStyler().setXAxisMin(winMin);
-                waveChart.getStyler().setXAxisMax(winMax);
-                waveP.repaint();
-
-                if (px.length >= 2) {
-                    pitchChart.updateXYSeries("라이브", px, py, null);
-                }
-                pitchChart.updateXYSeries("기대", new double[] { winMin, winMax },
-                        new double[] { tgt, tgt }, null);   // 기대 주파수 수평 점선
-                pitchChart.getStyler().setXAxisMin(winMin);
-                pitchChart.getStyler().setXAxisMax(winMax);
-                pitchP.repaint();
-            }
-        });
+        pLast = elapsedMs;
     }
 
-    /** 매 틱: 주파수·파형 일치도를 시간축(ms, 10초 흐르는 창)에 누적 + 각 임계선. */
-    public void setMatchTrend(double freqSim, double waveSim, double freqThr, double waveThr,
-                              double elapsedSec) {
-        if (isDisposed()) {
-            return;
-        }
+    /** 매 틱: 주파수·파형 일치도 추이 누적 + 화면 커밋(리빌드·리드로우). */
+    public void setMatchTrend(double freqSim, double waveSim, double fThr, double wThr, double elapsedSec) {
+        this.freqThr = fThr;
+        this.waveThr = wThr;
         double elapsedMs = elapsedSec * 1000.0;
-        if (elapsedMs < mLastT - 1e-6) {   // 리셋(되감김)
+        updateWindow(elapsedMs);
+        if (elapsedMs < mLast - 1e-6) {   // 되감김(리셋)
             mHead = 0;
             mCount = 0;
         }
         int tail = (mHead + mCount) % CAP_M;
-        mRingT[tail] = elapsedMs;
-        mRingV[tail] = Math.max(0.0, Math.min(1.0, freqSim));
-        mRingW[tail] = Math.max(0.0, Math.min(1.0, waveSim));
+        mT[tail] = elapsedMs;
+        mF[tail] = clamp01(freqSim);
+        mW[tail] = clamp01(waveSim);
         if (mCount < CAP_M) {
             mCount++;
         } else {
             mHead = (mHead + 1) % CAP_M;
         }
-        mLastT = elapsedMs;
-
-        final double[] mx = new double[mCount];
-        final double[] mf = new double[mCount];
-        final double[] mw = new double[mCount];
-        for (int i = 0; i < mCount; i++) {
-            int p = (mHead + i) % CAP_M;
-            mx[i] = mRingT[p];
-            mf[i] = mRingV[p];
-            mw[i] = mRingW[p];
-        }
-        final double xmin = Math.max(0, elapsedMs - MATCH_WIN_MS);
-        final double xmax = Math.max(MATCH_WIN_MS, elapsedMs);
-        final double fThr = freqThr;
-        final double wThr = waveThr;
-        SwingUtilities.invokeLater(new Runnable() {
-            public void run() {
-                if (mx.length >= 2) {
-                    matchChart.updateXYSeries("주파수", mx, mf, null);
-                    matchChart.updateXYSeries("파형", mx, mw, null);
-                }
-                matchChart.updateXYSeries("주파수 임계", new double[] { xmin, xmax },
-                        new double[] { fThr, fThr }, null);
-                matchChart.updateXYSeries("파형 임계", new double[] { xmin, xmax },
-                        new double[] { wThr, wThr }, null);
-                matchChart.getStyler().setXAxisMin(xmin);
-                matchChart.getStyler().setXAxisMax(xmax);
-                matchP.repaint();
-            }
-        });
+        mLast = elapsedMs;
+        rebuildAndRedraw();
     }
 
-    /** 라이브 그래프(파형·음정·일치도) 초기화 — 링버퍼 비우고 시리즈 공백화. 기대(로드된 삐)는 유지. */
+    /** 그래프 초기화(측정 리셋) — 링 비움. 기대(목표 주파수)는 유지. */
     public void clear() {
-        if (isDisposed()) {
-            return;
-        }
         eHead = 0;
         eCount = 0;
-        eLastT = -1;
+        eLast = -1;
         pHead = 0;
         pCount = 0;
-        pLastT = -1;
+        pLast = -1;
         mHead = 0;
         mCount = 0;
-        mLastT = -1;
-        SwingUtilities.invokeLater(new Runnable() {
-            public void run() {
-                double[] x0 = { 0, 1 };
-                double[] y0 = { 0, 0 };
-                waveChart.updateXYSeries("라이브", x0, y0, null);
-                waveChart.updateXYSeries("라이브 하한", x0, y0, null);
-                pitchChart.updateXYSeries("라이브", x0, y0, null);
-                pitchChart.updateXYSeries("기대", x0, y0, null);
-                matchChart.updateXYSeries("주파수", x0, y0, null);
-                matchChart.updateXYSeries("파형", x0, y0, null);
-                matchChart.updateXYSeries("주파수 임계", x0, y0, null);
-                matchChart.updateXYSeries("파형 임계", x0, y0, null);
-                waveP.repaint();
-                pitchP.repaint();
-                matchP.repaint();
-            }
-        });
+        mLast = -1;
+        winMin = 0;
+        winMax = MATCH_WIN_MS;
+        rebuildAndRedraw();
     }
 
-    /** 라이브 버퍼의 주 주파수(Hz) — Hanning 후 FFT 크기 최대 bin(DC 제외, 0..fmax). */
+    // ── 내부 ────────────────────────────────────────────────────────────────────
+
+    private void updateWindow(double elapsedMs) {
+        winMax = Math.max(MATCH_WIN_MS, elapsedMs);
+        winMin = Math.max(0, elapsedMs - MATCH_WIN_MS);
+    }
+
     private double dominantHz(double[] w, int sr) {
         double[] mag = Fft.magnitude(SignalMath.mul(w, SignalMath.hanning(w.length)));
         int nfft = Fft.nextPow2(w.length);
         int kmax = Math.min(mag.length, (int) (fmax * nfft / sr));
         int argmax = 1;
         double peak = -1;
-        for (int k = 1; k < kmax; k++) {   // k=0(DC) 제외
+        for (int k = 1; k < kmax; k++) {   // DC 제외
             if (mag[k] > peak) {
                 peak = mag[k];
                 argmax = k;
             }
         }
         return (double) argmax * sr / nfft;
+    }
+
+    private void rebuildAndRedraw() {
+        rebuild();
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    private void rebuild() {
+        if (isDisposed()) {
+            return;
+        }
+        Rectangle ca = getClientArea();
+        int w = Math.max(120, ca.width);
+        int h = Math.max(160, ca.height);
+        int topH = h / 2;
+        int botH = h - topH;
+
+        Image comp = new Image(getDisplay(), w, h);
+        GC gc = new GC(comp);
+        gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
+        gc.fillRectangle(0, 0, w, h);
+        if (waveOnly) {
+            drawPng(gc, wavePng(w, topH), 0, 0);
+        } else {
+            int halfW = w / 2;
+            drawPng(gc, wavePng(halfW, topH), 0, 0);
+            drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
+        }
+        drawPng(gc, trendPng(w, botH), 0, topH);
+        gc.dispose();
+
+        if (composite != null && !composite.isDisposed()) {
+            composite.dispose();
+        }
+        composite = comp;
+    }
+
+    private void drawPng(GC gc, byte[] png, int x, int y) {
+        if (png == null) {
+            return;
+        }
+        Image img = new Image(getDisplay(), new ByteArrayInputStream(png));
+        gc.drawImage(img, x, y);
+        img.dispose();
+    }
+
+    /** 차트 공통 골격 — 플롯영역(오른쪽 범례 공간)·제목·범례·ms X축. */
+    private XYChart baseChart(int w, int h, String title, int approxTicks) {
+        XYChart c = new XYChart(w, h, BG);
+        int plotW = Math.max(1, w - 52 - LEGEND_W - 8);
+        c.setPlotArea(52, 24, plotW, Math.max(1, h - 54), BG, -1, 0xdddddd, 0xf0f0f0, -1);
+        c.addTitle(title, FONT, 9);
+        c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
+        c.xAxis().setLinearScale(winMin, winMax, msTick(winMax - winMin, approxTicks));
+        c.xAxis().setLabelFormat("{value}ms");
+        return c;
+    }
+
+    /** ① 파형 크기 포락선 — 라이브 채움(반투명 파랑). */
+    private byte[] wavePng(int w, int h) {
+        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", 5);
+        c.yAxis().setLinearScale(-1.0, 1.0, 0.5);
+        int n = eCount;
+        double[] tx = new double[n];
+        double[] hi = new double[n];
+        double[] lo = new double[n];
+        int m = 0;
+        for (int i = 0; i < n; i++) {
+            int p = (eHead + i) % ENV_CAP;
+            double t = eT[p];
+            if (t < winMin || t > winMax) {   // 창 밖 제외(오버플로 방지)
+                continue;
+            }
+            tx[m] = t;
+            hi[m] = eHi[p];
+            lo[m] = eLo[p];
+            m++;
+        }
+        if (m >= 2) {
+            double[] tX = Arrays.copyOf(tx, m);
+            AreaLayer ah = c.addAreaLayer(Arrays.copyOf(hi, m), C_FILL, "라이브");   // 0..+peak
+            ah.setXData(tX);
+            AreaLayer al = c.addAreaLayer(Arrays.copyOf(lo, m), C_FILL);            // 0..-peak (범례 중복 방지: 무명)
+            al.setXData(tX);
+        }
+        return c.makeChart2(Chart.PNG);
+    }
+
+    /** ② 음정 추적 — 기대(수평 점선) vs 라이브(실선). */
+    private byte[] pitchPng(int w, int h) {
+        XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", 5);
+        c.yAxis().setLinearScale(0, fmax, 1000);
+        double[] edge = { winMin, winMax };
+        int dashExp = c.dashLineColor(C_EXP, Chart.DashLine);
+        LineLayer le = c.addLineLayer(new double[] { targetHz, targetHz }, dashExp, "기대");
+        le.setXData(edge);
+        int n = pCount;
+        double[] tx = new double[n];
+        double[] hz = new double[n];
+        int m = 0;
+        for (int i = 0; i < n; i++) {
+            int p = (pHead + i) % CAP_M;
+            double t = pT[p];
+            if (t < winMin || t > winMax) {
+                continue;
+            }
+            tx[m] = t;
+            hz[m] = pHz[p];
+            m++;
+        }
+        if (m >= 2) {
+            LineLayer ll = c.addLineLayer(Arrays.copyOf(hz, m), C_LIVE, "라이브");
+            ll.setXData(Arrays.copyOf(tx, m));
+            ll.setLineWidth(2);
+        }
+        return c.makeChart2(Chart.PNG);
+    }
+
+    /** ③ 일치도 추이 — 주파수·파형 실선 + 각 임계 점선. */
+    private byte[] trendPng(int w, int h) {
+        XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", 10);
+        c.yAxis().setLinearScale(0, 1.0, 0.2);
+        int nn = mCount;
+        double[] tx = new double[nn];
+        double[] tf = new double[nn];
+        double[] tw = new double[nn];
+        int m = 0;
+        for (int i = 0; i < nn; i++) {
+            int p = (mHead + i) % CAP_M;
+            double t = mT[p];
+            if (t < winMin || t > winMax) {
+                continue;
+            }
+            tx[m] = t;
+            tf[m] = mF[p];
+            tw[m] = mW[p];
+            m++;
+        }
+        if (m >= 2) {
+            double[] tX = Arrays.copyOf(tx, m);
+            LineLayer lf = c.addLineLayer(Arrays.copyOf(tf, m), C_LIVE, "주파수");
+            lf.setXData(tX);
+            lf.setLineWidth(2);
+            LineLayer lw = c.addLineLayer(Arrays.copyOf(tw, m), C_WAVE, "파형");
+            lw.setXData(tX);
+            lw.setLineWidth(2);
+        }
+        double[] edge = { winMin, winMax };
+        int dashF = c.dashLineColor(C_THR, Chart.DashLine);
+        LineLayer fr = c.addLineLayer(new double[] { freqThr, freqThr }, dashF, "주파수 임계");
+        fr.setXData(edge);
+        int dashW = c.dashLineColor(C_EXP, Chart.DashLine);
+        LineLayer wr = c.addLineLayer(new double[] { waveThr, waveThr }, dashW, "파형 임계");
+        wr.setXData(edge);
+        return c.makeChart2(Chart.PNG);
+    }
+
+    /** ms X축 눈금 간격 — 구간/목표틱수에 맞는 nice-step. */
+    private static double msTick(double range, int approx) {
+        double raw = range / Math.max(1, approx);
+        double[] nice = { 100, 200, 500, 1000, 2000, 5000, 10000 };
+        for (double s : nice) {
+            if (s >= raw) {
+                return s;
+            }
+        }
+        return 10000;
+    }
+
+    private static double clamp01(double v) {
+        return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
 }
