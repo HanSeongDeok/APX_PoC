@@ -6,6 +6,7 @@ import java.util.Arrays;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.PaintEvent;
 import org.eclipse.swt.events.PaintListener;
+import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.Rectangle;
@@ -41,7 +42,7 @@ public class AudioScope extends Canvas {
     private static final int C_LIVE = 0x1e6edc;   // 라이브(파랑)
     private static final int C_WAVE = 0xe67814;   // 파형 일치도(주황)
     private static final int C_THR = 0xc83c3c;    // 임계(빨강)
-    private static final int C_FILL = 0x601e6edc; // 파형 포락선 채움(반투명 파랑)
+    private static final int C_FILL = 0x000000;   // 파형 포락선 채움(검정)
     private static final int BG = 0xffffff;
     private static final String FONT = "Malgun Gothic";
     private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
@@ -77,11 +78,17 @@ public class AudioScope extends Canvas {
     private double axLo = 0;    // 눈금 그리드에 정렬된 X축 표시 범위(정수 라벨)
     private double axHi = MATCH_WIN_MS;
 
+    // PASS 판정 구간(ms) — 이솝이 판정 후 setPassSpan 으로 넘김. 파형 패널에 초록 밴드로 표시.
+    private double passStartMs = Double.NaN;
+    private double passEndMs = Double.NaN;
+    private Color passColor;   // 초록(반투명 밴드용)
+
     private Image composite;
 
     public AudioScope(Composite parent, double fmax) {
         super(parent, SWT.DOUBLE_BUFFERED | SWT.NO_BACKGROUND);
         this.fmax = fmax;
+        this.passColor = new Color(parent.getDisplay(), 46, 190, 90);   // PASS 밴드(초록)
         addPaintListener(new PaintListener() {
             public void paintControl(PaintEvent e) {
                 if (composite == null || composite.isDisposed()) {
@@ -99,6 +106,9 @@ public class AudioScope extends Canvas {
             if (composite != null && !composite.isDisposed()) {
                 composite.dispose();
             }
+            if (passColor != null && !passColor.isDisposed()) {
+                passColor.dispose();
+            }
         });
         addListener(SWT.Resize, e -> rebuildAndRedraw());
     }
@@ -106,6 +116,20 @@ public class AudioScope extends Canvas {
     /** 음정 추적 패널만 숨김(토글). 파형·추이는 유지·갱신. */
     public void setWaveOnly(boolean b) {
         this.waveOnly = b;
+        rebuildAndRedraw();
+    }
+
+    /** PASS 판정 구간(ms)을 파형 그래프에 <b>초록 밴드</b>로 표시. 판정은 이솝이 하고 시각을 넘긴다. */
+    public void setPassSpan(double startMs, double endMs) {
+        this.passStartMs = Math.min(startMs, endMs);
+        this.passEndMs = Math.max(startMs, endMs);
+        rebuildAndRedraw();
+    }
+
+    /** PASS 밴드 제거. */
+    public void clearPass() {
+        this.passStartMs = Double.NaN;
+        this.passEndMs = Double.NaN;
         rebuildAndRedraw();
     }
 
@@ -217,6 +241,8 @@ public class AudioScope extends Canvas {
         mLast = -1;
         winMin = 0;
         winMax = MATCH_WIN_MS;
+        passStartMs = Double.NaN;
+        passEndMs = Double.NaN;
         rebuildAndRedraw();
     }
 
@@ -265,9 +291,11 @@ public class AudioScope extends Canvas {
         gc.fillRectangle(0, 0, w, h);
         if (waveOnly) {
             drawPng(gc, wavePng(w, topH), 0, 0);
+            drawPassBand(gc, 0, 0, w, topH);
         } else {
             int halfW = w / 2;
             drawPng(gc, wavePng(halfW, topH), 0, 0);
+            drawPassBand(gc, 0, 0, halfW, topH);
             drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
         }
         drawPng(gc, trendPng(w, botH), 0, topH);
@@ -286,6 +314,36 @@ public class AudioScope extends Canvas {
         Image img = new Image(getDisplay(), new ByteArrayInputStream(png));
         gc.drawImage(img, x, y);
         img.dispose();
+    }
+
+    /**
+     * PASS 구간을 파형 패널 플롯영역에 초록 반투명 밴드로 덧그림.
+     * (px,py)=패널 원점, (pw,ph)=패널 크기. 플롯영역은 baseChart 의 setPlotArea(52,24,·,h-54) 와 일치.
+     */
+    private void drawPassBand(GC gc, int px, int py, int pw, int ph) {
+        if (Double.isNaN(passStartMs) || Double.isNaN(passEndMs) || passColor == null) {
+            return;
+        }
+        double span = axHi - axLo;
+        if (span <= 0) {
+            return;
+        }
+        double s = Math.max(passStartMs, axLo);
+        double e = Math.min(passEndMs, axHi);
+        if (e <= s) {
+            return;   // 창 밖
+        }
+        int plotL = px + 52;
+        int plotT = py + 24;
+        int plotW = Math.max(1, pw - 52 - LEGEND_W - 8);
+        int plotH = Math.max(1, ph - 54);
+        int x0 = plotL + (int) ((s - axLo) / span * plotW);
+        int x1 = plotL + (int) ((e - axLo) / span * plotW);
+        int prevAlpha = gc.getAlpha();
+        gc.setAlpha(80);
+        gc.setBackground(passColor);
+        gc.fillRectangle(x0, plotT, Math.max(2, x1 - x0), plotH);
+        gc.setAlpha(prevAlpha);
     }
 
     /** 차트 공통 골격 — 플롯영역(오른쪽 범례 공간)·제목·범례·ms X축. */

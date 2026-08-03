@@ -50,6 +50,7 @@ public class AudioView extends ViewPart {
     private List<AudioCapture.Device> devices;
     private volatile MatchResult latest;
     private volatile MatchResult passed; // 최초 PASS 래치(오디오 콜백에서 설정) — 이 상태로 정지·표시
+    private boolean passMarked;           // PASS 초록 밴드 1회만 설정하기 위한 플래그
     private volatile long capturedSamples; // 측정 시작(버튼) 이후 누적 샘플 → 검출지연(콜드스타트) 계산
     private String beepPath;
     private AudioScope scope;             // 실시간 파형·스펙트럼 (ChartDirector)
@@ -330,8 +331,9 @@ public class AudioView extends ViewPart {
         }
         latest = null;
         passed = null;                            // 래치 해제 → 다시 측정 가능
+        passMarked = false;
         if (scope != null && !scope.isDisposed()) {
-            scope.clear();                        // 그래프(파형·음정·일치도) 전부 초기화
+            scope.clear();                        // 그래프(파형·음정·일치도) 전부 초기화 (PASS 밴드 포함)
         }
         if (head != null && !head.isDisposed()) {
             head.setText("파형 및 주파수 일치도 검증 [측정 시작]");
@@ -402,6 +404,7 @@ public class AudioView extends ViewPart {
             matcher.arm();
             latest = null;
             passed = null;                        // 새 측정 시작 → 래치 해제
+            passMarked = false;
             capturedSamples = 0;                  // 버튼 시점 = 샘플0 (콜드스타트 기준)
             recorder.start(matcher.getSampleRate());   // 원본 녹음 시작(WAV 저장용)
             try {
@@ -467,6 +470,13 @@ public class AudioView extends ViewPart {
             if (mr != null) {
                 scope.setMatchTrend(mr.freqSim, mr.waveSim, mr.freqThr, mr.waveThr, elapsedSec);
             }
+        }
+
+        // PASS 확정 시 파형 그래프에 초록 밴드(데모=이솝 역할). 실제는 이솝이 scope.setPassSpan 호출.
+        if (passed != null && !passMarked && scope != null && !scope.isDisposed()) {
+            double c = passed.onsetT * 1000.0;
+            scope.setPassSpan(c - 200, c + 200);
+            passMarked = true;
         }
 
         MatchResult r = (passed != null) ? passed : latest;
