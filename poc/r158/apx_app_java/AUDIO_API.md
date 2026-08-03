@@ -1,9 +1,20 @@
-# 음향 검측 모듈 — API 문서
+# 음향 검증 모듈 — 클라이언트(이솝) API 설계
 
-기대 beep(근접 경고음) 일치 검증을 RCP/SWT 제품에서 재사용하기 위한 컴포넌트 묶음.
-**core(SWT無 엔진) + 모니터 위젯 4종(ChartDirector) + 기대음·임계 UI + AudioVerifier(선택)**
+기대 beep **유사도 계산** + 모니터·녹음·PNG 증거를 RCP/SWT에서 재사용하기 위한 컴포넌트.
 
-> Notion 설계 원본: [R158 음향 검측 모듈 설계](https://www.notion.so/suresofttech/R158-3a6bd7ce447180dd9347f5e6cbbf9efd)
+> Notion: [R158 음향 검측 모듈 설계](https://www.notion.so/suresofttech/R158-3a6bd7ce447180dd9347f5e6cbbf9efd)
+
+**경계 (후방 `Verdict`와 동일)**
+| 주체 | 책임 |
+|---|---|
+| **모듈** | 유사도(`freqSim`/`waveSim`) 계산 · 그래프 · 녹음 · stop 시 PNG |
+| **이솝** | **PASS/FAIL 판정** · 판정 상태·시각을 모듈에 전달 · TC/DB/UX |
+
+**이솝 최소 흐름**
+1. Panel + 필요한 Bar/Combo 배치
+2. `add` → `start`
+3. 유사도 수신 → **이솝이 PASS/FAIL 결정** → `setVerdict(...)`
+4. `stop` → PNG·WAV 확보
 
 ---
 
@@ -11,22 +22,18 @@
 
 | 객체 | 역할 | 계층 |
 |---|---|---|
-| `BeepMatcherSet` | 기대음 **≥2** · **측정**(`feed`) · **`allPass()`(AND)** | core.audio |
-| `MatchResult` | 템플릿 1건 측정 점수(freq/wave/isPass) | core.audio |
-| `AudioCapture` | 마이크 캡처. 장치 UI는 설정 탭 | core.audio |
-| `AudioRecorder` | 측정 시작~종료 원본 · 구간 추출 | core.audio |
-| `WavIo` / `Wav` | WAV 로드 / 저장 / 구간 저장 | core.audio |
-| `AudioChartModel` | 파형·주파수·추이 **공유 데이터** (SWT無에 가깝게 갱신 API) | ui.widget |
-| `AudioWaveCanvas` | **① 파형** 모니터 · `evidenceSnapshots` (before=3, after=3 고정) | ui.widget |
-| `AudioFreqCanvas` | **② 주파수** 모니터 · `evidenceSnapshots` (before=3, after=3 고정) | ui.widget |
-| `AudioTrendCanvas` | **③ 추이도** 모니터 · `evidenceSnapshots` (before=3, after=3 고정) | ui.widget |
-| `AudioFreqCheck` | **④ 주파수 모니터 보기** 체크박스 (단독 API) | ui.widget |
-| `ExpectedSoundBar` | **⑤ 기대음 입력 UI (단일 API)** — 추가·목록·삭제로 ≥2 등록 | ui.widget |
-| `ThresholdBar` | **⑥ PASS 임계 UI** (freq/wave) — 모듈 제공 | ui.widget |
-| `AudioXPeriodBar` | **⑦ 그래프 X축 주기(시간창) 선택 UI** — 모듈 제공 | ui.widget |
-| `AudioVerifier` | 캡처+매칭+녹음+모델 갱신 파이프라인 (선택) | ui.widget |
+| `AudioPanel` | 진입점. UI는 Scope(그래프)만. 세션·장치·기대음 상태 소유 | ui.widget |
+| `AudioMicCombo` | (선택) 마이크 선택 UI → `panel.setDevice` | ui.widget |
+| `AudioExpectedBar` | (선택) 기대음 경로 UI → `panel.add` / `clearExpected` | ui.widget |
+| `AudioThresholdBar` | (선택) 기준선 UI → `panel.setThresholds` | ui.widget |
+| `AudioScope` | 파형/주파수/추이 (Panel 내부) | ui.widget |
+| `SimilarityScore` | 기대음 1건의 유사도 값 (판정 아님) | core 또는 ui |
+| `Verdict` | `NONE` / `MEASURING` / `PASS` / `FAIL` — **이솝이 설정** | core |
+| `MeasureReport` | `stop()` 반환. 점수·PNG·WAV (PASS 여부 없음) | ui |
+| `Evidence` | 스냅샷 **PNG 파일** 묶음 | ui.widget |
 
-> 모니터·기대음·임계 UI는 **각각 별도 API**. 이솝은 배치만. (묶음 `AudioMonitor` 아님)
+> **위임**: Combo/Bar는 UI만. 상태는 전부 `AudioPanel`. 이솝은 Combo 없이 `setDevice`/`add`/`setThresholds` 직접 호출 가능.
+> **시작/정지 UI 없음** — 이솝이 `panel.start`/`stop` 호출. 내부 Capture/Matcher 등은 비공개.
 
 ---
 
@@ -34,331 +41,252 @@
 
 ```mermaid
 classDiagram
-    class AudioChartModel {
-        +AudioChartModel(double fmax)
-        +setExpected(tmpl, sr) void
-        +setData(...) void
-        +setMatchTrend(...) void
-        +setXPeriodMs(int ms) void
-        +clear() void
+    class AudioPanel {
+        +AudioPanel(Composite parent, double fmax)
+        +setSnapshotDir(File dir) void
+        +setDevice(Device device) void
+        +getDevice() Device
+        +add(String wavPath) void
+        +clearExpected() void
+        +setThresholds(double freq, double wave) void
+        +setScoreListener(ScoreListener l) void
+        +setVerdict(Verdict v, double centerMs) void
+        +start() void
+        +stop() MeasureReport
+        +getScope() AudioScope
     }
-    class AudioWaveCanvas {
-        +AudioWaveCanvas(Composite, AudioChartModel)
-        +evidenceSnapshots(centerMs, stepMs) List~Image~
+    class SimilarityScore {
+        +String name
+        +double freqSim
+        +double waveSim
+        +double atMs
     }
-    class AudioFreqCanvas {
-        +AudioFreqCanvas(Composite, AudioChartModel)
-        +evidenceSnapshots(centerMs, stepMs) List~Image~
+    class Verdict {
+        <<enumeration>>
+        NONE
+        MEASURING
+        PASS
+        FAIL
     }
-    class AudioTrendCanvas {
-        +AudioTrendCanvas(Composite, AudioChartModel)
-        +evidenceSnapshots(centerMs, stepMs) List~Image~
-    }
-    class AudioFreqCheck {
-        +AudioFreqCheck(Composite, AudioFreqCanvas)
-        +setSelection(boolean) void
-    }
-    class ExpectedSoundBar {
-        +ExpectedSoundBar(Composite, AudioVerifier)
+    class AudioMicCombo {
+        +AudioMicCombo(Composite parent, AudioPanel panel)
         +refresh() void
     }
-    class ThresholdBar {
-        +ThresholdBar(Composite, AudioVerifier)
+    class AudioExpectedBar {
+        +AudioExpectedBar(Composite parent, AudioPanel panel)
     }
-    class AudioXPeriodBar {
-        +AudioXPeriodBar(Composite, AudioChartModel)
-        +setPeriodMs(int) void
-        +getPeriodMs() int
+    class AudioThresholdBar {
+        +AudioThresholdBar(Composite parent, AudioPanel panel)
     }
-    class BeepMatcherSet {
-        +add(name, tmpl, sr) void
-        +feed(block, now) List~MatchResult~
-        +allPass() boolean
+    class MeasureReport {
+        +getScores() List~SimilarityScore~
+        +getEvidence() Evidence
+        +getVerdict() Verdict
+        +getCenterMs() double
+        +saveFull(String path) void
+        +saveRange(String path, double startMs, double endMs) void
+        +saveClip(String path, double marginMs) void
     }
-    class AudioVerifier {
-        +AudioVerifier(Display, AudioChartModel)
-        +addExpectedSound(File) String
-        +start() boolean
-        +stop() void
-        +isPassed() boolean
+    class Evidence {
+        +List~File~ wavePng
+        +List~File~ pitchPng
+        +List~File~ trendPng
+        note: "stop 시 .png 저장"
     }
 
-    Canvas <|-- AudioWaveCanvas
-    Canvas <|-- AudioFreqCanvas
-    Canvas <|-- AudioTrendCanvas
-    Composite <|-- AudioFreqCheck
-    Composite <|-- ExpectedSoundBar
-    Composite <|-- ThresholdBar
-    Composite <|-- AudioXPeriodBar
-    AudioWaveCanvas o-- AudioChartModel : reads
-    AudioFreqCanvas o-- AudioChartModel : reads
-    AudioTrendCanvas o-- AudioChartModel : reads
-    AudioFreqCheck --> AudioFreqCanvas : show/hide
-    ExpectedSoundBar --> AudioVerifier : add/remove
-    ThresholdBar --> AudioVerifier : setThresholds
-    AudioXPeriodBar --> AudioChartModel : setXPeriodMs
-    AudioVerifier o-- AudioChartModel : updates
-    BeepMatcherSet --> MatchResult : feed
+    AudioPanel --> SimilarityScore : ScoreListener
+    AudioPanel --> Verdict : setVerdict (이솝)
+    AudioPanel --> MeasureReport : stop
+    MeasureReport --> Evidence
+    MeasureReport --> Verdict
+    AudioMicCombo --> AudioPanel : 선택 즉시 setDevice
+    AudioExpectedBar --> AudioPanel
+    AudioThresholdBar --> AudioPanel
 ```
 
----
+<details>
+<summary>API 설계 목록 (이솝 공개)</summary>
 
-## 3. API 상세
+#### `AudioPanel` (ui) — 진입점
+| API | 설명 |
+|---|---|
+| `AudioPanel(Composite parent, double fmax)` | 패널 배치 |
+| `setSnapshotDir(File dir)` | PNG 저장 폴더 |
+| `setDevice(Device device)` / `getDevice()` | 입력 장치 상태. `start()` 시 사용 |
+| `add(String wavPath)` | 기대음 WAV 경로 등록 (유사도 대상) |
+| `clearExpected()` | 기대음 해제 |
+| `setThresholds(double freq, double wave)` | 추이 그래프 **기준선** (모듈 판정용 아님) |
+| `setScoreListener(ScoreListener l)` | 블록마다 유사도 통지 → **이솝이 판정** |
+| `setVerdict(Verdict v, double centerMs)` | 이솝이 내린 판정·시각 전달 (스냅샷 중심 등) |
+| `start()` / `stop()` | 측정 시작 / 종료→`MeasureReport` |
+| `getScope()` | 모니터 |
 
-### 3.1 모니터 위젯 (각각 독립 · ChartDirector)
+**인자 의미**
+- `device`: 입력 장치. 미설정 시 기본 장치
+- `wavPath`: 기대음 `.wav` (모듈이 load)
+- `freq`/`wave`: 그래프 기준선 (0~1)
+- `ScoreListener`: `void onScore(List<SimilarityScore> scores)`
+- `centerMs`: 판정 시각(ms). 스냅샷·클립 중심
 
-이솝이 **필요한 것만** 골라 배치한다.
+#### `SimilarityScore` — 유사도 값 (판정 아님)
+| 필드 | 설명 |
+|---|---|
+| `name` | 기대음 식별 (경로 또는 등록명) |
+| `freqSim` / `waveSim` | 유사도 0~1 |
+| `atMs` | 해당 점수 시각(ms) |
 
-| # | 클래스 | API | 역할 |
+#### `Verdict` — 이솝이 설정
+| 값 | 설명 |
+|---|---|
+| `NONE` / `MEASURING` | 미판정 / 측정 중 |
+| `PASS` / `FAIL` | 이솝 최종 판정 |
+
+#### 선택 UI — Panel에 위임만
+> 후방 ControlBar/PresetCombo → Canvas와 동일. **상태·세션은 Panel.**
+
+| 위젯 | 공개 API | Panel 호출 | 설명 |
 |---|---|---|---|
-| 1 | `AudioWaveCanvas` | `new …` · **`evidenceSnapshots(centerMs, stepMs)`** | 파형 + 증거 ±3 |
-| 2 | `AudioFreqCanvas` | `new …` · **`evidenceSnapshots(centerMs, stepMs)`** | 주파수 + 증거 ±3 |
-| 3 | `AudioTrendCanvas` | `new …` · **`evidenceSnapshots(centerMs, stepMs)`** | 추이 + 증거 ±3 |
-| 4 | `AudioFreqCheck` | `new AudioFreqCheck(parent, freqCanvas)` | 주파수 모니터 보기 on/off |
-| 5 | `ExpectedSoundBar` | `new ExpectedSoundBar(parent, verifier)` | **기대음 입력 단일 UI** (슬롯별 API 없음) |
-| 6 | `ThresholdBar` | `new ThresholdBar(parent, verifier)` | freq/wave PASS 임계 |
-| 7 | `AudioXPeriodBar` | `new AudioXPeriodBar(parent, model)` | **X축 주기(시간창) 선택** |
+| `AudioMicCombo` | `(parent, panel)`, `refresh()` | 선택 → `setDevice` | 입력 장치 목록 콤보. 목록 조회·표시는 위젯 내부. 이솝은 Capture 미사용 |
+| `AudioExpectedBar` | `(parent, panel)` | `add` / `clearExpected` | 기대음 WAV 경로·파일선택 UI |
+| `AudioThresholdBar` | `(parent, panel)` | `setThresholds` | freq/wave 그래프 기준선·참고 임계 UI |
 
-```
-AudioChartModel model = new AudioChartModel(5000);
-AudioVerifier v = new AudioVerifier(display, model);
+- 설정 View 등 배치 가능 (`AudioPanel` 참조만).
+- 측정 중 `setDevice`는 다음 `start`부터 적용.
 
-AudioWaveCanvas wave = new AudioWaveCanvas(parent, model);
-AudioFreqCanvas freq = new AudioFreqCanvas(parent, model);
-AudioTrendCanvas trend = new AudioTrendCanvas(parent, model);
-new AudioFreqCheck(bar, freq);
-new ExpectedSoundBar(bar, v);
-new ThresholdBar(bar, v);
-new AudioXPeriodBar(bar, model);  // ⑦ X축 주기
-```
+#### `MeasureReport` — `stop()` 결과
+| API | 설명 |
+|---|---|
+| `getScores()` | 측정 중 유사도(최종/요약). **PASS 여부 없음** |
+| `getVerdict()` / `getCenterMs()` | 이솝이 `setVerdict`로 넣은 값 |
+| `getEvidence()` | stop 시 저장한 **PNG** (`centerMs` 기준, 미설정 시 종료 시각) |
+| `saveFull` / `saveRange` / `saveClip` | WAV 저장 (`saveClip`=center±margin) |
 
-- `AudioFreqCheck`: 선택 시 `freqCanvas` 표시, 해제 시 숨김
-- `ExpectedSoundBar`: **기대음 입력은 이 API 하나**. 사용자가 여러 번 추가로 ≥2 등록  
-  - 수신 경로: 사용자 WAV 선택 → `ExpectedSoundBar` → `verifier.addExpectedSound(File)` → `BeepMatcherSet.add` + `model.setExpected`  
-  - 이솝은 **배치만** 하면 됨. (선택) TC에서 `verifier.addExpectedSound` 직접 호출도 가능
-- `ThresholdBar`: 스피너 → `verifier.setThresholds`
-- `AudioXPeriodBar` / `model.setXPeriodMs(ms)`: **파형·추이** 시간축에 보일 구간(주기). 예: 100ms / 500ms / 1s / 2s …  
-  - 주파수 그래프 X축은 Hz라서 **주파수 축에는 미적용** (표시 창만 파형·추이)
-- **증거**: `evidenceSnapshots(centerMs, stepMs)` — before/after=3 고정, **stepMs=클라이언트**
+#### `Evidence` — PNG
+| API | 설명 |
+|---|---|
+| `wavePng` / `pitchPng` / `trendPng` | `.png` `File` 리스트 (전3·중심·후3) |
 
-### 3.2 `BeepMatcherSet` — 래치 · AND (순서 강제 없음)
+**규약**: `.png` 고정. `stop()` 때 저장. SWT Image 반환 없음.
 
-기대음 ≥2 등록 시 템플릿마다 **독립 래치**:
-
-1. 매 블록을 **모든** 템플릿에 `feed`
-2. 어떤 템플릿이 `isPass`면 그 슬롯 `latched[i]` ON → **측정 끝까지 유지**
-3. 순차 검출 OK (예: 삐 → 다른 음). **동시·순서 강제 없음**
-4. `allPass()` = **전부** 래치 ON일 때만 true (AND)
-
-이솝 판정 API:
-
-```
-BeepMatcherSet set = verifier.getMatcherSet();
-set.allPass();   // 최종 PASS (둘 다 검출)
-set.pending();   // 미검출 이름 (진행 표시)
-set.anyPass();   // 하나라도 검출 (참고·OR)
-```
-
-### 3.3 `AudioRecorder` / `WavIo` / `AudioCapture`
-
-(기존과 동일)
+</details>
 
 ---
 
-## 4. 사용자 시나리오
+## 3. 사용자 시나리오
 
-### S1. UI 배치 (이솝)
-
+### S1. 화면 배치
 | 단계 | 동작 | API |
 |---|---|---|
-| 1 | 공유 모델 생성 | `new AudioChartModel(fmax)` |
-| 2 | Verifier 생성 | `new AudioVerifier(display, model)` |
-| 3 | 파형 그래프 배치 | `new AudioWaveCanvas(parent, model)` |
-| 4 | 주파수 그래프 배치 | `new AudioFreqCanvas(parent, model)` |
-| 5 | 추이 그래프 배치 | `new AudioTrendCanvas(parent, model)` |
-| 6 | 주파수 보기 체크 배치 | `new AudioFreqCheck(parent, freqCanvas)` |
-| 7 | 기대음 등록 UI 배치 | `new ExpectedSoundBar(parent, verifier)` |
-| 8 | 임계 UI 배치 | `new ThresholdBar(parent, verifier)` |
-| 9 | X축 주기 UI 배치 | `new AudioXPeriodBar(parent, model)` |
-
-```mermaid
-sequenceDiagram
-    participant ESOP as 클라이언트(이솝)
-    participant M as AudioChartModel
-    participant V as AudioVerifier
-    participant W as AudioWaveCanvas
-    participant F as AudioFreqCanvas
-    participant T as AudioTrendCanvas
-    participant C as AudioFreqCheck
-    participant EXP as ExpectedSoundBar
-    participant THR as ThresholdBar
-    participant XP as AudioXPeriodBar
-    ESOP->>M: new AudioChartModel(fmax)
-    ESOP->>V: new AudioVerifier(display, model)
-    ESOP->>W: new AudioWaveCanvas(parent, model)
-    ESOP->>F: new AudioFreqCanvas(parent, model)
-    ESOP->>T: new AudioTrendCanvas(parent, model)
-    ESOP->>C: new AudioFreqCheck(parent, freq)
-    ESOP->>EXP: new ExpectedSoundBar(parent, v)
-    ESOP->>THR: new ThresholdBar(parent, v)
-    ESOP->>XP: new AudioXPeriodBar(parent, model)
-    Note over C,F: 체크 → freq.setVisible
-```
-
-규약: 모니터 3종 + FreqCheck + ExpectedSoundBar + ThresholdBar + XPeriodBar + Verifier. ChartDirector는 납품 묶음 포함.
-
-### S2. 기대음 등록
-
-| 단계 | 동작 | API |
-|---|---|---|
-| 1 | 사용자 WAV 추가 (≥2) | `ExpectedSoundBar` |
-| 2 | Verifier 등록 | `addExpectedSound(File)` |
-| 3 | 매칭 세트·오버레이 | `BeepMatcherSet.add` · `setExpected` |
-
-```mermaid
-sequenceDiagram
-    participant U as 사용자
-    participant EXP as ExpectedSoundBar
-    participant V as AudioVerifier
-    U->>EXP: WAV 추가 (≥2)
-    EXP->>V: addExpectedSound(File)
-    V->>V: BeepMatcherSet.add / setExpected
-```
-
-규약: 이솝은 바 배치만. (선택) TC에서 `addExpectedSound` 직접 호출 가능. 기대음 ≥2.
-
-### S3. 측정 → PASS
-
-| 단계 | 동작 | API |
-|---|---|---|
-| 1 | 측정 시작 | `arm` / `verifier.start` |
-| 2 | 블록 측정 | `feed` |
-| 3 | PASS (AND) | `allPass()` |
+| 1 | 패널 | `new AudioPanel` |
+| 2a | (선택) 마이크 콤보 | `new AudioMicCombo(parent, panel)` |
+| 2b | (선택) 기대음 경로 UI | `new AudioExpectedBar` |
+| 2c | (선택) 임계 UI | `new AudioThresholdBar` |
 
 ```mermaid
 sequenceDiagram
     participant ESOP as 이솝
-    participant V as AudioVerifier
-    participant SET as BeepMatcherSet
-    ESOP->>V: start / arm
-    loop 매 블록
-        V->>SET: feed
+    participant P as AudioPanel
+    participant M as AudioMicCombo
+    ESOP->>P: new AudioPanel(parent, fmax)
+    ESOP->>M: new AudioMicCombo(parent, panel)
+    Note over ESOP: ExpectedBar / ThresholdBar (선택)
+```
+
+---
+
+### S2. 측정 → 유사도 → 이솝 판정 → 종료
+| 단계 | 동작 | API |
+|---|---|---|
+| 1 | 장치·기대음·기준선 | (MicCombo→)`setDevice` / `add` / `setThresholds` |
+| 2 | 리스너 | `setScoreListener` |
+| 3 | 시작 | `start()` |
+| 4 | 유사도 수신 | `onScore(scores)` — **모듈은 점수만** |
+| 5 | 판정 | 이솝 로직 → `setVerdict(PASS\|FAIL, centerMs)` |
+| 6 | 종료 | `stop()` → PNG·WAV |
+
+```mermaid
+sequenceDiagram
+    participant ESOP as 이솝
+    participant P as AudioPanel
+    ESOP->>P: add("beep.wav")
+    ESOP->>P: setScoreListener(...)
+    ESOP->>P: start()
+    loop 측정 중
+        P-->>ESOP: onScore(freqSim, waveSim, ...)
+        Note over ESOP: 판정 로직 (이솝)
     end
-    ESOP->>SET: allPass()
+    Note over ESOP: PASS 또는 FAIL
+    ESOP->>P: setVerdict(PASS, centerMs)
+    ESOP->>P: stop()
+    P-->>ESOP: MeasureReport (scores + PNG + WAV)
 ```
 
-규약: 래치 · `allPass()`=AND · 순서 강제 없음. (모니터 갱신은 내부 `setData` — 스냅샷 아님)
-
-### S4. 증거 스냅샷
-
-| 단계 | 동작 | API |
-|---|---|---|
-| 1 | 파형 ±3 | `wave.evidenceSnapshots(centerMs, stepMs)` |
-| 2 | 주파수 ±3 | `freq.evidenceSnapshots(centerMs, stepMs)` |
-| 3 | 추이 ±3 | `trend.evidenceSnapshots(centerMs, stepMs)` |
-
-```mermaid
-sequenceDiagram
-    participant ESOP as 이솝
-    participant W as WaveCanvas
-    participant F as FreqCanvas
-    participant T as TrendCanvas
-    ESOP->>W: evidenceSnapshots(centerMs, stepMs)
-    ESOP->>F: evidenceSnapshots(centerMs, stepMs)
-    ESOP->>T: evidenceSnapshots(centerMs, stepMs)
-```
-
-규약: before=3, after=3 고정 · `stepMs`=클라이언트 · 단건 `snapshot()` 없음
-
-### S5. 중지 · WAV
-
-| 단계 | 동작 | API |
-|---|---|---|
-| 1 | 측정 중지 | `stop` |
-| 2 | WAV 저장 | `saveWav` |
-
-```mermaid
-sequenceDiagram
-    participant ESOP as 이솝
-    participant V as AudioVerifier
-    ESOP->>V: stop
-    ESOP->>V: saveWav
-```
-
-규약: WAV=`AudioRecorder`
+**규약**
+1. 모듈 = 유사도만. **PASS/FAIL은 이솝**
+2. Combo/Bar = UI 위임만. 장치·기대음·임계 상태는 `AudioPanel`
+3. `setVerdict`로 판정·시각을 넘겨야 스냅샷 중심·클립이 맞음
+4. 스냅샷 = `stop()` 때 PNG. 시작/정지 UI 없음
+5. TC/DB/UX = 이솝
 
 ---
 
-## 5. 사용자 Action 목록
+## 4. 사용자 Action 목록
 
-| Action | 주체 | 호출 API | 화면/데이터 결과 |
+| Action | 주체 | API | 결과 |
 |---|---|---|---|
-| 파형 모니터 배치 | 이솝 | `new AudioWaveCanvas(parent, model)` | 파형 그래프 |
-| 주파수 모니터 배치 | 이솝 | `new AudioFreqCanvas(parent, model)` | 주파수 그래프 |
-| 추이 모니터 배치 | 이솝 | `new AudioTrendCanvas(parent, model)` | 추이도 그래프 |
-| 주파수 보기 체크 | 이솝/사용자 | `new AudioFreqCheck(parent, freq)` | 주파수 on/off |
-| 기대음 등록 UI 배치 | 이솝 | `new ExpectedSoundBar(parent, verifier)` | 추가·목록·삭제 |
-| 기대음 추가/삭제 | 사용자 | (ExpectedSoundBar) → `addExpectedSound` / `remove` | ≥2 |
-| 임계 UI 배치 | 이솝 | `new ThresholdBar(parent, verifier)` | freq/wave 스피너 |
-| 임계 조절 | 사용자 | (ThresholdBar) → `setThresholds` | 공통 임계 |
-| X축 주기 UI 배치 | 이솝 | `new AudioXPeriodBar(parent, model)` | 시간창 선택 |
-| X축 주기 변경 | 사용자/이솝 | `setXPeriodMs` / AudioXPeriodBar | 파형·추이 X축 |
-| 측정·PASS | 이솝 | `feed` / `allPass` | 판정 |
-| 증거 스냅샷 | 이솝 | `evidenceSnapshots(centerMs, stepMs)` ×3 | ±3×3 |
-| 중지·WAV | 이솝 | `stop` / `saveWav` | 파일 |
+| 패널·컨트롤 배치 | 이솝 | `AudioPanel` / MicCombo·ExpectedBar / ThresholdBar | 화면 |
+| 마이크 선택 | 사용자 | MicCombo → `setDevice` | Panel 장치 상태 |
+| 기대음 입력 | 사용자 | ExpectedBar → `add` / `clearExpected` | Panel 기대음 |
+| 임계치 선택 | 사용자 | ThresholdBar → `setThresholds` | Panel 기준선 |
+| 측정 시작/종료 | 이솝 | `panel.start()` / `stop()` | `MeasureReport` |
+| 유사도 수신 | 모듈→이솝 | `ScoreListener` | `SimilarityScore` |
+| **PASS/FAIL 판정** | **이솝** | (이솝 코드) | 판정 |
+| 판정 전달 | 이솝 | `setVerdict(v, centerMs)` | 스냅샷 중심 등 |
+| PNG·WAV | 이솝 | `MeasureReport` | 보고서 |
 
 ---
 
-## 6. 패키지 활용법
-
-| 계층 | 패키지 | 포함 |
-|---|---|---|
-| core | `com.suresofttech.apx.core.audio` | `BeepMatcherSet`, `MatchResult`, `AudioCapture`, `AudioRecorder`, `WavIo` |
-| ui | `com.suresofttech.apx.ui.widget` | `AudioChartModel`, `AudioWaveCanvas`, `AudioFreqCanvas`, `AudioTrendCanvas`, `AudioFreqCheck`, `ExpectedSoundBar`, `ThresholdBar`, `AudioXPeriodBar`, `AudioVerifier` |
-
-```
-Require-Bundle: ..., ChartDirector, com.suresofttech.apx.core
-# ChartDirector 플러그인은 모듈 납품 묶음에 포함
-```
+## 5. 패키지 활용법
 
 ```java
-AudioChartModel model = new AudioChartModel(5000);
-AudioVerifier v = new AudioVerifier(display, model);
-AudioWaveCanvas wave = new AudioWaveCanvas(parent, model);
-AudioFreqCanvas freq = new AudioFreqCanvas(parent, model);
-AudioTrendCanvas trend = new AudioTrendCanvas(parent, model);
-new AudioFreqCheck(bar, freq);
-new ExpectedSoundBar(bar, v);  // 기대음 ≥2 UI
-new ThresholdBar(bar, v);      // 임계 UI
-new AudioXPeriodBar(bar, model); // X축 주기
-v.start();
+AudioPanel panel = new AudioPanel(parent, 5000);
+
+new AudioMicCombo(toolbar, panel);       // 마이크 선택 (설정 View 가능)
+new AudioExpectedBar(row1, panel);       // 기대음 경로 (선택)
+new AudioThresholdBar(row2, panel);      // 기준선·참고
+
+panel.setSnapshotDir(new File("out/snap"));
+panel.add("expected/beep.wav");
+
+panel.setScoreListener(scores -> {
+    if (esopJudgePass(scores)) {
+        panel.setVerdict(Verdict.PASS, nowMs);
+    }
+});
+
+panel.start();   // 이솝 UI에서 호출 (MicCombo로 고른 장치 사용)
+// ...
+MeasureReport r = panel.stop();
+Evidence e = r.getEvidence();
+r.saveFull("out/full.wav");
 ```
 
 ---
 
-## 7. 화면설계 구상
+## 화면설계 구상
 
-모듈 제공 (각각 독립 API):
-1. **파형** — `AudioWaveCanvas`
-2. **주파수** — `AudioFreqCanvas`
-3. **추이도** — `AudioTrendCanvas`
-4. **주파수 모니터 보기** — `AudioFreqCheck`
-5. **기대음 등록** — `ExpectedSoundBar` (≥2)
-6. **PASS 임계** — `ThresholdBar`
-7. **X축 주기(시간창)** — `AudioXPeriodBar`
-
-이솝:
-8. 위 위젯 배치·레이아웃 · 측정 시작/중지 · PASS/FAIL UX
-9. `evidenceSnapshots(centerMs, stepMs)` · WAV · (설정) 마이크
+1. **AudioPanel** — Scope + 세션 (판정·시작/정지 UI 없음)
+2. **AudioMicCombo** — 마이크(입력 장치) 선택
+3. **AudioExpectedBar** — 기대음 경로·파일선택 (설정 View 가능)
+4. **AudioThresholdBar** — 기준선·참고 임계
+5. **이솝** — 시작/정지 버튼, 유사도→PASS/FAIL, TC/DB, UX, 보고서
 
 ---
 
-## 8. 구현 현황
+## 구현 현황 (참고)
 
 | 항목 | 상태 |
 |---|---|
-| ①②③④ 모니터 분리 API | ✅ 설계 확정 (코드 미반영) |
-| ⑤ `ExpectedSoundBar` · ⑥ `ThresholdBar` | ✅ 설계 확정 (`ThresholdBar` 코드 ✅) |
-| ChartDirector 렌더 (현 `AudioScope`/`AudioMonitor`) | ✅ 기존 PoC |
-| `BeepMatcherSet` · `allPass`(AND) | ✅ |
-| 묶음 `AudioMonitor` | ❌ 제공 안 함 |
+| Scope / Capture / Recorder / Matcher / WavIo | PoC (저수준) |
+| PoC `AudioView` micCombo | PoC (인라인) |
+| Panel / MicCombo / Bars / ScoreListener / setVerdict / PNG | **설계** |

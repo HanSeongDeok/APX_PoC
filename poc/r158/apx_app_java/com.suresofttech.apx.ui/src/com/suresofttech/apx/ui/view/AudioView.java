@@ -233,7 +233,7 @@ public class AudioView extends ViewPart {
     // ---- 임계 (주파수 AND 파형) ----
     private void buildThresholdGroup(Composite parent) {
         Group g = new Group(parent, SWT.NONE);
-        g.setText("PASS 임계 — 주파수 AND 파형 (각 0~1, 둘 다 넘어야 PASS)");
+        g.setText("PASS 임계 - 주파수 AND 파형 (각 0~1, 둘 다 넘어야 PASS)");
         g.setLayout(new GridLayout(4, false));
         g.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
