@@ -12,6 +12,8 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Menu;
+import org.eclipse.swt.widgets.MenuItem;
 
 import java.awt.Point;
 import java.io.File;
@@ -59,6 +61,10 @@ public class RearGridCanvas extends Canvas {
     // 마지막 레이아웃(클릭 히트테스트 재사용)
     private int gx0, gy0, cell;
 
+    // 우클릭 색상 지정(데모) — 컨텍스트 메뉴 + 대상 셀
+    private Menu colorMenu;
+    private int[] menuTarget;   // {c, r} 또는 null
+
     private final Color cBg;
     private final Color cBoard;      // 포인트 판(네모) 채움
     private final Color cBoardEdge;
@@ -82,7 +88,7 @@ public class RearGridCanvas extends Canvas {
         cBoardEdge = new Color(d, 120, 120, 130);
         cDot = new Color(d, 220, 220, 224);
         cDotEdge = new Color(d, 170, 170, 178);
-        cSel = new Color(d, 210, 55, 55);
+        cSel = new Color(d, 130, 130, 138);   // 지정(SELECT) = 회색 (기본점보다 진함·큼으로 구분)
         cSelEdge = new Color(d, 20, 20, 20);
         cCar = new Color(d, 238, 238, 240);
         cCarEdge = new Color(d, 120, 120, 128);
@@ -99,9 +105,14 @@ public class RearGridCanvas extends Canvas {
         });
         addMouseListener(new MouseAdapter() {
             public void mouseDown(MouseEvent e) {
-                onClick(e.x, e.y);
+                if (e.button == 3) {
+                    showColorMenu(e.x, e.y);   // 우클릭 → 색상(판정) 지정
+                } else if (e.button == 1) {
+                    onClick(e.x, e.y);
+                }
             }
         });
+        buildColorMenu();
         addMouseMoveListener(new org.eclipse.swt.events.MouseMoveListener() {
             public void mouseMove(MouseEvent e) {
                 updateCursor(e.x, e.y);
@@ -179,6 +190,39 @@ public class RearGridCanvas extends Canvas {
     /** 모든 판정색 초기화(전부 NONE). 지정 상태는 유지. */
     public void clearVerdicts() {
         allocVerdicts();
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    /**
+     * <b>모든 TC 포인트 한 번에 출력</b> — 여러 TC의 포인트·판정을 한 판에 동시에 표시.
+     * 기존 판정·지정을 초기화한 뒤 전부 반영(각 포인트는 판정색, 판정 NONE이면 지정 빨강).
+     * (모든 TC 선택 시 이솝/뷰가 이 API로 통합 표시. 범위 밖 포인트는 무시.)
+     */
+    public void setVerdicts(List<VerdictResult> results) {
+        allocVerdicts();
+        if (grid != null) {
+            for (int r = 0; r < grid.getRows(); r++) {
+                for (int c = 0; c < grid.getCols(); c++) {
+                    grid.setSelected(c, r, false);   // 이전 지정 초기화(통합 표시로 갱신)
+                }
+            }
+            if (results != null) {
+                for (VerdictResult vr : results) {
+                    if (vr == null) {
+                        continue;
+                    }
+                    Point p = vr.getPoint();
+                    int c = p.x;
+                    int rr = p.y;
+                    if (c >= 0 && c < grid.getCols() && rr >= 0 && rr < grid.getRows()) {
+                        verdicts[rr * grid.getCols() + c] = vr;
+                        grid.setSelected(c, rr, true);   // 점으로도 표시
+                    }
+                }
+            }
+        }
         if (!isDisposed()) {
             redraw();
         }
@@ -580,8 +624,8 @@ public class RearGridCanvas extends Canvas {
 
     /** 상태 범례 — 색↔의미 표. 판 오른쪽 확보 영역 최상단(확대). 판과 겹치지 않음. */
     private void drawLegend(GC gc, Rectangle ca, int boardRight) {
-        String[] labels = { "DEFAULT", "MEASURING", "PASS", "FAIL" };
-        Color[] cols = { cDot, cMeas, cPass, cFail };   // labels와 1:1 (지정 빨강 행 제외)
+        String[] labels = { "SELECT", "MEASURING", "PASS", "FAIL" };   // SELECT=시험 지정 상태
+        Color[] cols = { cSel, cMeas, cPass, cFail };   // labels와 1:1 (SELECT=지정 빨강)
         int pad = 12;
         int rowH = 24;
         int dot = 14;
@@ -685,6 +729,84 @@ public class RearGridCanvas extends Canvas {
     /** 클릭 가능한 점 위에서만 손가락 커서, 그 밖은 기본 커서. */
     private void updateCursor(int mx, int my) {
         setCursor(hitCell(mx, my) != null ? getDisplay().getSystemCursor(SWT.CURSOR_HAND) : null);
+    }
+
+    // ── 데모(목업): 전체선택 / 초기화 / 우클릭 색상 지정 ─────────────────────────
+
+    /** 모든 포인트를 지정(SELECT) 상태로 — [전체 선택] 버튼. */
+    public void selectAll() {
+        if (grid == null) {
+            return;
+        }
+        for (int r = 0; r < grid.getRows(); r++) {
+            for (int c = 0; c < grid.getCols(); c++) {
+                grid.setSelected(c, r, true);
+            }
+        }
+        if (onChange != null) {
+            onChange.run();
+        }
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    /** 지정·판정 전부 해제 — [초기화] 버튼. */
+    public void clearAll() {
+        if (grid != null) {
+            for (int r = 0; r < grid.getRows(); r++) {
+                for (int c = 0; c < grid.getCols(); c++) {
+                    grid.setSelected(c, r, false);
+                }
+            }
+        }
+        allocVerdicts();
+        if (onChange != null) {
+            onChange.run();
+        }
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    /** 한 포인트에 판정색 지정 — 우클릭 메뉴용. NONE=지정(SELECT, 빨강). */
+    public void setPointVerdict(int c, int r, Verdict v) {
+        if (grid == null || c < 0 || c >= grid.getCols() || r < 0 || r >= grid.getRows()) {
+            return;
+        }
+        grid.setSelected(c, r, true);
+        verdicts[r * grid.getCols() + c] =
+                (v == null || v == Verdict.NONE) ? null : new VerdictResult(c, r, v);
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    private void buildColorMenu() {
+        colorMenu = new Menu(this);
+        addColorItem("SELECT (지정)", Verdict.NONE);
+        addColorItem("MEASURING", Verdict.MEASURING);
+        addColorItem("PASS", Verdict.PASS);
+        addColorItem("FAIL", Verdict.FAIL);
+    }
+
+    private void addColorItem(String text, final Verdict v) {
+        MenuItem it = new MenuItem(colorMenu, SWT.PUSH);
+        it.setText(text);
+        it.addListener(SWT.Selection, ev -> {
+            if (menuTarget != null) {
+                setPointVerdict(menuTarget[0], menuTarget[1], v);
+            }
+        });
+    }
+
+    private void showColorMenu(int mx, int my) {
+        int[] hit = hitCell(mx, my);
+        if (hit == null || colorMenu == null) {
+            return;
+        }
+        menuTarget = hit;
+        colorMenu.setVisible(true);
     }
 
     private static int clampInt(int v, int lo, int hi) {
