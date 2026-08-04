@@ -49,8 +49,7 @@ public class AudioView extends ViewPart {
     private final AudioRecorder recorder = new AudioRecorder();   // 측정 원본 누적(WAV 저장·구간추출용)
     private List<AudioCapture.Device> devices;
     private volatile MatchResult latest;
-    private volatile MatchResult passed; // 최초 PASS 래치(오디오 콜백에서 설정) — 이 상태로 정지·표시
-    private boolean passMarked;           // PASS 초록 밴드 1회만 설정하기 위한 플래그
+    private volatile MatchResult passed; // 최초 검출(참고 표시용) — 실시간 상태는 latest 사용
     private volatile long capturedSamples; // 측정 시작(버튼) 이후 누적 샘플 → 검출지연(콜드스타트) 계산
     private String beepPath;
     private AudioScope scope;             // 실시간 파형·스펙트럼 (ChartDirector)
@@ -172,18 +171,28 @@ public class AudioView extends ViewPart {
         g.setLayout(new GridLayout(1, false));
         g.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));   // 남는 세로 차지
 
-        final Button waveOnly = new Button(g, SWT.CHECK);
-        waveOnly.setText("음정 추적 숨기기 (파형 · 일치도 추이만)");
-        waveOnly.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        // 표시 옵션 — 기본은 파형만. 주파수/추이는 체크 시 표시.
+        Composite opt = new Composite(g, SWT.NONE);
+        opt.setLayout(new GridLayout(2, false));
+        opt.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        final Button pitchChk = new Button(opt, SWT.CHECK);
+        pitchChk.setText("주파수(음정) 표시");
+        final Button trendChk = new Button(opt, SWT.CHECK);
+        trendChk.setText("일치도 추이 표시");
 
         scope = new AudioScope(g, 5000.0);
         GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
         gd.minimumHeight = 240;
         scope.setLayoutData(gd);
 
-        waveOnly.addSelectionListener(new SelectionAdapter() {
+        pitchChk.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                scope.setWaveOnly(waveOnly.getSelection());
+                scope.setShowPitch(pitchChk.getSelection());
+            }
+        });
+        trendChk.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                scope.setShowTrend(trendChk.getSelection());
             }
         });
     }
@@ -331,7 +340,7 @@ public class AudioView extends ViewPart {
         }
         latest = null;
         passed = null;                            // 래치 해제 → 다시 측정 가능
-        passMarked = false;
+        capturedSamples = 0;                      // 타임라인 0으로 → 다음 측정 시작은 새 측정(재개 아님)
         if (scope != null && !scope.isDisposed()) {
             scope.clear();                        // 그래프(파형·음정·일치도) 전부 초기화 (PASS 밴드 포함)
         }
@@ -401,12 +410,14 @@ public class AudioView extends ViewPart {
                 return;
             }
             AudioCapture.Device dev = devices.get(Math.max(0, micCombo.getSelectionIndex()));
-            matcher.arm();
-            latest = null;
-            passed = null;                        // 새 측정 시작 → 래치 해제
-            passMarked = false;
-            capturedSamples = 0;                  // 버튼 시점 = 샘플0 (콜드스타트 기준)
-            recorder.start(matcher.getSampleRate());   // 원본 녹음 시작(WAV 저장용)
+            boolean fresh = (capturedSamples == 0);   // 0 = 최초/리셋 후(새 측정), 아니면 정지 후 재개
+            matcher.arm();                            // 검출 롤링버퍼 재무장(타임라인·녹음엔 영향 없음)
+            if (fresh) {
+                latest = null;
+                passed = null;                        // 새 측정 → 래치 해제
+                recorder.start(matcher.getSampleRate());   // 새 녹음(버퍼 초기화). capturedSamples 는 이미 0
+            }
+            // 재개면 capturedSamples·recorder·scope 를 그대로 둬서 정지 시점부터 이어감(0부터 아님)
             try {
                 capture.start(dev.info, matcher.getSampleRate(), new AudioCapture.BlockListener() {
                     public void onBlock(double[] block, double now) {
@@ -452,34 +463,23 @@ public class AudioView extends ViewPart {
         if (head == null || head.isDisposed()) {
             return;
         }
-        boolean wasRunning = capture.isRunning();   // 정지 전에 캡처(검출 틱의 마지막 프레임 렌더용)
-        // 래치(콜백에서 설정)됐는데 아직 측정 중이면 UI 스레드에서 정지(콜백 스레드 자기정지 회피).
-        if (passed != null && measureBtn.getSelection()) {
-            capture.stop();
-            recorder.stop();
-            measureBtn.setSelection(false);
-            measureBtn.setText("측정 시작 (S)");
-        }
-
-        // 이번 틱에 측정 중이었으면 갱신(검출 확정 틱까지 렌더). 정지 후 틱은 스킵 → 마지막 상태로 얼어붙음.
+        boolean wasRunning = capture.isRunning();
+        // 최초 PASS에서 자동 정지하지 않는다 — 계속 측정하며 PASS 시점마다 초록 밴드로 색칠.
         if (wasRunning && matcher != null && scope != null && !scope.isDisposed()) {
             int sr = matcher.getSampleRate();
             double elapsedSec = capturedSamples / (double) sr;   // 측정 시작 후 경과(초) = X축
+            double elapsedMs = elapsedSec * 1000.0;
             scope.setData(matcher.getBuffer(), sr, matcher.getTargetFreq(), elapsedSec);
-            MatchResult mr = latest;                             // 추이는 실시간 값(래치 전)
+            MatchResult mr = latest;
             if (mr != null) {
+                // 실시간 밴딩 — 합격(isPass) 중인 구간을 실시간으로 초록 밴드로 늘린다(불합격 되면 닫힘).
+                // 데모=이솝 역할(실제는 이솝이 판정 후 scope.updatePass 호출).
+                scope.updatePass(elapsedMs, mr.isPass);
                 scope.setMatchTrend(mr.freqSim, mr.waveSim, mr.freqThr, mr.waveThr, elapsedSec);
             }
         }
 
-        // PASS 확정 시 파형 그래프에 초록 밴드(데모=이솝 역할). 실제는 이솝이 scope.setPassSpan 호출.
-        if (passed != null && !passMarked && scope != null && !scope.isDisposed()) {
-            double c = passed.onsetT * 1000.0;
-            scope.setPassSpan(c - 200, c + 200);
-            passMarked = true;
-        }
-
-        MatchResult r = (passed != null) ? passed : latest;
+        MatchResult r = latest;   // 실시간 상태 — PASS 후 FAIL 되어도 계속 동기화(고정 안 함)
         if (r != null) {
             freqBar.setSelection((int) (r.freqSim * 100));
             waveBar.setSelection((int) (r.waveSim * 100));
@@ -487,18 +487,18 @@ public class AudioView extends ViewPart {
             waveVal.setText(String.format("파형 %.2f", r.waveSim));
             String txt;
             int color;
-            if (passed != null) {
-                txt = String.format("BEEP = PASS (확정) · 검출 %.0f ms", passed.onsetT * 1000.0);
-                color = SWT.COLOR_DARK_GREEN;
-            } else if (!r.hasSound) {
+            if (!r.hasSound) {
                 txt = "대기 (소리 없음/약함)";
                 color = SWT.COLOR_DARK_GRAY;
             } else if (r.isPass) {
-                txt = "일치 감지 → PASS";
+                txt = "일치 → PASS";
                 color = SWT.COLOR_DARK_GREEN;
             } else {
                 txt = "불일치 → FAIL";
                 color = SWT.COLOR_RED;
+            }
+            if (passed != null) {   // 최초 검출 시각(참고) — 실시간 상태에 덧붙임
+                txt += String.format("  ·  최초검출 %.0f ms", passed.onsetT * 1000.0);
             }
             head.setText(txt);
             head.setForeground(display.getSystemColor(color));

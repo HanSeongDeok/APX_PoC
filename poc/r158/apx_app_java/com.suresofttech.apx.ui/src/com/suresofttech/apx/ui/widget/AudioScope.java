@@ -1,7 +1,9 @@
 package com.suresofttech.apx.ui.widget;
 
 import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.PaintEvent;
@@ -28,7 +30,8 @@ import ChartDirector.XYChart;
  *  ② 음정 추적 (X=경과시간ms, Y=주파수 Hz, 기대=수평 점선 @목표Hz, 라이브=검출 주 주파수 실선)
  *  ③ 일치도 추이 (주파수·파형 일치도 + 각 임계 점선, X=경과시간ms)
  *
- * <p>상단: ① 파형(좌) | ② 음정(우), 하단 전폭: ③ 추이. {@link #setWaveOnly}로 ②를 숨긴다(파형 전폭).
+ * <p><b>기본은 파형만</b> 표시. 옵션으로 ② 주파수(음정){@link #setShowPitch}·③ 일치도 추이{@link #setShowTrend}
+ * 를 각각 켜면, 상단: ① 파형(좌) | ② 음정(우), 하단 전폭: ③ 추이 로 확장된다.
  * 판정 결과 텍스트/막대는 AudioView가 담당. ChartDirector multiline 방식(범례 박스 + dashLineColor 점선).
  */
 public class AudioScope extends Canvas {
@@ -46,9 +49,11 @@ public class AudioScope extends Canvas {
     private static final int BG = 0xffffff;
     private static final String FONT = "Malgun Gothic";
     private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
+    private static final int TICK_APPROX = 10;    // X축 목표 눈금 수 → 3그래프 공통(10s창 → 1000ms 간격)
 
     private final double fmax;
-    private boolean waveOnly;
+    private boolean showPitch = false;   // 주파수(음정) 패널 — 기본 off(파형만)
+    private boolean showTrend = false;   // 일치도 추이 패널 — 기본 off(파형만)
 
     // 파형 크기 포락선(시간축 ms) — 열당 max/min
     private final double[] eT = new double[ENV_CAP];
@@ -78,9 +83,9 @@ public class AudioScope extends Canvas {
     private double axLo = 0;    // 눈금 그리드에 정렬된 X축 표시 범위(정수 라벨)
     private double axHi = MATCH_WIN_MS;
 
-    // PASS 판정 구간(ms) — 이솝이 판정 후 setPassSpan 으로 넘김. 파형 패널에 초록 밴드로 표시.
-    private double passStartMs = Double.NaN;
-    private double passEndMs = Double.NaN;
+    // PASS 판정 구간(ms) 목록 — 파형 패널에 초록 밴드로 표시. isPass 인 동안 실시간으로 자란다.
+    private final List<double[]> passSpans = new ArrayList<double[]>();   // 각 원소 = {startMs, endMs}
+    private int passOpen = -1;   // 현재 열린(자라는) 밴드 index. -1=없음
     private Color passColor;   // 초록(반투명 밴드용)
 
     private Image composite;
@@ -113,23 +118,57 @@ public class AudioScope extends Canvas {
         addListener(SWT.Resize, e -> rebuildAndRedraw());
     }
 
-    /** 음정 추적 패널만 숨김(토글). 파형·추이는 유지·갱신. */
+    /** 주파수(음정) 패널 표시 옵션. 기본 false(파형만). */
+    public void setShowPitch(boolean b) {
+        this.showPitch = b;
+        rebuildAndRedraw();
+    }
+
+    /** 일치도 추이 패널 표시 옵션. 기본 false(파형만). */
+    public void setShowTrend(boolean b) {
+        this.showTrend = b;
+        rebuildAndRedraw();
+    }
+
+    /** (하위호환) waveOnly=true → 음정 숨김. */
     public void setWaveOnly(boolean b) {
-        this.waveOnly = b;
+        setShowPitch(!b);
+    }
+
+    /**
+     * <b>실시간 PASS 밴딩</b> — 매 틱 현재 시각(ms)과 합격 여부를 넘긴다.
+     * 합격 중이면 열린 밴드를 현재 시각까지 <b>실시간으로 늘리고</b>, 불합격이 되면 그 밴드를 닫는다.
+     * (리빌드는 하지 않음 — 호출측이 {@code setMatchTrend} 로 커밋. isPass 는 {@code MatchResult.isPass}.)
+     */
+    public void updatePass(double nowMs, boolean isPass) {
+        if (isPass) {
+            if (passOpen < 0 || passOpen >= passSpans.size()) {
+                passSpans.add(new double[] { nowMs, nowMs });   // 새 밴드 시작
+                passOpen = passSpans.size() - 1;
+            } else {
+                passSpans.get(passOpen)[1] = nowMs;             // 열린 밴드 실시간 연장
+            }
+        } else {
+            passOpen = -1;                                      // 불합격 → 현재 밴드 닫음
+        }
+    }
+
+    /** PASS 판정 구간(ms)을 파형 그래프에 <b>초록 밴드</b>로 <b>누적</b> 추가(닫힌 구간). */
+    public void addPassSpan(double startMs, double endMs) {
+        passSpans.add(new double[] { Math.min(startMs, endMs), Math.max(startMs, endMs) });
         rebuildAndRedraw();
     }
 
-    /** PASS 판정 구간(ms)을 파형 그래프에 <b>초록 밴드</b>로 표시. 판정은 이솝이 하고 시각을 넘긴다. */
+    /** PASS 밴드 1개만 표시(기존 것 지우고 설정) — 단일 판정용 편의. */
     public void setPassSpan(double startMs, double endMs) {
-        this.passStartMs = Math.min(startMs, endMs);
-        this.passEndMs = Math.max(startMs, endMs);
-        rebuildAndRedraw();
+        passSpans.clear();
+        addPassSpan(startMs, endMs);
     }
 
-    /** PASS 밴드 제거. */
+    /** 모든 PASS 밴드 제거. */
     public void clearPass() {
-        this.passStartMs = Double.NaN;
-        this.passEndMs = Double.NaN;
+        passSpans.clear();
+        passOpen = -1;
         rebuildAndRedraw();
     }
 
@@ -241,8 +280,8 @@ public class AudioScope extends Canvas {
         mLast = -1;
         winMin = 0;
         winMax = MATCH_WIN_MS;
-        passStartMs = Double.NaN;
-        passEndMs = Double.NaN;
+        passSpans.clear();
+        passOpen = -1;
         rebuildAndRedraw();
     }
 
@@ -282,23 +321,27 @@ public class AudioScope extends Canvas {
         Rectangle ca = getClientArea();
         int w = Math.max(120, ca.width);
         int h = Math.max(160, ca.height);
-        int topH = h / 2;
-        int botH = h - topH;
+        int topH = showTrend ? h / 2 : h;   // 추이 표시 시 상단 절반, 아니면 전체 높이
+        int botH = showTrend ? h - topH : 0;
 
         Image comp = new Image(getDisplay(), w, h);
         GC gc = new GC(comp);
         gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
         gc.fillRectangle(0, 0, w, h);
-        if (waveOnly) {
-            drawPng(gc, wavePng(w, topH), 0, 0);
-            drawPassBand(gc, 0, 0, w, topH);
-        } else {
+        if (showPitch) {
+            // 상단: 파형(좌) | 주파수(우)
             int halfW = w / 2;
             drawPng(gc, wavePng(halfW, topH), 0, 0);
             drawPassBand(gc, 0, 0, halfW, topH);
             drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
+        } else {
+            // 파형 전폭
+            drawPng(gc, wavePng(w, topH), 0, 0);
+            drawPassBand(gc, 0, 0, w, topH);
         }
-        drawPng(gc, trendPng(w, botH), 0, topH);
+        if (showTrend) {
+            drawPng(gc, trendPng(w, botH), 0, topH);
+        }
         gc.dispose();
 
         if (composite != null && !composite.isDisposed()) {
@@ -321,28 +364,30 @@ public class AudioScope extends Canvas {
      * (px,py)=패널 원점, (pw,ph)=패널 크기. 플롯영역은 baseChart 의 setPlotArea(52,24,·,h-54) 와 일치.
      */
     private void drawPassBand(GC gc, int px, int py, int pw, int ph) {
-        if (Double.isNaN(passStartMs) || Double.isNaN(passEndMs) || passColor == null) {
+        if (passSpans.isEmpty() || passColor == null) {
             return;
         }
         double span = axHi - axLo;
         if (span <= 0) {
             return;
         }
-        double s = Math.max(passStartMs, axLo);
-        double e = Math.min(passEndMs, axHi);
-        if (e <= s) {
-            return;   // 창 밖
-        }
         int plotL = px + 52;
         int plotT = py + 24;
         int plotW = Math.max(1, pw - 52 - LEGEND_W - 8);
         int plotH = Math.max(1, ph - 54);
-        int x0 = plotL + (int) ((s - axLo) / span * plotW);
-        int x1 = plotL + (int) ((e - axLo) / span * plotW);
         int prevAlpha = gc.getAlpha();
         gc.setAlpha(80);
         gc.setBackground(passColor);
-        gc.fillRectangle(x0, plotT, Math.max(2, x1 - x0), plotH);
+        for (double[] sp : passSpans) {
+            double s = Math.max(sp[0], axLo);
+            double e = Math.min(sp[1], axHi);
+            if (e <= s) {
+                continue;   // 창 밖
+            }
+            int x0 = plotL + (int) ((s - axLo) / span * plotW);
+            int x1 = plotL + (int) ((e - axLo) / span * plotW);
+            gc.fillRectangle(x0, plotT, Math.max(2, x1 - x0), plotH);
+        }
         gc.setAlpha(prevAlpha);
     }
 
@@ -367,7 +412,7 @@ public class AudioScope extends Canvas {
 
     /** ① 파형 크기 포락선 — 라이브 채움(반투명 파랑). */
     private byte[] wavePng(int w, int h) {
-        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", 5);
+        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", TICK_APPROX);
         c.yAxis().setLinearScale(-1.0, 1.0, 0.5);
         int n = eCount;
         double[] tx = new double[n];
@@ -397,7 +442,7 @@ public class AudioScope extends Canvas {
 
     /** ② 음정 추적 — 기대(수평 점선) vs 라이브(실선). */
     private byte[] pitchPng(int w, int h) {
-        XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", 5);
+        XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", TICK_APPROX);
         c.yAxis().setLinearScale(0, fmax, 1000);
         double[] edge = { axLo, axHi };
         int dashExp = c.dashLineColor(C_EXP, Chart.DashLine);
@@ -427,7 +472,7 @@ public class AudioScope extends Canvas {
 
     /** ③ 일치도 추이 — 주파수·파형 실선 + 각 임계 점선. */
     private byte[] trendPng(int w, int h) {
-        XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", 10);
+        XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", TICK_APPROX);
         c.yAxis().setLinearScale(0, 1.0, 0.2);
         int nn = mCount;
         double[] tx = new double[nn];
