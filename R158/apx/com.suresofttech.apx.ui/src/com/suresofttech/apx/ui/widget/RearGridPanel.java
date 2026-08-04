@@ -33,6 +33,7 @@ public class RearGridPanel extends Composite {
     /** 고정 격자 크기 프리셋 {열(cols), 행(rows)}. */
     private static final int[][] PRESETS = { { 4, 6 }, { 8, 12 }, { 10, 14 } };
 
+    /** 차량 후방 이미지 — PoC 자산 경로 유지 (`poc/r158/expected`). */
     private static final String CAR_DIR = "c:/DEV/apx/poc/r158/expected/";
     private static final String[] DEFAULT_CAR_CANDIDATES = {
             CAR_DIR + "car_rear_white.png",

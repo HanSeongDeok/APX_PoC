@@ -1,13 +1,13 @@
 # R158 검증 도구 — Python → Java(RCP) 이식 보고서
 
-파이썬 PoC(`apx_app`, PySide6)를 Java/Eclipse 레거시 RCP(`apx_app_java`)로 이식한 결과 정리.
+파이썬 PoC(`apx_app`, PySide6)를 Java/Eclipse 레거시 RCP(`R158/apx`)로 이식한 결과 정리.
 목적: 제품 편입(SureSoft 툴 체인) + 성능. 판정 로직은 **CAN 없이 결정적(재현 가능)** 유지.
 
 ---
 
 ## 1. 라이브러리 스택 (Python ↔ Java)
 
-| 기능 | Python (`apx_app`) | Java (`apx_app_java`) | 비고 |
+| 기능 | Python (`apx_app`) | Java (`R158/apx`) | 비고 |
 |---|---|---|---|
 | 컴퓨터비전 (ORB·warpPerspective·matchTemplate·HSV·Otsu·연결성분) | OpenCV `cv2` (opencv-python) | **OpenCV Java** `org.openpnp:opencv 4.9.0` | **동일 OpenCV 네이티브** → 알고리즘·수치 동일. openpnp가 네이티브 번들+자동로더(`nu.pattern.OpenCV.loadLocally()`) 제공, 오프라인 OK |
 | SSIM | scikit-image `structural_similarity` | **자체 구현** `Ssim.java` (OpenCV GaussianBlur 기반 Wang et al.) | Java엔 전용 SSIM 라이브러리 없음. 단 판정 게이트는 **NCC**, SSIM은 참고지표 |

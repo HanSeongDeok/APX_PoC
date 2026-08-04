@@ -33,7 +33,7 @@ PDE(Eclipse 플러그인) 프로젝트라 Maven이 없으므로, **jar를 각 �
 OpenCV JAR 받기 (PowerShell 예시):
 
 ```powershell
-cd poc/r158/apx_app_java/com.suresofttech.apx.core/lib
+cd R158/apx/com.suresofttech.apx.core/lib
 Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/org/openpnp/opencv/4.9.0-0/opencv-4.9.0-0.jar" -OutFile opencv-4.9.0-0.jar
 ```
 

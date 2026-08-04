@@ -1,6 +1,6 @@
 # apx_app Java 이식 (R158 검증, 레거시 RCP)
 
-파이썬 `poc/r158/apx_app` (PySide6) → Java/Eclipse RCP 이식. 성능·제품 편입 목적.
+파이썬 `poc/r158/apx_app` (PySide6) → Java/Eclipse RCP 이식. 제품 경로는 `R158/apx`.
 
 ## 기준 (고정)
 
@@ -25,17 +25,21 @@
 ## 번들 구조
 
 ```
-apx_app_java/
-  com.suresofttech.apx.core/     엔진 (SWT 무의존, 순수 Java) — 컴파일·검증 완료
+R158/apx/
+  com.suresofttech.apx.core/     엔진 (SWT 무의존, 순수 Java)
     src/com/suresofttech/apx/core/
-      dsp/    Fft, SignalMath                (numpy.fft / scipy 대체)
-      audio/  BeepMatcher, MatchResult, Tone, WavIo, SelfCheck
-      vision/ VisionPortTodo                 (gear·cluster 이식 예정 표식)
-  com.suresofttech.apx.ui/       RCP UI (SWT/JFace) — 스켈레톤
-    plugin.xml                   Perspective + 4 View (설정·기어·클러스터·음향)
+      dsp/    Fft, SignalMath
+      audio/  BeepMatcher, MatchResult, Tone, WavIo, …
+      vision/ CameraService, RoiMatchDetector, …
+      rear/   RearGrid, Verdict, VerdictResult
+      sync/   SyncBus, Calibration
+  com.suresofttech.apx.ui/       RCP UI (SWT/JFace)
+    plugin.xml                   Perspective + Views
     src/com/suresofttech/apx/ui/
-      ApxPerspective, view/{Settings,Gear,Cluster,Audio}View
+      ApxPerspective, view/*, widget/*
 ```
+
+기대 자산(차량 후방 이미지·기대음 WAV)은 PoC 경로 `poc/r158/expected/` 를 그대로 사용한다.
 
 ## 이식 상태
 
