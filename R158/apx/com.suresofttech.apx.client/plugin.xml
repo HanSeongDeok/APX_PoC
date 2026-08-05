@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<!--
+  이솝 RCP 샘플.
+  APX 모듈은 Require-Bundle이 아니라 lib/*.jar (Bundle-ClassPath)로 붙인다.
+-->
+<plugin>
+   <extension id="application" point="org.eclipse.core.runtime.applications">
+      <application>
+         <run class="com.suresofttech.apx.client.ClientApplication"/>
+      </application>
+   </extension>
+   <extension id="product" point="org.eclipse.core.runtime.products">
+      <product application="com.suresofttech.apx.client.application"
+            name="APX 이솝 클라이언트 (설정)"/>
+   </extension>
+   <extension point="org.eclipse.ui.perspectives">
+      <perspective
+            class="com.suresofttech.apx.client.ClientPerspective"
+            id="com.suresofttech.apx.client.perspective"
+            name="이솝 (설정)">
+      </perspective>
+   </extension>
+   <extension point="org.eclipse.ui.views">
+      <category id="com.suresofttech.apx.client.category" name="이솝"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.SettingsClientView"
+            id="com.suresofttech.apx.client.view.settings"
+            name="설정 (APX 모듈)"/>
+   </extension>
+</plugin>

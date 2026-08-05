@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?pde version="3.5"?>
+
+<product name="APX 이솝 클라이언트 (설정)" uid="com.suresofttech.apx.client.product" id="com.suresofttech.apx.client.product" application="com.suresofttech.apx.client.application" useFeatures="false" includeLaunchers="true">
+
+   <configIni use="default">
+   </configIni>
+
+   <launcherArgs>
+      <vmArgs>-Xms64m -Xmx512m
+      </vmArgs>
+   </launcherArgs>
+
+   <launcher name="apx-client">
+      <solaris/>
+      <win useIco="false">
+         <bmp/>
+      </win>
+   </launcher>
+
+   <plugins>
+      <plugin id="com.suresofttech.apx.client"/>
+      <plugin id="com.suresofttech.apx.core"/>
+      <plugin id="com.suresofttech.apx.ui"/>
+   </plugins>
+
+
+</product>
