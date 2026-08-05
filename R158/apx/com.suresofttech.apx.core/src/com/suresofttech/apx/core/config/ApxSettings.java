@@ -10,7 +10,8 @@ import com.suresofttech.apx.core.vision.RoiMatchDetector;
  * R158 공유 설정 — 설정 탭에서 측정 전 세팅하고, 비전/음향 탭이 재사용한다.
  * (웹캠은 {@link com.suresofttech.apx.core.vision.CameraService} 싱글턴으로 이미 공유)
  *
- * <p>Notion 설정 시나리오: 장치·기대음·기준이미지/ROI·비전·음향 임계.
+ * <p>ROI는 <b>정규화 좌표</b>(프레임 대비 비율)로 저장한다. 웹캠 해상도가 바뀌어도
+ * {@link #getRoi(int, int)}로 해당 픽셀 ROI를 얻는다.
  */
 public final class ApxSettings {
 
@@ -30,12 +31,15 @@ public final class ApxSettings {
     private String micName;
     /** 기대 경고음 WAV 경로 (없으면 null). */
     private String expectedWavPath;
-    /** 기준 이미지 사용 ON/OFF. */
-    private boolean useReferenceImage = true;
+    /** 기준 이미지 사용 ON/OFF. 기본 OFF — 옵션 컴포넌트(ReferenceImageBar) 없이도 ROI 지정이 디폴트. */
+    private boolean useReferenceImage = false;
     /** 비전 기준 이미지 경로. */
     private String visionRefPath;
-    /** 고정 ROI {y1,y2,x1,x2} canon 좌표. */
-    private int[] roi;
+    /**
+     * ROI 정규화 {ny1,ny2,nx1,nx2} ∈ [0,1] — y는 높이, x는 폭 대비.
+     * 기본 = 중앙 ~18.75% 박스(구 640 기준 120×120에 해당).
+     */
+    private double[] roiNorm = { 0.40625, 0.59375, 0.40625, 0.59375 };
     /** 비전 NCC 유사도 임계. */
     private double simThr = RoiMatchDetector.DEFAULT_SIM;
     /** 음향 주파수/파형 일치 임계. */
@@ -109,18 +113,48 @@ public final class ApxSettings {
         fire();
     }
 
-    /** ROI 복사본 반환 (없으면 null). */
-    public int[] getRoi() {
-        return roi == null ? null : roi.clone();
+    /**
+     * 지정 프레임 크기(픽셀)에 맞는 ROI {y1,y2,x1,x2}.
+     * 웹캠/기준 해상도가 바뀌면 호출 측이 현재 w×h를 넘긴다.
+     */
+    public int[] getRoi(int frameW, int frameH) {
+        if (roiNorm == null || frameW <= 0 || frameH <= 0) {
+            return null;
+        }
+        return normToPixels(roiNorm, frameW, frameH);
     }
 
-    public void setRoi(int[] roi) {
-        int[] next = (roi == null) ? null : roi.clone();
-        if (roiEq(this.roi, next)) {
+    /**
+     * @deprecated 해상도 없는 호출은 부정확 — {@link #getRoi(int, int)} 사용.
+     * 호환용으로 정규화→가상 640×640 픽셀을 반환한다.
+     */
+    public int[] getRoi() {
+        return getRoi(640, 640);
+    }
+
+    /** 현재 프레임 픽셀 ROI를 정규화해 저장. */
+    public void setRoi(int[] roi, int frameW, int frameH) {
+        if (roi == null || frameW <= 0 || frameH <= 0) {
             return;
         }
-        this.roi = next;
+        double[] next = pixelsToNorm(roi, frameW, frameH);
+        if (normEq(this.roiNorm, next)) {
+            return;
+        }
+        this.roiNorm = next;
         fire();
+    }
+
+    /**
+     * @deprecated {@link #setRoi(int[], int, int)} 사용. 가상 640×640으로 해석.
+     */
+    public void setRoi(int[] roi) {
+        setRoi(roi, 640, 640);
+    }
+
+    /** 정규화 ROI 복사(디버그·핑거프린트). */
+    public double[] getRoiNorm() {
+        return roiNorm == null ? null : roiNorm.clone();
     }
 
     public double getSimThr() {
@@ -155,17 +189,25 @@ public final class ApxSettings {
         fire();
     }
 
-    /** 알림 없이 일괄 반영 (UI 초기 로드용). */
+    /** 알림 없이 일괄 반영 (UI 초기 로드용). roi는 픽셀, frameW/H와 함께. */
     public void replaceQuiet(String micName, String expectedWav, boolean useRef, String refPath,
-            int[] roi, double simThr, double freqThr, double waveThr) {
+            int[] roi, int frameW, int frameH, double simThr, double freqThr, double waveThr) {
         this.micName = micName;
         this.expectedWavPath = expectedWav;
         this.useReferenceImage = useRef;
         this.visionRefPath = refPath;
-        this.roi = (roi == null) ? null : roi.clone();
+        if (roi != null && frameW > 0 && frameH > 0) {
+            this.roiNorm = pixelsToNorm(roi, frameW, frameH);
+        }
         this.simThr = clamp01(simThr);
         this.audioFreqThr = clamp01(freqThr);
         this.audioWaveThr = clamp01(waveThr);
+    }
+
+    /** @deprecated frame 크기 없이 ROI 넣으면 640×640으로 해석. */
+    public void replaceQuiet(String micName, String expectedWav, boolean useRef, String refPath,
+            int[] roi, double simThr, double freqThr, double waveThr) {
+        replaceQuiet(micName, expectedWav, useRef, refPath, roi, 640, 640, simThr, freqThr, waveThr);
     }
 
     public List<String> snapshotSummary() {
@@ -177,6 +219,31 @@ public final class ApxSettings {
         lines.add("simThr=" + String.format("%.2f", simThr));
         lines.add("audioThr=" + String.format("%.2f/%.2f", audioFreqThr, audioWaveThr));
         return lines;
+    }
+
+    private static int[] normToPixels(double[] n, int w, int h) {
+        int y1 = clamp((int) Math.round(n[0] * h), 0, h - 1);
+        int y2 = clamp((int) Math.round(n[1] * h), y1 + 1, h);
+        int x1 = clamp((int) Math.round(n[2] * w), 0, w - 1);
+        int x2 = clamp((int) Math.round(n[3] * w), x1 + 1, w);
+        return new int[] { y1, y2, x1, x2 };
+    }
+
+    private static double[] pixelsToNorm(int[] r, int w, int h) {
+        int y1 = clamp(r[0], 0, h - 1);
+        int y2 = clamp(r[1], y1 + 1, h);
+        int x1 = clamp(r[2], 0, w - 1);
+        int x2 = clamp(r[3], x1 + 1, w);
+        return new double[] {
+                y1 / (double) h,
+                y2 / (double) h,
+                x1 / (double) w,
+                x2 / (double) w
+        };
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private static double clamp01(double v) {
@@ -193,7 +260,7 @@ public final class ApxSettings {
         return a == null ? b == null : a.equals(b);
     }
 
-    private static boolean roiEq(int[] a, int[] b) {
+    private static boolean normEq(double[] a, double[] b) {
         if (a == null || b == null) {
             return a == b;
         }
@@ -201,7 +268,7 @@ public final class ApxSettings {
             return false;
         }
         for (int i = 0; i < a.length; i++) {
-            if (a[i] != b[i]) {
+            if (Math.abs(a[i] - b[i]) > 1e-9) {
                 return false;
             }
         }

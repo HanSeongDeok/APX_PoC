@@ -83,8 +83,9 @@ public class CameraCanvas extends Canvas {
         int dy = (sz.y - dh) / 2;
         int ix = (int) Math.round((wx - dx) / s);
         int iy = (int) Math.round((wy - dy) / s);
-        ix = Math.max(0, Math.min(iw, ix));
-        iy = Math.max(0, Math.min(ih, iy));
+        // 이미지 유효 픽셀은 0..iw-1 / 0..ih-1 (포함 클램프 시 경계 넘침 방지)
+        ix = Math.max(0, Math.min(iw - 1, ix));
+        iy = Math.max(0, Math.min(ih - 1, iy));
         return new int[] { ix, iy };
     }
 

@@ -43,7 +43,6 @@ import com.suresofttech.apx.ui.widget.TestPlayerDialog;
  */
 public class ClusterView extends ViewPart {
 
-    private static final int CANON = 640;
     private static final String DEFAULT_REF = "c:/DEV/apx/hyundai_cluster_popup.png";
 
     private Display display;
@@ -124,8 +123,8 @@ public class ClusterView extends ViewPart {
         if (det == null || canvas == null || canvas.isDisposed()) {
             return;
         }
-        if (s.getRoi() != null) {
-            det.setRoi(s.getRoi());
+        if (s.getRoiNorm() != null) {
+            det.setRoi(s.getRoi(det.canonWidth(), det.canonHeight()));
         }
         det.setSimThr(s.getSimThr());
     }
@@ -292,7 +291,8 @@ public class ClusterView extends ViewPart {
     private void setRef(String path) {
         try {
             ApxSettings s = ApxSettings.get();
-            det = new RoiMatchDetector(path, s.getRoi(), s.getSimThr());
+            det = new RoiMatchDetector(path, null, s.getSimThr());
+            det.setRoi(s.getRoi(det.canonWidth(), det.canonHeight()));
             refPath = path;
             refLabel.setText(new File(path).getName());
             canvas.setPlaceholder("설정 웹캠 프레임 재사용 · ROI/임계는 설정과 동기");
@@ -309,8 +309,8 @@ public class ClusterView extends ViewPart {
             info("웹캠 프레임이 없습니다 (① 설정에서 카메라를 켜세요)");
             return;
         }
-        int[] roi = (det != null) ? det.getRoi() : null;
         double thr = (det != null) ? det.getSimThr() : RoiMatchDetector.DEFAULT_SIM;
+        int[] roi = ApxSettings.get().getRoi(bi.getWidth(), bi.getHeight());
         det = new RoiMatchDetector(bi, roi, thr);
         refPath = "(웹캠 캡처)";
         refLabel.setText("(웹캠 캡처 화면)");
@@ -326,29 +326,33 @@ public class ClusterView extends ViewPart {
         int[] a = widgetToCanon(dragX0, dragY0);
         int[] b = widgetToCanon(dragX1, dragY1);
         int y1 = Math.min(a[1], b[1]);
-        int y2 = Math.max(a[1], b[1]);
+        int y2 = Math.max(a[1], b[1]) + 1;
         int x1 = Math.min(a[0], b[0]);
-        int x2 = Math.max(a[0], b[0]);
+        int x2 = Math.max(a[0], b[0]) + 1;
+        y2 = Math.min(det.canonHeight(), Math.max(y1 + 1, y2));
+        x2 = Math.min(det.canonWidth(), Math.max(x1 + 1, x2));
         if (y2 - y1 >= 6 && x2 - x1 >= 6) {
             int[] roi = new int[] { y1, y2, x1, x2 };
             det.setRoi(roi);
-            ApxSettings.get().setRoi(roi);
+            ApxSettings.get().setRoi(roi, det.canonWidth(), det.canonHeight());
         }
         canvas.redraw();
     }
 
     private int[] widgetToCanon(int wx, int wy) {
+        int cw = det != null ? det.canonWidth() : 640;
+        int ch = det != null ? det.canonHeight() : 480;
         Point sz = canvas.getSize();
-        double s = Math.min(sz.x / (double) CANON, sz.y / (double) CANON);
+        double s = Math.min(sz.x / (double) cw, sz.y / (double) ch);
         if (s <= 0) {
             return new int[] { 0, 0 };
         }
-        int dx = (int) ((sz.x - CANON * s) / 2);
-        int dy = (int) ((sz.y - CANON * s) / 2);
+        int dx = (int) ((sz.x - cw * s) / 2);
+        int dy = (int) ((sz.y - ch * s) / 2);
         int cx = (int) Math.round((wx - dx) / s);
         int cy = (int) Math.round((wy - dy) / s);
-        cx = Math.max(0, Math.min(CANON, cx));
-        cy = Math.max(0, Math.min(CANON, cy));
+        cx = Math.max(0, Math.min(cw - 1, cx));
+        cy = Math.max(0, Math.min(ch - 1, cy));
         return new int[] { cx, cy };
     }
 
