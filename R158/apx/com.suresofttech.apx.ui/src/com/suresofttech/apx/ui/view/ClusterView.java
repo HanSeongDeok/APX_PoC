@@ -31,6 +31,7 @@ import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.ui.part.ViewPart;
 
+import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
@@ -38,9 +39,7 @@ import com.suresofttech.apx.ui.widget.CameraCanvas;
 import com.suresofttech.apx.ui.widget.TestPlayerDialog;
 
 /**
- * ③ 클러스터 팝업 View — 파이썬 main_window.py 클러스터 탭 이식.
- * 기준영상(팝업 뜬 화면) + 사용자가 팝업 영역을 드래그 → ORB 정렬 후 그 고정 ROI를 NCC 비교.
- * 팝업이 뜨면(유사도 ≥ 임계) PASS. 기어와 동일한 공용 {@link RoiMatchDetector} 사용.
+ * ③ 클러스터 팝업 View — 설정 탭 웹캠·ROI·임계를 재사용. 기준이미지는 클러스터 전용.
  */
 public class ClusterView extends ViewPart {
 
@@ -59,13 +58,26 @@ public class ClusterView extends ViewPart {
     private boolean dragging;
     private int dragX0, dragY0, dragX1, dragY1;
 
+    private final ApxSettings.Listener settingsListener = new ApxSettings.Listener() {
+        public void onSettingsChanged(final ApxSettings s) {
+            if (display == null || display.isDisposed()) {
+                return;
+            }
+            display.asyncExec(new Runnable() {
+                public void run() {
+                    applySharedFromSettings(s);
+                }
+            });
+        }
+    };
+
     @Override
     public void createPartControl(Composite parent) {
         display = parent.getDisplay();
         parent.setLayout(new GridLayout(2, false));
 
         canvas = new CameraCanvas(parent);
-        canvas.setPlaceholder("기준 이미지를 지정하고 웹캠을 켜세요");
+        canvas.setPlaceholder("설정에서 웹캠을 켜고, 팝업 기준 이미지를 지정하세요");
         canvas.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         canvas.setOverlay(new CameraCanvas.Overlay() {
             public void paint(GC gc, double scale, int dx, int dy) {
@@ -101,8 +113,21 @@ public class ClusterView extends ViewPart {
         if (new File(DEFAULT_REF).exists()) {
             setRef(DEFAULT_REF);
         }
+        applySharedFromSettings(ApxSettings.get());
+        ApxSettings.get().addListener(settingsListener);
         startPoll();
         installShortcuts(parent);
+    }
+
+    /** 설정과 공유하는 ROI·임계만 반영 (기준이미지는 클러스터 전용 유지). */
+    private void applySharedFromSettings(ApxSettings s) {
+        if (det == null || canvas == null || canvas.isDisposed()) {
+            return;
+        }
+        if (s.getRoi() != null) {
+            det.setRoi(s.getRoi());
+        }
+        det.setSimThr(s.getSimThr());
     }
 
     /** 파이썬 앱과 동일 단축키 — 이 View에 포커스 있을 때만(4 View 동시 표시라 스코프 필요).
@@ -129,10 +154,12 @@ public class ClusterView extends ViewPart {
                         break;
                     case '-':
                         det.setSimThr(det.getSimThr() - 0.02);
+                        ApxSettings.get().setSimThr(det.getSimThr());
                         break;
                     case '+':
                     case '=':
                         det.setSimThr(det.getSimThr() + 0.02);
+                        ApxSettings.get().setSimThr(det.getSimThr());
                         break;
                     default:
                         return;
@@ -189,6 +216,7 @@ public class ClusterView extends ViewPart {
             public void run() {
                 if (det != null) {
                     det.setSimThr(det.getSimThr() - 0.02);
+                    ApxSettings.get().setSimThr(det.getSimThr());
                 }
             }
         });
@@ -196,6 +224,7 @@ public class ClusterView extends ViewPart {
             public void run() {
                 if (det != null) {
                     det.setSimThr(det.getSimThr() + 0.02);
+                    ApxSettings.get().setSimThr(det.getSimThr());
                 }
             }
         });
@@ -262,10 +291,11 @@ public class ClusterView extends ViewPart {
 
     private void setRef(String path) {
         try {
-            det = new RoiMatchDetector(path, null, RoiMatchDetector.DEFAULT_SIM);
+            ApxSettings s = ApxSettings.get();
+            det = new RoiMatchDetector(path, s.getRoi(), s.getSimThr());
             refPath = path;
             refLabel.setText(new File(path).getName());
-            canvas.setPlaceholder("웹캠을 켜세요 (① 설정) · 영상 위에서 팝업 영역 드래그");
+            canvas.setPlaceholder("설정 웹캠 프레임 재사용 · ROI/임계는 설정과 동기");
         } catch (Exception ex) {
             det = null;
             refLabel.setText("로드 실패: " + ex.getMessage());
@@ -300,7 +330,9 @@ public class ClusterView extends ViewPart {
         int x1 = Math.min(a[0], b[0]);
         int x2 = Math.max(a[0], b[0]);
         if (y2 - y1 >= 6 && x2 - x1 >= 6) {
-            det.setRoi(new int[] { y1, y2, x1, x2 });
+            int[] roi = new int[] { y1, y2, x1, x2 };
+            det.setRoi(roi);
+            ApxSettings.get().setRoi(roi);
         }
         canvas.redraw();
     }
@@ -459,6 +491,12 @@ public class ClusterView extends ViewPart {
         mb.setText("클러스터");
         mb.setMessage(msg);
         mb.open();
+    }
+
+    @Override
+    public void dispose() {
+        ApxSettings.get().removeListener(settingsListener);
+        super.dispose();
     }
 
     @Override

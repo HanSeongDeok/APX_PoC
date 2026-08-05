@@ -55,6 +55,39 @@ public class CameraCanvas extends Canvas {
         }
     }
 
+    /** 현재 표시 중인 프레임 (없으면 null). */
+    public BufferedImage getFrame() {
+        return frame;
+    }
+
+    /**
+     * 위젯 좌표 → 이미지 픽셀 좌표.
+     * {@link #paint} 와 동일하게 비율 유지·중앙 정렬 변환을 쓴다.
+     * @return {x, y} 이미지 좌표 (이미지 없으면 null)
+     */
+    public int[] widgetToImage(int wx, int wy) {
+        BufferedImage f = frame;
+        if (f == null || f.getWidth() <= 0 || f.getHeight() <= 0) {
+            return null;
+        }
+        Point sz = getSize();
+        int iw = f.getWidth();
+        int ih = f.getHeight();
+        double s = Math.min(sz.x / (double) iw, sz.y / (double) ih);
+        if (s <= 0) {
+            return null;
+        }
+        int dw = Math.max(1, (int) (iw * s));
+        int dh = Math.max(1, (int) (ih * s));
+        int dx = (sz.x - dw) / 2;
+        int dy = (sz.y - dh) / 2;
+        int ix = (int) Math.round((wx - dx) / s);
+        int iy = (int) Math.round((wy - dy) / s);
+        ix = Math.max(0, Math.min(iw, ix));
+        iy = Math.max(0, Math.min(ih, iy));
+        return new int[] { ix, iy };
+    }
+
     private void paint(GC gc) {
         Point sz = getSize();
         gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_BLACK));

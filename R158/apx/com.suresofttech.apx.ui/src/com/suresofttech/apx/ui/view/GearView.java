@@ -31,6 +31,7 @@ import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.ui.part.ViewPart;
 
+import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
@@ -38,8 +39,8 @@ import com.suresofttech.apx.ui.widget.CameraCanvas;
 import com.suresofttech.apx.ui.widget.TestPlayerDialog;
 
 /**
- * ② 기어봉 View — R 체결 판정. 채도앵커 폐기, 이미지 유사도 방식(RoiMatchDetector):
- * 기준영상(R 체결) + 사용자가 R 표시 영역을 드래그 → ORB 정렬 후 그 고정 ROI를 NCC 비교.
+ * ② 기어봉 View — R 체결 판정.
+ * 설정 탭({@link ApxSettings})의 웹캠·기준이미지·ROI·임계를 재사용하고 NCC를 표시한다.
  */
 public class GearView extends ViewPart {
 
@@ -50,6 +51,7 @@ public class GearView extends ViewPart {
     private RoiMatchDetector det;
     private String refPath;
     private volatile RoiMatchResult last;
+    private boolean applyingSettings;
 
     private CameraCanvas canvas;
     private Label metrics;
@@ -59,13 +61,26 @@ public class GearView extends ViewPart {
     private boolean dragging;
     private int dragX0, dragY0, dragX1, dragY1;
 
+    private final ApxSettings.Listener settingsListener = new ApxSettings.Listener() {
+        public void onSettingsChanged(final ApxSettings s) {
+            if (display == null || display.isDisposed()) {
+                return;
+            }
+            display.asyncExec(new Runnable() {
+                public void run() {
+                    applyFromSettings(s);
+                }
+            });
+        }
+    };
+
     @Override
     public void createPartControl(Composite parent) {
         display = parent.getDisplay();
         parent.setLayout(new GridLayout(2, false));
 
         canvas = new CameraCanvas(parent);
-        canvas.setPlaceholder("기준 이미지를 지정하고 웹캠을 켜세요");
+        canvas.setPlaceholder("설정에서 웹캠·기준이미지를 지정하세요");
         canvas.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         canvas.setOverlay(new CameraCanvas.Overlay() {
             public void paint(GC gc, double scale, int dx, int dy) {
@@ -74,12 +89,19 @@ public class GearView extends ViewPart {
         });
         canvas.addMouseListener(new MouseAdapter() {
             public void mouseDown(MouseEvent e) {
+                // 설정에서 기준이미지 ON이면 ROI는 설정 값 고정(모니터 모드)
+                if (ApxSettings.get().isUseReferenceImage() && ApxSettings.get().getRoi() != null) {
+                    return;
+                }
                 dragging = true;
                 dragX0 = dragX1 = e.x;
                 dragY0 = dragY1 = e.y;
             }
 
             public void mouseUp(MouseEvent e) {
+                if (!dragging) {
+                    return;
+                }
                 dragging = false;
                 dragX1 = e.x;
                 dragY1 = e.y;
@@ -98,11 +120,40 @@ public class GearView extends ViewPart {
 
         buildSide(parent);
 
-        if (new File(DEFAULT_REF).exists()) {
+        ApxSettings s = ApxSettings.get();
+        String seed = s.getVisionRefPath();
+        if (seed != null && new File(seed).isFile()) {
+            setRef(seed);
+        } else if (new File(DEFAULT_REF).exists()) {
             setRef(DEFAULT_REF);
         }
+        applyFromSettings(s);
+        ApxSettings.get().addListener(settingsListener);
         startPoll();
         installShortcuts(parent);
+    }
+
+    /** 설정 탭 값 → 검출기 반영 (기준이미지·ROI·임계). */
+    private void applyFromSettings(ApxSettings s) {
+        if (canvas == null || canvas.isDisposed()) {
+            return;
+        }
+        applyingSettings = true;
+        try {
+            String path = s.getVisionRefPath();
+            if (path != null && new File(path).isFile()
+                    && (refPath == null || !path.equals(refPath))) {
+                setRef(path);
+            }
+            if (det != null) {
+                if (s.getRoi() != null) {
+                    det.setRoi(s.getRoi());
+                }
+                det.setSimThr(s.getSimThr());
+            }
+        } finally {
+            applyingSettings = false;
+        }
     }
 
     /** 파이썬 앱과 동일 단축키 — 이 View에 포커스 있을 때만(4 View 동시 표시라 스코프 필요).
@@ -129,10 +180,12 @@ public class GearView extends ViewPart {
                         break;
                     case '-':
                         det.setSimThr(det.getSimThr() - 0.02);
+                        ApxSettings.get().setSimThr(det.getSimThr());
                         break;
                     case '+':
                     case '=':
                         det.setSimThr(det.getSimThr() + 0.02);
+                        ApxSettings.get().setSimThr(det.getSimThr());
                         break;
                     default:
                         return;
@@ -189,6 +242,7 @@ public class GearView extends ViewPart {
             public void run() {
                 if (det != null) {
                     det.setSimThr(det.getSimThr() - 0.02);
+                    ApxSettings.get().setSimThr(det.getSimThr());
                 }
             }
         });
@@ -196,6 +250,7 @@ public class GearView extends ViewPart {
             public void run() {
                 if (det != null) {
                     det.setSimThr(det.getSimThr() + 0.02);
+                    ApxSettings.get().setSimThr(det.getSimThr());
                 }
             }
         });
@@ -264,10 +319,16 @@ public class GearView extends ViewPart {
 
     private void setRef(String path) {
         try {
-            det = new RoiMatchDetector(path, null, RoiMatchDetector.DEFAULT_SIM);
+            ApxSettings s = ApxSettings.get();
+            double thr = s.getSimThr();
+            int[] roi = s.getRoi();
+            det = new RoiMatchDetector(path, roi, thr);
             refPath = path;
             refLabel.setText(new File(path).getName());
-            canvas.setPlaceholder("웹캠을 켜세요 (① 설정) · 영상 위에서 R 영역 드래그");
+            canvas.setPlaceholder("설정 웹캠 프레임 재사용 · ROI/임계는 설정과 동기");
+            if (!applyingSettings) {
+                s.setVisionRefPath(path);
+            }
         } catch (Exception ex) {
             det = null;
             refLabel.setText("로드 실패: " + ex.getMessage());
@@ -302,7 +363,9 @@ public class GearView extends ViewPart {
         int x1 = Math.min(a[0], b[0]);
         int x2 = Math.max(a[0], b[0]);
         if (y2 - y1 >= 6 && x2 - x1 >= 6) {
-            det.setRoi(new int[] { y1, y2, x1, x2 });
+            int[] roi = new int[] { y1, y2, x1, x2 };
+            det.setRoi(roi);
+            ApxSettings.get().setRoi(roi);
         }
         canvas.redraw();
     }
@@ -461,6 +524,12 @@ public class GearView extends ViewPart {
         mb.setText("기어");
         mb.setMessage(msg);
         mb.open();
+    }
+
+    @Override
+    public void dispose() {
+        ApxSettings.get().removeListener(settingsListener);
+        super.dispose();
     }
 
     @Override
