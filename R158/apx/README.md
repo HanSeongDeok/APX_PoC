@@ -66,9 +66,20 @@ java -cp bin com.suresofttech.apx.core.audio.SelfCheck      # → ALL PASS
 SelfCheck 는 파이썬에서 돌린 것과 동일 시나리오(일치 PASS, 900Hz 불일치 FAIL, AND 게이트, Tone 5.28s)를 검증.
 
 ### UI 번들 — Eclipse PDE 필요
-1. Eclipse(레거시, 3.x 타겟)에서 두 프로젝트 Import (기존 `.project`/`.classpath` 포함)
-2. UI 번들은 `org.eclipse.ui`, `org.eclipse.swt` 타겟 플랫폼 필요 (javac 단독 컴파일 불가)
-3. Run As → Eclipse Application, Perspective = "R158 검증"
+
+**Import 경로 (이동 후):** `R158/apx/com.suresofttech.apx.core`, `R158/apx/com.suresofttech.apx.ui`  
+(예전 `poc/r158/apx_app_java/...` 프로젝트가 워크스페이스에 있으면 먼저 제거)
+
+1. **File → Import → Existing Projects into Workspace**
+   - root: `R158/apx` (또는 두 플러그인 폴더를 각각 선택)
+   - `com.suresofttech.apx.core`, `com.suresofttech.apx.ui` 둘 다 체크
+2. **Target Platform** (중요): Window → Preferences → Plug-in Development → Target Platform  
+   - Eclipse SDK / RCP가 포함된 active target 필요  
+   - `org.eclipse.ui` 등이 빨간불이면 Target이 비어 있는 상태
+3. **JRE**: JavaSE-1.8 실행 환경이 잡혀 있어야 함 (Project → Properties → Java Build Path)
+4. core `lib/opencv-4.9.0-0.jar` 로컬 배치 확인 (`VISION_SETUP.md`)
+5. 두 프로젝트에서 **Project → Clean**, 필요 시 MANIFEST.MF 우클릭 → PDE Tools → Update Classpath
+6. Run As → Eclipse Application, Perspective = "R158 검증"
 
 ## 이식 시 주의 (엔진)
 
