@@ -391,13 +391,20 @@ public class AudioScope extends Canvas {
         gc.setAlpha(prevAlpha);
     }
 
-    /** 차트 공통 골격 — 플롯영역(오른쪽 범례 공간)·제목·범례·ms X축. */
+    /** 차트 공통 골격 — 플롯영역·제목·ms X축. showLegend=false 면 범례 자리까지 플롯에 사용. */
     private XYChart baseChart(int w, int h, String title, int approxTicks) {
+        return baseChart(w, h, title, approxTicks, true);
+    }
+
+    private XYChart baseChart(int w, int h, String title, int approxTicks, boolean showLegend) {
         XYChart c = new XYChart(w, h, BG);
-        int plotW = Math.max(1, w - 52 - LEGEND_W - 8);
+        int right = showLegend ? (LEGEND_W + 8) : 12;
+        int plotW = Math.max(1, w - 52 - right);
         c.setPlotArea(52, 24, plotW, Math.max(1, h - 54), BG, -1, 0xdddddd, 0xf0f0f0, -1);
         c.addTitle(title, FONT, 9);
-        c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
+        if (showLegend) {
+            c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
+        }
         // 눈금을 정수 그리드에 정렬(라이브 이동 시 소수점 라벨 방지) + 정수 ms 포맷
         double tick = msTick(winMax - winMin, approxTicks);
         axLo = Math.floor(winMin / tick) * tick;
@@ -410,10 +417,11 @@ public class AudioScope extends Canvas {
         return c;
     }
 
-    /** ① 파형 크기 포락선 — 라이브 채움(반투명 파랑). */
+    /** ① 파형 크기 포락선 — 채움. Y축은 진폭 ±1 → ±100%. 범례 없음. */
     private byte[] wavePng(int w, int h) {
-        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", TICK_APPROX);
-        c.yAxis().setLinearScale(-1.0, 1.0, 0.5);
+        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", TICK_APPROX, false);
+        c.yAxis().setLinearScale(-100, 100, 50);   // 100% / 50% / 0% / -50% / -100%
+        c.yAxis().setLabelFormat("{value}%");
         int n = eCount;
         double[] tx = new double[n];
         double[] hi = new double[n];
@@ -426,15 +434,15 @@ public class AudioScope extends Canvas {
                 continue;
             }
             tx[m] = t;
-            hi[m] = eHi[p];
-            lo[m] = eLo[p];
+            hi[m] = eHi[p] * 100.0;   // [-1,1] → [-100,100]%
+            lo[m] = eLo[p] * 100.0;
             m++;
         }
         if (m >= 2) {
             double[] tX = Arrays.copyOf(tx, m);
-            AreaLayer ah = c.addAreaLayer(Arrays.copyOf(hi, m), C_FILL, "라이브");   // 0..+peak
+            AreaLayer ah = c.addAreaLayer(Arrays.copyOf(hi, m), C_FILL);   // 0..+peak
             ah.setXData(tX);
-            AreaLayer al = c.addAreaLayer(Arrays.copyOf(lo, m), C_FILL);            // 0..-peak (범례 중복 방지: 무명)
+            AreaLayer al = c.addAreaLayer(Arrays.copyOf(lo, m), C_FILL);   // 0..-peak
             al.setXData(tX);
         }
         return c.makeChart2(Chart.PNG);
