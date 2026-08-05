@@ -19,7 +19,6 @@ import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.ui.widget.AudioScope;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * AudioScope + 파형 측정/초기화 — matcher·capture·틱 내장.
@@ -39,7 +38,6 @@ public class ExpectedAudioMeasurePane extends Composite {
     private volatile MatchResult latestMatch;
     private volatile long capturedSamples;
     private String loadedPath;
-    private StatusSink status;
     private Runnable beforeMeasureStart;
     private MicDeviceProvider micProvider;
     private boolean tickPolling;
@@ -116,9 +114,6 @@ public class ExpectedAudioMeasurePane extends Composite {
         startMeasureTick();
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     public void setBeforeMeasureStart(Runnable r) {
         this.beforeMeasureStart = r;
@@ -298,8 +293,6 @@ public class ExpectedAudioMeasurePane extends Composite {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

@@ -13,7 +13,6 @@ Require-Bundle: org.eclipse.ui;bundle-version="3.0.0",
  com.suresofttech.apx.core;bundle-version="0.1.0"
 Bundle-ActivationPolicy: lazy
 Export-Package: com.suresofttech.apx.ui.widget,
- com.suresofttech.apx.ui.widget.settings,
  com.suresofttech.apx.ui.widget.settings.vision,
  com.suresofttech.apx.ui.widget.settings.audio,
  com.suresofttech.apx.ui.widget.settings.rear

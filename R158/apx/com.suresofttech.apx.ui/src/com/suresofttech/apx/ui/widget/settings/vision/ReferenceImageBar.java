@@ -16,8 +16,6 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.settings.SettingsUi;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * 기준 이미지 사용 체크 + 경로 + 파일 선택 — {@link ApxSettings} 연동.
@@ -29,7 +27,6 @@ public class ReferenceImageBar extends Composite {
     private final Text refPathText;
     private final Button refPickBtn;
     private final ApxSettings.Listener settingsListener;
-    private StatusSink status;
 
     public ReferenceImageBar(Composite parent) {
         super(parent, SWT.NONE);
@@ -49,7 +46,7 @@ public class ReferenceImageBar extends Composite {
                 applyUseRefUi();
                 msg(useRefChk.getSelection()
                         ? "기준 이미지 모드 ON"
-                        : "기준 이미지 모드 OFF — 드래그로 ROI 지정");
+                        : "기준 이미지 모드 OFF  (드래그로 ROI 지정)");
             }
         });
 
@@ -107,13 +104,10 @@ public class ReferenceImageBar extends Composite {
         refreshPathText();
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     public void ensureDefaultRefIfMissing() {
-        if (settings.getVisionRefPath() == null && new File(SettingsUi.DEFAULT_REF).exists()) {
-            settings.setVisionRefPath(SettingsUi.DEFAULT_REF);
+        if (settings.getVisionRefPath() == null) {
+            settings.setVisionRefPath("png 파일을 선택하세요");
             refreshPathText();
         }
     }
@@ -137,8 +131,6 @@ public class ReferenceImageBar extends Composite {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

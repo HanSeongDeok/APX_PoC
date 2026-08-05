@@ -12,7 +12,6 @@ import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 
 import com.suresofttech.apx.core.vision.CameraService;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * 웹캠 콤보 + 새로고침 — {@link CameraService} 사용.
@@ -22,7 +21,6 @@ public class CameraSelectBar extends Composite {
     private final Combo camCombo;
     private List<CameraService.Cam> cams;
     private WebcamRoiPane roiPane;
-    private StatusSink status;
 
     public CameraSelectBar(Composite parent) {
         super(parent, SWT.NONE);
@@ -52,9 +50,6 @@ public class CameraSelectBar extends Composite {
         this.roiPane = pane;
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     public void refreshCameras() {
         cams = CameraService.get().list();
@@ -87,7 +82,6 @@ public class CameraSelectBar extends Composite {
         if (roiPane != null) {
             roiPane.setPlaceholder(ok ? "(신호 대기…)" : "웹캠 열기 실패");
         }
-        msg(ok ? "웹캠·기준이미지를 설정하세요." : "웹캠 열기 실패");
     }
 
     public boolean setFocusToCombo() {
@@ -98,8 +92,6 @@ public class CameraSelectBar extends Composite {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

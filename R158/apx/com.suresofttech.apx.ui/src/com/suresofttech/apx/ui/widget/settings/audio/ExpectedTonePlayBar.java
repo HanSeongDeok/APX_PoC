@@ -16,7 +16,6 @@ import org.eclipse.swt.widgets.Display;
 import com.suresofttech.apx.core.audio.TonePlayer;
 import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * 기대음 재생/정지 토글 — {@link TonePlayer}.
@@ -27,7 +26,6 @@ public class ExpectedTonePlayBar extends Composite {
     private final ApxSettings settings = ApxSettings.get();
     private final TonePlayer tonePlayer = new TonePlayer();
     private final Button playBtn;
-    private StatusSink status;
     private boolean syncPolling;
     private double[] samples;
     private int sampleRate;
@@ -60,9 +58,6 @@ public class ExpectedTonePlayBar extends Composite {
         startSyncPoll();
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     private void onPlay(boolean on) {
         if (on) {
@@ -128,8 +123,6 @@ public class ExpectedTonePlayBar extends Composite {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

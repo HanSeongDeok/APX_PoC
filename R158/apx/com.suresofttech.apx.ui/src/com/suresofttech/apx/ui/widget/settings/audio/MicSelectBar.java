@@ -19,7 +19,6 @@ import org.eclipse.swt.widgets.ProgressBar;
 import com.suresofttech.apx.core.audio.AudioCapture;
 import com.suresofttech.apx.core.audio.MicMeter;
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * 마이크 콤보 + 새로고침 + 입력 레벨 + 테스트 — {@link MicMeter}.
@@ -33,7 +32,6 @@ public class MicSelectBar extends Composite implements MicDeviceProvider {
     private final ProgressBar levelBar;
     private final Button micTestBtn;
     private List<AudioCapture.Device> micDevices;
-    private StatusSink status;
     private Runnable beforeTestStart;
     private boolean levelPolling;
 
@@ -97,9 +95,6 @@ public class MicSelectBar extends Composite implements MicDeviceProvider {
         startLevelPoll();
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     public void setBeforeTestStart(Runnable r) {
         this.beforeTestStart = r;
@@ -181,8 +176,6 @@ public class MicSelectBar extends Composite implements MicDeviceProvider {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

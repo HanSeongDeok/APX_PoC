@@ -13,10 +13,9 @@ import org.eclipse.swt.widgets.Label;
 
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
-import com.suresofttech.apx.ui.widget.settings.SettingsUi;
 
 /**
- * NCC 임계 ± + 매칭도 라벨 — {@link ApxSettings#setSimThr}.
+ * NCC 임계 + 매칭도 라벨 - {@link ApxSettings#setSimThr}.
  */
 public class VisionThresholdBar extends Composite {
 
@@ -45,7 +44,7 @@ public class VisionThresholdBar extends Composite {
         thrMinus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrMinus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() - SettingsUi.THR_STEP);
+                settings.setSimThr(settings.getSimThr() - 0.05);
                 if (roiPane != null) {
                     roiPane.applySimThrFromSettings();
                 }
@@ -57,7 +56,7 @@ public class VisionThresholdBar extends Composite {
         thrPlus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrPlus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() + SettingsUi.THR_STEP);
+                settings.setSimThr(settings.getSimThr() + 0.05);
                 if (roiPane != null) {
                     roiPane.applySimThrFromSettings();
                 }
@@ -108,7 +107,7 @@ public class VisionThresholdBar extends Composite {
         }
         double thr = settings.getSimThr();
         if (r == null || !"ok".equals(r.state)) {
-            matchLabel.setText(String.format("매칭도 (NCC) —  ·  임계치 %.0f%%", thr * 100));
+            matchLabel.setText(String.format("매칭도 (NCC) --  /  임계치 %.0f%%", thr * 100));
             return;
         }
         String cmp = r.ncc >= thr ? ">" : "<";

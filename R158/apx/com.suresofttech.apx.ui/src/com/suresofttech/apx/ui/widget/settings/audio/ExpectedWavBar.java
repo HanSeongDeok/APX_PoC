@@ -16,7 +16,6 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.settings.StatusSink;
 
 /**
  * 기대 경고음 .wav 경로 + 파일 선택 — {@link ApxSettings}.
@@ -26,7 +25,6 @@ public class ExpectedWavBar extends Composite {
     private final ApxSettings settings = ApxSettings.get();
     private final Text wavPathText;
     private final ApxSettings.Listener settingsListener;
-    private StatusSink status;
 
     public ExpectedWavBar(Composite parent) {
         super(parent, SWT.NONE);
@@ -81,9 +79,6 @@ public class ExpectedWavBar extends Composite {
         refreshPathText();
     }
 
-    public void setStatusSink(StatusSink sink) {
-        this.status = sink;
-    }
 
     private void refreshPathText() {
         if (wavPathText == null || wavPathText.isDisposed()) {
@@ -94,8 +89,6 @@ public class ExpectedWavBar extends Composite {
     }
 
     private void msg(String m) {
-        if (status != null) {
-            status.setMessage(m);
-        }
+        // 상태 표시 제거(미니멀)
     }
 }

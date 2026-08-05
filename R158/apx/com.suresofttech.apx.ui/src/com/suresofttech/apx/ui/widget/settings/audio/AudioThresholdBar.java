@@ -12,7 +12,6 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
 
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.settings.SettingsUi;
 
 /**
  * 주파수·파형 임계 ± — {@link ApxSettings#setAudioThresholds}.
@@ -48,8 +47,8 @@ public class AudioThresholdBar extends Composite {
         minus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 settings.setAudioThresholds(
-                        settings.getAudioFreqThr() - SettingsUi.THR_STEP,
-                        settings.getAudioWaveThr() - SettingsUi.THR_STEP);
+                        settings.getAudioFreqThr() - 0.05,
+                        settings.getAudioWaveThr() - 0.05);
                 updateLabel();
             }
         });
@@ -59,8 +58,8 @@ public class AudioThresholdBar extends Composite {
         plus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 settings.setAudioThresholds(
-                        settings.getAudioFreqThr() + SettingsUi.THR_STEP,
-                        settings.getAudioWaveThr() + SettingsUi.THR_STEP);
+                        settings.getAudioFreqThr() + 0.05,
+                        settings.getAudioWaveThr() + 0.05);
                 updateLabel();
             }
         });
