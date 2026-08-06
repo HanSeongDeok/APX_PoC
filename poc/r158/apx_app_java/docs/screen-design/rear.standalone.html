@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R158 후방 검측 탭 — 화면설계</title>
+<style>
+  html,body{margin:0;padding:0;height:100%}
+  :root{
+    --app:#f0f0f0; --ink:#1a1a1a; --muted:#5a5a5a; --faint:#8a8a8a;
+    --btn-top:#fdfdfd; --btn-bot:#e6e6e6; --btn-br:#adadad;
+    --line:#cfcfcf; --accent:#0a64c8; --field:#ffffff;
+    --board:#f4f4f6; --board-edge:#787882;
+    --dot:#dcdce0; --dot-edge:#aaaab2;
+    --fail:#961414; --pass:#28aa46; --meas:#e6c828; --sel:#82828a;   /* SELECT=회색 */
+    --sans:"Malgun Gothic","Segoe UI",system-ui,sans-serif;
+    --mono:Consolas,ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  .page{background:#c9c9c9;min-height:100%;padding:22px;font-family:var(--sans);color:var(--ink)}
+  .wrap{max-width:920px;margin:0 auto}
+  .capnote{font-size:12px;color:var(--muted);margin:0 0 8px;font-family:var(--mono)}
+
+  .win{border:1px solid #7a7a7a;border-radius:3px;overflow:hidden;box-shadow:0 6px 22px rgba(0,0,0,.28);background:#fff}
+  .chrome{background:linear-gradient(#f7f7f7,#e4e4e4);border-bottom:1px solid #b6b6b6;
+    display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12.5px;color:#222}
+  .chrome .x{margin-left:auto;color:#666}
+  .tabbar{display:flex;gap:0;background:var(--app);border-bottom:1px solid var(--line);padding:0 8px}
+  .tb{font-size:12.5px;padding:6px 14px;border:1px solid transparent;border-bottom:none;color:var(--muted)}
+  .tb.on{background:var(--field);border-color:var(--line);border-radius:4px 4px 0 0;color:var(--ink);position:relative;top:1px}
+
+  .body{background:#fff;padding:10px 12px 14px;display:flex;flex-direction:column;gap:10px;min-height:480px}
+
+  /* 컨트롤 바 */
+  .bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;font-size:12.5px}
+  .bar .lab{color:var(--ink)}
+  .radio,.check{display:inline-flex;align-items:center;gap:5px;cursor:default}
+  .radio i,.check i{width:13px;height:13px;border:1px solid #777;border-radius:50%;display:inline-block;position:relative;background:#fff}
+  .radio.on i{border-color:var(--accent)}
+  .radio.on i::after{content:"";position:absolute;inset:2px;border-radius:50%;background:var(--accent)}
+  .check i{border-radius:2px}
+  .check.on i{background:var(--accent);border-color:var(--accent)}
+  .check.on i::after{content:"";position:absolute;left:3px;top:1px;width:5px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .combo{display:inline-flex;align-items:center;gap:6px;background:var(--field);border:1px solid var(--line);
+    border-radius:2px;padding:3px 8px;min-width:72px;font-size:12.5px}
+  .combo .chev{margin-left:auto;color:#666;font-size:10px}
+  .spin{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:2px;background:#fff;overflow:hidden}
+  .spin .v{padding:2px 8px;min-width:28px;text-align:center;font-size:12.5px;border-right:1px solid var(--line)}
+  .spin .arr{display:flex;flex-direction:column;width:14px}
+  .spin .arr b{flex:1;font-size:7px;line-height:1;text-align:center;color:#555;border-bottom:1px solid var(--line)}
+  .spin .arr b:last-child{border:none}
+  .xmark{color:var(--muted);padding:0 2px}
+  .btn{font-family:var(--sans);font-size:12.5px;color:var(--ink);cursor:pointer;
+    background:linear-gradient(var(--btn-top),var(--btn-bot));border:1px solid var(--btn-br);
+    border-radius:3px;padding:5px 12px;box-shadow:0 1px 0 rgba(255,255,255,.5) inset}
+  .btn:active{background:linear-gradient(var(--btn-bot),var(--btn-top))}
+
+  /* 메인 캔버스 */
+  .stage{flex:1;display:grid;grid-template-columns:minmax(160px,220px) 1fr minmax(130px,150px);gap:8px;align-items:stretch;min-height:380px}
+  .car{display:flex;align-items:center;justify-content:flex-end;padding-right:2px}
+  .car img{max-width:100%;max-height:340px;object-fit:contain;display:block}
+  .car .fallback{width:160px;height:280px;border:1.5px solid #787880;border-radius:8px 4px 4px 8px;
+    background:linear-gradient(90deg,#f0f0f2 0%,#e8e8ec 40%,#f6f6f8 100%);position:relative}
+  .car .fallback::before{content:"";position:absolute;left:18%;top:18%;right:10%;bottom:18%;border:1px solid #9a9aa2;border-radius:6px}
+  .car .fallback::after{content:"";position:absolute;right:0;top:28%;bottom:28%;width:10px;background:#c8c8d0;border-radius:2px 0 0 2px}
+
+  .board-wrap{display:flex;align-items:center;justify-content:flex-start;min-width:0}
+  .board{background:var(--board);border:1.5px solid var(--board-edge);border-radius:2px;
+    width:100%;max-width:280px;aspect-ratio:4/6;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(6,1fr);
+    padding:14px;gap:0;place-items:center}
+  .dot{width:14px;height:14px;border-radius:50%;background:var(--dot);border:1px solid var(--dot-edge);box-sizing:border-box;cursor:context-menu}
+  .dot.fail{width:22px;height:22px;background:var(--fail);border:2px solid #141414}
+  .dot.pass{width:22px;height:22px;background:var(--pass);border:2px solid #141414}
+  .dot.meas{width:22px;height:22px;background:var(--meas);border:2px solid #141414}
+  .dot.sel{width:20px;height:20px;background:var(--sel);border:2px solid #141414}   /* SELECT=회색 */
+
+  .legend{align-self:center;justify-self:end;border:1px solid #b0b0b8;border-radius:4px;padding:10px 12px;background:#fff;min-width:120px}
+  .legend .row{display:flex;align-items:center;gap:8px;font-size:12px;color:#444;padding:4px 0}
+  .legend .sw{width:14px;height:14px;border-radius:50%;border:1px solid #aaa;flex:0 0 auto}
+  .legend .sw.s{background:var(--sel);border-color:#4a4a52}
+  .legend .sw.m{background:var(--meas);border-color:#b89610}
+  .legend .sw.p{background:var(--pass);border-color:#1a6e2e}
+  .legend .sw.f{background:var(--fail);border-color:#5a1010}
+
+  /* 우클릭 색상 메뉴 */
+  .ctxmenu{position:fixed;z-index:50;display:none;min-width:130px;background:#fff;border:1px solid #9a9aa2;
+    border-radius:4px;box-shadow:0 6px 20px rgba(0,0,0,.22);padding:4px 0;font-size:12.5px}
+  .ctxmenu.on{display:block}
+  .ctxmenu .mi{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;color:#222}
+  .ctxmenu .mi:hover{background:#eaf1fb}
+  .ctxmenu .mi .sw{width:12px;height:12px;border-radius:50%;border:1px solid #888}
+
+  .anno{margin-top:14px;border:1px dashed var(--line);border-radius:5px;padding:12px 14px;background:var(--field)}
+  .anno h3{margin:0 0 8px;font-size:12px;font-family:var(--mono);color:var(--muted);letter-spacing:.03em}
+  .anno .r{display:grid;grid-template-columns:170px 1fr;gap:8px;font-size:12px;padding:5px 0;border-top:1px solid var(--line)}
+  .anno .r:first-of-type{border-top:none}
+  .anno .r .a{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .anno .r .a b{color:var(--accent)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:2px}
+</style>
+</head>
+<body>
+<div class="page"><div class="wrap">
+  <p class="capnote">R158 · 후방 검측 탭 화면설계 (RearGridPanel 실화면 기준) · 목업(우클릭·버튼 동작)</p>
+
+  <div class="win">
+    <div class="chrome">R158 UX 정합성 검증 도구 <span class="x">▢ ✕</span></div>
+    <div class="tabbar">
+      <span class="tb">동기화</span><span class="tb">비전</span><span class="tb">음향</span>
+      <span class="tb on">후방</span><span class="tb">설정</span>
+    </div>
+
+    <div class="body">
+      <div class="bar">
+        <span class="lab">격자 크기</span>
+        <span class="radio on"><i></i>콤보박스</span>
+        <span class="radio"><i></i>커스텀</span>
+        <span class="combo">4 x 6 <span class="chev">▾</span></span>
+        <span class="spin"><span class="v">4</span><span class="arr"><b>▴</b><b>▾</b></span></span>
+        <span class="xmark">x</span>
+        <span class="spin"><span class="v">6</span><span class="arr"><b>▴</b><b>▾</b></span></span>
+        <span class="check on"><i></i>범례</span>
+        <button class="btn" id="selAll">전체 선택</button>
+        <button class="btn" id="clearAll">초기화</button>
+      </div>
+
+      <div class="stage">
+        <div class="car">
+          <img src="../../../expected/car_rear_white.png" alt="차량 후방" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <div class="fallback" style="display:none"></div>
+        </div>
+
+        <div class="board-wrap">
+          <div class="board" id="grid"></div>
+        </div>
+
+        <div class="legend">
+          <div class="row"><span class="sw s"></span>SELECT</div>
+          <div class="row"><span class="sw m"></span>MEASURING</div>
+          <div class="row"><span class="sw p"></span>PASS</div>
+          <div class="row"><span class="sw f"></span>FAIL</div>
+        </div>
+      </div>
+      <p class="hint">· 점을 <b>마우스 우클릭</b>하면 색상(SELECT/MEASURING/PASS/FAIL) 지정 · <b>전체 선택</b>/<b>초기화</b> 버튼</p>
+    </div>
+  </div>
+
+  <!-- 우클릭 색상 메뉴 -->
+  <div class="ctxmenu" id="ctx">
+    <div class="mi" data-cls="sel"><span class="sw" style="background:var(--sel)"></span>SELECT (지정)</div>
+    <div class="mi" data-cls="meas"><span class="sw" style="background:var(--meas)"></span>MEASURING</div>
+    <div class="mi" data-cls="pass"><span class="sw" style="background:var(--pass)"></span>PASS</div>
+    <div class="mi" data-cls="fail"><span class="sw" style="background:var(--fail)"></span>FAIL</div>
+    <div class="mi" data-cls=""><span class="sw" style="background:var(--dot)"></span>해제 (DEFAULT)</div>
+  </div>
+
+  <div class="anno">
+    <h3>화면 요소 → API / 위젯</h3>
+    <div class="r"><span>격자 크기 라디오</span><span class="a"><b>RearGridPanel</b> presetRadio / customRadio</span></div>
+    <div class="r"><span>콤보 4×6 / 8×12 / 10×14</span><span class="a"><b>PRESETS</b> → canvas.setGrid</span></div>
+    <div class="r"><span>커스텀 열×행</span><span class="a">colSpin × rowSpin → applyCustom</span></div>
+    <div class="r"><span>범례 체크</span><span class="a">canvas.setShowLegend · SELECT(회색)/MEASURING/PASS/FAIL</span></div>
+    <div class="r"><span>전체 선택 / 초기화</span><span class="a"><b>canvas.selectAll()</b> / <b>canvas.clearAll()</b> (※ 실제 탭 버튼은 제거 — 목업만)</span></div>
+    <div class="r"><span>점 우클릭 색상 지정</span><span class="a">우클릭 → <b>setPointVerdict(c,r,Verdict)</b> (SELECT=지정 회색)</span></div>
+    <div class="r"><span>모든 TC 포인트 통합</span><span class="a"><b>showAll(List&lt;VerdictResult&gt;)</b> → canvas.setVerdicts</span></div>
+    <div class="r"><span>차량 이미지</span><span class="a">canvas.setCarImage (expected/car_rear_white.png)</span></div>
+  </div>
+</div></div>
+
+<script>
+  (function () {
+    var cols = 4, rows = 6;
+    var g = document.getElementById('grid');
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var d = document.createElement('span');
+        d.className = 'dot';
+        d.dataset.c = c; d.dataset.r = r;
+        g.appendChild(d);
+      }
+    }
+    // 초기 상태: FAIL 예시 1개 (screenshot 기준 c1,r1)
+    g.children[1 * cols + 1].classList.add('fail');
+
+    var dots = g.querySelectorAll('.dot');
+    function setDot(dot, cls) {
+      dot.className = 'dot';
+      if (cls) dot.classList.add(cls);
+    }
+
+    // 전체 선택 / 초기화
+    document.getElementById('selAll').addEventListener('click', function () {
+      dots.forEach(function (d) { setDot(d, 'sel'); });
+    });
+    document.getElementById('clearAll').addEventListener('click', function () {
+      dots.forEach(function (d) { setDot(d, ''); });
+    });
+
+    // 우클릭 색상 메뉴
+    var ctx = document.getElementById('ctx');
+    var target = null;
+    dots.forEach(function (d) {
+      d.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        target = d;
+        ctx.style.left = e.clientX + 'px';
+        ctx.style.top = e.clientY + 'px';
+        ctx.classList.add('on');
+      });
+    });
+    ctx.querySelectorAll('.mi').forEach(function (mi) {
+      mi.addEventListener('click', function () {
+        if (target) setDot(target, mi.dataset.cls);
+        ctx.classList.remove('on');
+      });
+    });
+    document.addEventListener('click', function () { ctx.classList.remove('on'); });
+    document.addEventListener('contextmenu', function (e) {
+      if (!e.target.classList || !e.target.classList.contains('dot')) ctx.classList.remove('on');
+    });
+  })();
+</script>
+</body>
+</html>

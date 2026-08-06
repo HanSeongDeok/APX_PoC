@@ -1,0 +1,20 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: APX Core (R158 검증 엔진)
+Bundle-SymbolicName: com.suresofttech.apx.core
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: SureSoftTech
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Bundle-ClassPath: .,
+ lib/webcam-capture-0.3.12.jar,
+ lib/bridj-0.7.0.jar,
+ lib/slf4j-api-1.7.2.jar,
+ lib/opencv-4.9.0-0.jar,
+ lib/JTransforms-3.1.jar,
+ lib/JLargeArrays-1.6.jar,
+ lib/commons-math3-3.6.1.jar
+Export-Package: com.suresofttech.apx.core.audio,
+ com.suresofttech.apx.core.dsp,
+ com.suresofttech.apx.core.rear,
+ com.suresofttech.apx.core.sync,
+ com.suresofttech.apx.core.vision
