@@ -28,5 +28,10 @@
             class="com.suresofttech.apx.client.view.SettingsClientView"
             id="com.suresofttech.apx.client.view.settings"
             name="설정 (APX 모듈)"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.SettingsClientView2"
+            id="com.suresofttech.apx.client.view.settings2"
+            name="설정 (커스텀 파라미터)"/>
    </extension>
 </plugin>

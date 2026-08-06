@@ -25,10 +25,11 @@ Require-Bundle:
   org.eclipse.core.runtime
   org.eclipse.equinox.app
   com.suresofttech.apx.core   ← workspace 플러그인
-  com.suresofttech.apx.ui     ← SettingsPanel
+  com.suresofttech.apx.ui     ← settings.vision / settings.audio 단위 바
 ```
 
-설정 UI는 `SettingsClientView` → `new SettingsPanel(parent)`.
+설정 UI는 `SettingsClientView`가 vision/audio **최소 단위를 직접 조립**한다  
+(상세·다이어그램: `com.suresofttech.apx.ui/docs/SETTINGS_COMPONENTS.md`).
 
 ## 외부에 JAR만 넘길 때 (선택)
 
