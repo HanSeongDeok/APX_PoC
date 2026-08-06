@@ -15,7 +15,7 @@
 | `RearGrid` | 격자·지정 포인트 **데이터**(SWT無·DB無) | core |
 | `Verdict` | 포인트 판정 상태 enum | core |
 | `VerdictResult` | 포인트 판정 **결과 값 객체**(위치 + 판정). TC는 클라 영역 | core |
-| `RearGridCanvas` | 차량 이미지 + 포인트 판 **그림 위젯** (extends Canvas) | ui.widget |
+| `RearGridCanvas` | 차량 이미지 + 포인트 판 **그림 위젯** (extends Canvas) | ui.widget.settings.rear |
 | `RearGridControlBar` | 가로·세로 + 격자 생성·지정해제·범례 (선택) | ui.widget |
 | `RearGridPresetCombo` | 고정 크기 프리셋 콤보 (선택) | ui.widget |
 
@@ -521,7 +521,8 @@ sequenceDiagram
 ### 10.1 패키지 구성
 ```
 com.suresofttech.apx.core.rear     (SWT無)  : RearGrid, Verdict, VerdictResult  (좌표는 java.awt.Point)
-com.suresofttech.apx.ui.widget     (SWT)    : RearGridCanvas, RearGridControlBar, RearGridPresetCombo
+com.suresofttech.apx.ui.widget.settings.rear (SWT) : RearGridCanvas
+com.suresofttech.apx.ui.widget     (SWT)    : RearGridControlBar, RearGridPresetCombo, RearGridPanel
 ```
 
 ### 10.2 의존성
