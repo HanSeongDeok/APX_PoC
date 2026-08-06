@@ -1,4 +1,4 @@
-﻿package com.suresofttech.apx.ui.widget.settings.vision;
+package com.suresofttech.apx.ui.widget.settings.vision;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
@@ -12,21 +12,37 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
 
 import com.suresofttech.apx.core.config.ApxSettings;
+import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
  * NCC 임계 + 매칭도 라벨 - {@link ApxSettings#setSimThr}.
+ * 매칭 소스는 {@link #setRoiNcc(RoiNcc)}.
  */
 public class VisionThresholdBar extends Composite {
 
+    public static final class Cfg {
+        public double defaultThr = RoiMatchDetector.DEFAULT_SIM;
+        public double step = 0.05;
+        public String minusText = "임계 -";
+        public String plusText = "임계 +";
+    }
+
     private final ApxSettings settings = ApxSettings.get();
+    private final Cfg cfg;
     private final Label matchLabel;
     private final ApxSettings.Listener settingsListener;
-    private WebcamRoiPane roiPane;
+    private RoiNcc roiNcc;
     private RoiMatchResult last;
 
     public VisionThresholdBar(Composite parent) {
+        this(parent, new Cfg());
+    }
+
+    public VisionThresholdBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
+        this.cfg = (cfg != null) ? cfg : new Cfg();
+        settings.setSimThr(this.cfg.defaultThr);
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;
@@ -40,25 +56,25 @@ public class VisionThresholdBar extends Composite {
         thrRow.setLayout(new GridLayout(2, true));
         thrRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         Button thrMinus = new Button(thrRow, SWT.PUSH);
-        thrMinus.setText("임계 -");
+        thrMinus.setText(this.cfg.minusText);
         thrMinus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrMinus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() - 0.05);
-                if (roiPane != null) {
-                    roiPane.applySimThrFromSettings();
+                settings.setSimThr(settings.getSimThr() - cfg.step);
+                if (roiNcc != null) {
+                    roiNcc.applySimThrFromSettings();
                 }
                 updateMatchLabel(last);
             }
         });
         Button thrPlus = new Button(thrRow, SWT.PUSH);
-        thrPlus.setText("임계 +");
+        thrPlus.setText(this.cfg.plusText);
         thrPlus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrPlus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() + 0.05);
-                if (roiPane != null) {
-                    roiPane.applySimThrFromSettings();
+                settings.setSimThr(settings.getSimThr() + cfg.step);
+                if (roiNcc != null) {
+                    roiNcc.applySimThrFromSettings();
                 }
                 updateMatchLabel(last);
             }
@@ -87,10 +103,10 @@ public class VisionThresholdBar extends Composite {
         updateMatchLabel(null);
     }
 
-    public void setRoiPane(WebcamRoiPane pane) {
-        this.roiPane = pane;
-        if (pane != null) {
-            pane.setMatchListener(new WebcamRoiPane.MatchListener() {
+    public void setRoiNcc(RoiNcc roi) {
+        this.roiNcc = roi;
+        if (roi != null) {
+            roi.setMatchListener(new RoiNcc.MatchListener() {
                 public void onMatch(RoiMatchResult r) {
                     last = r;
                     if (!isDisposed()) {

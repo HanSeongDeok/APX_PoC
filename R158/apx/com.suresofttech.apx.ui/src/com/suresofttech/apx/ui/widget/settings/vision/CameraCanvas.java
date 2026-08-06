@@ -1,4 +1,4 @@
-package com.suresofttech.apx.ui.widget;
+package com.suresofttech.apx.ui.widget.settings.vision;
 
 import java.awt.image.BufferedImage;
 
@@ -16,7 +16,6 @@ import org.eclipse.swt.widgets.Composite;
 /**
  * 웹캠/처리 프레임(AWT {@link BufferedImage})을 SWT로 그리는 캔버스.
  * 비율 유지·중앙 정렬. 프레임마다 임시 SWT Image를 만들고 즉시 dispose(리소스 누수 방지).
- * 기어·클러스터 View도 이 위젯으로 canon 프레임을 표시하고 위에 오버레이를 그린다.
  */
 public class CameraCanvas extends Canvas {
 
@@ -26,12 +25,22 @@ public class CameraCanvas extends Canvas {
         void paint(GC gc, double scale, int dx, int dy);
     }
 
+    /** {@link #setFrame}으로 새 프레임이 들어올 때 (null 제외). */
+    public interface FrameListener {
+        void onFrame(BufferedImage bi);
+    }
+
     private volatile BufferedImage frame;
     private String placeholder = "(카메라 없음)";
     private Overlay overlay;
+    private FrameListener frameListener;
 
     public void setOverlay(Overlay o) {
         this.overlay = o;
+    }
+
+    public void setFrameListener(FrameListener l) {
+        this.frameListener = l;
     }
 
     public CameraCanvas(Composite parent) {
@@ -52,6 +61,9 @@ public class CameraCanvas extends Canvas {
         this.frame = f;
         if (!isDisposed()) {
             redraw();
+        }
+        if (f != null && frameListener != null) {
+            frameListener.onFrame(f);
         }
     }
 

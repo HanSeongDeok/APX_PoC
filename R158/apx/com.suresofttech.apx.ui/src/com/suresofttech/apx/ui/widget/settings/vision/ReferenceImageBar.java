@@ -1,4 +1,4 @@
-﻿package com.suresofttech.apx.ui.widget.settings.vision;
+package com.suresofttech.apx.ui.widget.settings.vision;
 
 import java.io.File;
 
@@ -53,6 +53,7 @@ public class ReferenceImageBar extends Composite {
         Label title = new Label(this, SWT.NONE);
         title.setText("기준 이미지 (R 체결 정면)");
         title.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+        ensureDefaultRefIfMissing();
 
         Label desc = new Label(this, SWT.WRAP);
         desc.setText("비전/후방 탭에서 비교할 기준 이미지");
@@ -61,6 +62,7 @@ public class ReferenceImageBar extends Composite {
 
         refPathText = new Text(this, SWT.BORDER | SWT.READ_ONLY | SWT.SINGLE);
         refPathText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+   
         refPickBtn = new Button(this, SWT.PUSH);
         refPickBtn.setText("파일...");
         refPickBtn.addSelectionListener(new SelectionAdapter() {

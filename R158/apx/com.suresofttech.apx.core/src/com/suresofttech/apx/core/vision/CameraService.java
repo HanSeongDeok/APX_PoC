@@ -51,18 +51,67 @@ public final class CameraService {
     private BufferedImage cachedFrame;
     private long cacheNanos;
 
-    /** 연결된 웹캠 목록. 드라이버 없음/예외 시 빈 목록. */
+    /**
+     * 현재 연결된 웹캠 목록(가상캠 제외). 표시명은 드라이버 끝 인덱스({@code " … 0"})를 제거.
+     * USB로 보이는 장치가 하나라도 있으면 USB만, 없으면 비가상 장치를 모두 반환.
+     */
     public synchronized List<Cam> list() {
-        List<Cam> out = new ArrayList<Cam>();
+        List<Cam> all = new ArrayList<Cam>();
+        List<Cam> usb = new ArrayList<Cam>();
         try {
             List<Webcam> ws = Webcam.getWebcams();
             for (int i = 0; i < ws.size(); i++) {
-                out.add(new Cam(i, ws.get(i).getName()));
+                String raw = ws.get(i).getName();
+                if (isVirtualCamera(raw) || isBuiltinCamera(raw)) {
+                    continue;   // 가상캠·노트북 내장캠 제외 → USB/외장만
+                }
+                Cam cam = new Cam(i, displayName(raw));
+                all.add(cam);
+                if (looksUsbCamera(raw)) {
+                    usb.add(cam);
+                }
             }
         } catch (Throwable t) {
             // 드라이버 미탑재/권한 등 → 빈 목록
         }
-        return out;
+        return usb.isEmpty() ? all : usb;
+    }
+
+    /** 콤보 표시용 — 끝의 장치 인덱스 숫자 제거 ("Logitech … 0" → "Logitech …"). */
+    static String displayName(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replaceFirst("\\s+\\d+$", "").trim();
+    }
+
+    private static boolean isVirtualCamera(String name) {
+        if (name == null) {
+            return true;
+        }
+        String n = name.toLowerCase();
+        return n.contains("virtual") || n.contains("obs ") || n.contains("obs-")
+                || n.contains("manycam") || n.contains("snap camera")
+                || n.contains("iriun") || n.contains("droidcam") || n.contains("ndi");
+    }
+
+    /** 노트북 내장 캠 — USB 외장과 구분. */
+    private static boolean isBuiltinCamera(String name) {
+        if (name == null) {
+            return true;
+        }
+        String n = name.toLowerCase();
+        return n.contains("integrated") || n.contains("internal")
+                || n.contains("built-in") || n.contains("builtin")
+                || n.contains("facetime");
+    }
+
+    private static boolean looksUsbCamera(String name) {
+        if (name == null) {
+            return false;
+        }
+        String n = name.toLowerCase();
+        return n.contains("usb") || n.contains("uvc");
     }
 
     /** 지정 인덱스 웹캠 열기(기존 것 닫고). 성공 여부 반환. */
