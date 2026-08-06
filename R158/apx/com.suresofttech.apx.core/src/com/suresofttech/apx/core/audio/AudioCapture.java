@@ -41,19 +41,79 @@ public final class AudioCapture {
     private Thread thread;
     private volatile boolean running;
 
-    /** 캡처(입력) 가능한 장치 목록. */
+    /**
+     * 캡처 가능한 <b>실제</b> 입력 장치 목록.
+     * Primary/Mapper/Port 등 시스템 가상 엔트리는 제외. USB로 보이는 장치가 있으면 USB만,
+     * 없으면 나머지 실장치. 표시명은 끝 인덱스 숫자를 제거한다.
+     */
     public static List<Device> listInputDevices() {
-        List<Device> out = new ArrayList<Device>();
+        List<Device> all = new ArrayList<Device>();
+        List<Device> usb = new ArrayList<Device>();
         for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+            if (isSystemOrVirtualMic(mi.getName())) {
+                continue;
+            }
             Mixer mixer = AudioSystem.getMixer(mi);
             for (Line.Info li : mixer.getTargetLineInfo()) {
                 if (li instanceof DataLine.Info) {
-                    out.add(new Device(fixName(mi.getName()), mi));
+                    String display = stripTrailingIndex(fixName(mi.getName()));
+                    Device d = new Device(display, mi);
+                    all.add(d);
+                    if (looksUsbMic(mi.getName()) || looksUsbMic(display)) {
+                        usb.add(d);
+                    }
                     break;
                 }
             }
         }
-        return out;
+        return usb.isEmpty() ? all : usb;
+    }
+
+    /**
+     * 표시명으로 입력 장치를 찾는다. 없거나 name이 비면 목록의 첫 장치.
+     * 장치가 없으면 null.
+     */
+    public static Device findInputDevice(String name) {
+        List<Device> list = listInputDevices();
+        if (list.isEmpty()) {
+            return null;
+        }
+        if (name != null && !name.isEmpty()) {
+            for (int i = 0; i < list.size(); i++) {
+                if (name.equals(list.get(i).name)) {
+                    return list.get(i);
+                }
+            }
+        }
+        return list.get(0);
+    }
+
+    /** "Primary Sound Capture Driver", Mapper, Port 라인 등 — 콤보에 넣지 않음. */
+    private static boolean isSystemOrVirtualMic(String name) {
+        if (name == null || name.isEmpty()) {
+            return true;
+        }
+        String n = name.toLowerCase();
+        return n.contains("primary sound") || n.contains("mapper")
+                || n.startsWith("port ") || n.contains("java sound")
+                || n.contains("virtual") || n.contains("stereo mix")
+                || n.contains("what u hear") || n.contains("wave out mix");
+    }
+
+    private static boolean looksUsbMic(String name) {
+        if (name == null) {
+            return false;
+        }
+        String n = name.toLowerCase();
+        return n.contains("usb");
+    }
+
+    /** 드라이버가 붙인 끝 인덱스 제거 ("Device 1" → "Device"). */
+    static String stripTrailingIndex(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replaceFirst("\\s+\\d+$", "").trim();
     }
 
     /**

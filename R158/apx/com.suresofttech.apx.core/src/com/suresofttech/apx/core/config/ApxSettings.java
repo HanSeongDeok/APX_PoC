@@ -7,7 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 
 /**
- * R158 공유 설정 — 설정 탭에서 측정 전 세팅하고, 비전/음향 탭이 재사용한다.
+ * R158 공유 설정 — 설정 탭에서 측정 전 세팅하고, 비전/음향/후방 탭이 재사용한다.
  * (웹캠은 {@link com.suresofttech.apx.core.vision.CameraService} 싱글턴으로 이미 공유)
  *
  * <p>ROI는 <b>정규화 좌표</b>(프레임 대비 비율)로 저장한다. 웹캠 해상도가 바뀌어도
@@ -18,6 +18,10 @@ public final class ApxSettings {
     public interface Listener {
         void onSettingsChanged(ApxSettings s);
     }
+
+    /** 후방 격자 크기 지정 방식. */
+    public static final String REAR_MODE_PRESET = "preset";
+    public static final String REAR_MODE_CUSTOM = "custom";
 
     private static final ApxSettings INSTANCE = new ApxSettings();
 
@@ -36,8 +40,7 @@ public final class ApxSettings {
     /** 비전 기준 이미지 경로. */
     private String visionRefPath;
     /**
-     * ROI 정규화 {ny1,ny2,nx1,nx2} ∈ [0,1] — y는 높이, x는 폭 대비.
-     * 기본 = 중앙 ~18.75% 박스(구 640 기준 120×120에 해당).
+     *  ROI 초기 값
      */
     private double[] roiNorm = { 0.40625, 0.59375, 0.40625, 0.59375 };
     /** 비전 NCC 유사도 임계. */
@@ -45,6 +48,16 @@ public final class ApxSettings {
     /** 음향 주파수/파형 일치 임계. */
     private double audioFreqThr = 0.90;
     private double audioWaveThr = 0.90;
+
+    /** 후방 격자 열·행 (기본 4×6 프리셋). */
+    private int rearCols = 4;
+    private int rearRows = 6;
+    /** {@link #REAR_MODE_PRESET} 또는 {@link #REAR_MODE_CUSTOM}. */
+    private String rearSizeMode = REAR_MODE_PRESET;
+    /** 후방 격자 범례 표시. */
+    private boolean rearShowLegend = true;
+    /** 후방 Select 포인트 — 각 원소 {col, row}. */
+    private List<int[]> rearSelectedPoints = new ArrayList<int[]>();
 
     private ApxSettings() {
     }
@@ -189,6 +202,82 @@ public final class ApxSettings {
         fire();
     }
 
+    public int getRearCols() {
+        return rearCols;
+    }
+
+    public int getRearRows() {
+        return rearRows;
+    }
+
+    public String getRearSizeMode() {
+        return rearSizeMode;
+    }
+
+    /**
+     * 후방 격자 크기·모드. 크기가 바뀌면 Select 포인트는 비운다.
+     * @param mode {@link #REAR_MODE_PRESET} 또는 {@link #REAR_MODE_CUSTOM}
+     */
+    public void setRearGridSize(int cols, int rows, String mode) {
+        int c = Math.max(1, Math.min(60, cols));
+        int r = Math.max(1, Math.min(60, rows));
+        String m = REAR_MODE_CUSTOM.equals(mode) ? REAR_MODE_CUSTOM : REAR_MODE_PRESET;
+        boolean sizeChanged = (this.rearCols != c || this.rearRows != r);
+        boolean modeChanged = !m.equals(this.rearSizeMode);
+        if (!sizeChanged && !modeChanged) {
+            return;
+        }
+        this.rearCols = c;
+        this.rearRows = r;
+        this.rearSizeMode = m;
+        if (sizeChanged) {
+            this.rearSelectedPoints = new ArrayList<int[]>();
+        }
+        fire();
+    }
+
+    public boolean isRearShowLegend() {
+        return rearShowLegend;
+    }
+
+    public void setRearShowLegend(boolean on) {
+        if (this.rearShowLegend == on) {
+            return;
+        }
+        this.rearShowLegend = on;
+        fire();
+    }
+
+    /** Select 포인트 복사본. 각 원소 {col, row}. */
+    public List<int[]> getRearSelectedPoints() {
+        List<int[]> out = new ArrayList<int[]>(rearSelectedPoints.size());
+        for (int i = 0; i < rearSelectedPoints.size(); i++) {
+            int[] p = rearSelectedPoints.get(i);
+            if (p != null && p.length >= 2) {
+                out.add(new int[] { p[0], p[1] });
+            }
+        }
+        return out;
+    }
+
+    /** Select 포인트 교체 (범위는 호출 측·격자 모델이 보장). */
+    public void setRearSelectedPoints(List<int[]> points) {
+        List<int[]> next = new ArrayList<int[]>();
+        if (points != null) {
+            for (int i = 0; i < points.size(); i++) {
+                int[] p = points.get(i);
+                if (p != null && p.length >= 2) {
+                    next.add(new int[] { p[0], p[1] });
+                }
+            }
+        }
+        if (pointsEq(this.rearSelectedPoints, next)) {
+            return;
+        }
+        this.rearSelectedPoints = next;
+        fire();
+    }
+
     /** 알림 없이 일괄 반영 (UI 초기 로드용). roi는 픽셀, frameW/H와 함께. */
     public void replaceQuiet(String micName, String expectedWav, boolean useRef, String refPath,
             int[] roi, int frameW, int frameH, double simThr, double freqThr, double waveThr) {
@@ -218,6 +307,8 @@ public final class ApxSettings {
         lines.add("ref=" + visionRefPath);
         lines.add("simThr=" + String.format("%.2f", simThr));
         lines.add("audioThr=" + String.format("%.2f/%.2f", audioFreqThr, audioWaveThr));
+        lines.add("rear=" + rearCols + "x" + rearRows + "/" + rearSizeMode
+                + " legend=" + rearShowLegend + " pts=" + rearSelectedPoints.size());
         return lines;
     }
 
@@ -269,6 +360,20 @@ public final class ApxSettings {
         }
         for (int i = 0; i < a.length; i++) {
             if (Math.abs(a[i] - b[i]) > 1e-9) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean pointsEq(List<int[]> a, List<int[]> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            int[] pa = a.get(i);
+            int[] pb = b.get(i);
+            if (pa[0] != pb[0] || pa[1] != pb[1]) {
                 return false;
             }
         }
