@@ -1,4 +1,4 @@
-package com.suresofttech.apx.ui.widget;
+package com.suresofttech.apx.ui.widget.settings.audio;
 
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
@@ -49,11 +49,25 @@ public class AudioScope extends Canvas {
     private static final int BG = 0xffffff;
     private static final String FONT = "Malgun Gothic";
     private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
-    private static final int TICK_APPROX = 10;    // X축 목표 눈금 수 → 3그래프 공통(10s창 → 1000ms 간격)
+    private static final int DEFAULT_TICK_APPROX = 10;   // 기본 X축 목표 눈금 수(10s창 → 1000ms 간격)
+
+    // 플롯영역 여백(px) — baseChart 의 setPlotArea 와 drawPassBand 오버레이가 반드시 공유해야
+    // PASS 밴드가 스크롤되는 파형 데이터와 정확히 정렬된다(불일치 시 x좌표가 커질수록 밀림).
+    private static final int PLOT_L = 52;                    // 좌: Y축 라벨
+    private static final int PLOT_T = 24;                    // 상: 제목
+    private static final int PLOT_V_CHROME = 54;             // 상+하 여백 합(plotH = h - 54)
+    private static final int PLOT_R_LEGEND = LEGEND_W + 8;   // 우: 범례 있을 때
+    private static final int PLOT_R_PLAIN = 12;              // 우: 범례 없을 때(파형 패널)
 
     private final double fmax;
     private boolean showPitch = false;   // 주파수(음정) 패널 — 기본 off(파형만)
     private boolean showTrend = false;   // 일치도 추이 패널 — 기본 off(파형만)
+
+    // ── 표출 스타일(클라이언트 주입) — 기본값 유지, setter로 재정의 ──
+    private int tickApprox = DEFAULT_TICK_APPROX;              // X축 목표 눈금 수
+    private double tickMs = 0;                                 // >0 이면 눈금 간격(ms) 직접 지정(tickApprox 무시)
+    private int passAlpha = 80;                               // PASS 밴드 투명도(0~255)
+    private String waveTitle = "파형 그래프";   // 파형 패널 제목
 
     // 파형 크기 포락선(시간축 ms) — 열당 max/min
     private final double[] eT = new double[ENV_CAP];
@@ -133,6 +147,44 @@ public class AudioScope extends Canvas {
     /** (하위호환) waveOnly=true → 음정 숨김. */
     public void setWaveOnly(boolean b) {
         setShowPitch(!b);
+    }
+
+    // ── 표출 스타일 주입(items 3·4) ──────────────────────────────
+
+    /** X축 목표 눈금 수(틱 개수). tickMs 미지정(0) 시 사용. */
+    public void setTickApprox(int n) {
+        if (n >= 2) {
+            this.tickApprox = n;
+            rebuildAndRedraw();
+        }
+    }
+
+    /** X축 눈금 간격(ms) 직접 지정. 0 이하이면 tickApprox 기반 자동 산정. */
+    public void setTickMs(double ms) {
+        this.tickMs = ms > 0 ? ms : 0;
+        rebuildAndRedraw();
+    }
+
+    /** PASS 밴드 색(0xRRGGBB). */
+    public void setPassColor(int rgb) {
+        Color old = passColor;
+        passColor = new Color(getDisplay(), (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+        if (old != null && !old.isDisposed()) {
+            old.dispose();
+        }
+        rebuildAndRedraw();
+    }
+
+    /** PASS 밴드 투명도(0=완전투명 ~ 255=불투명). */
+    public void setPassAlpha(int a) {
+        this.passAlpha = Math.max(0, Math.min(255, a));
+        rebuildAndRedraw();
+    }
+
+    /** 파형 패널 제목. */
+    public void setWaveTitle(String t) {
+        this.waveTitle = (t != null) ? t : "";
+        rebuildAndRedraw();
     }
 
     /**
@@ -371,12 +423,13 @@ public class AudioScope extends Canvas {
         if (span <= 0) {
             return;
         }
-        int plotL = px + 52;
-        int plotT = py + 24;
-        int plotW = Math.max(1, pw - 52 - LEGEND_W - 8);
-        int plotH = Math.max(1, ph - 54);
+        // 파형 패널은 범례 없이(showLegend=false) 그려지므로 우측 여백은 PLOT_R_PLAIN 사용.
+        int plotL = px + PLOT_L;
+        int plotT = py + PLOT_T;
+        int plotW = Math.max(1, pw - PLOT_L - PLOT_R_PLAIN);
+        int plotH = Math.max(1, ph - PLOT_V_CHROME);
         int prevAlpha = gc.getAlpha();
-        gc.setAlpha(80);
+        gc.setAlpha(passAlpha);
         gc.setBackground(passColor);
         for (double[] sp : passSpans) {
             double s = Math.max(sp[0], axLo);
@@ -398,15 +451,15 @@ public class AudioScope extends Canvas {
 
     private XYChart baseChart(int w, int h, String title, int approxTicks, boolean showLegend) {
         XYChart c = new XYChart(w, h, BG);
-        int right = showLegend ? (LEGEND_W + 8) : 12;
-        int plotW = Math.max(1, w - 52 - right);
-        c.setPlotArea(52, 24, plotW, Math.max(1, h - 54), BG, -1, 0xdddddd, 0xf0f0f0, -1);
+        int right = showLegend ? PLOT_R_LEGEND : PLOT_R_PLAIN;
+        int plotW = Math.max(1, w - PLOT_L - right);
+        c.setPlotArea(PLOT_L, PLOT_T, plotW, Math.max(1, h - PLOT_V_CHROME), BG, -1, 0xdddddd, 0xf0f0f0, -1);
         c.addTitle(title, FONT, 9);
         if (showLegend) {
             c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
         }
         // 눈금을 정수 그리드에 정렬(라이브 이동 시 소수점 라벨 방지) + 정수 ms 포맷
-        double tick = msTick(winMax - winMin, approxTicks);
+        double tick = (tickMs > 0) ? tickMs : msTick(winMax - winMin, approxTicks);
         axLo = Math.floor(winMin / tick) * tick;
         axHi = Math.ceil(winMax / tick) * tick;
         if (axHi - axLo < tick) {
@@ -419,7 +472,7 @@ public class AudioScope extends Canvas {
 
     /** ① 파형 크기 포락선 — 채움. Y축은 진폭 ±1 → ±100%. 범례 없음. */
     private byte[] wavePng(int w, int h) {
-        XYChart c = baseChart(w, h, "파형 크기 포락선 (X=경과시간)", TICK_APPROX, false);
+        XYChart c = baseChart(w, h, waveTitle, tickApprox, false);
         c.yAxis().setLinearScale(-100, 100, 50);   // 100% / 50% / 0% / -50% / -100%
         c.yAxis().setLabelFormat("{value}%");
         int n = eCount;
@@ -450,7 +503,7 @@ public class AudioScope extends Canvas {
 
     /** ② 음정 추적 — 기대(수평 점선) vs 라이브(실선). */
     private byte[] pitchPng(int w, int h) {
-        XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", TICK_APPROX);
+        XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", tickApprox);
         c.yAxis().setLinearScale(0, fmax, 1000);
         double[] edge = { axLo, axHi };
         int dashExp = c.dashLineColor(C_EXP, Chart.DashLine);
@@ -480,7 +533,7 @@ public class AudioScope extends Canvas {
 
     /** ③ 일치도 추이 — 주파수·파형 실선 + 각 임계 점선. */
     private byte[] trendPng(int w, int h) {
-        XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", TICK_APPROX);
+        XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", tickApprox);
         c.yAxis().setLinearScale(0, 1.0, 0.2);
         int nn = mCount;
         double[] tx = new double[nn];

@@ -1,4 +1,4 @@
-﻿package com.suresofttech.apx.ui.widget.settings.audio;
+package com.suresofttech.apx.ui.widget.settings.audio;
 
 import java.io.File;
 
@@ -18,46 +18,47 @@ import com.suresofttech.apx.core.audio.BeepMatcher;
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.ui.widget.AudioScope;
 
 /**
- * AudioScope + 파형 측정/초기화 — matcher·capture·틱 내장.
- * 기대음 재생은 {@link ExpectedTonePlayBar}로 분리.
+ * 파형 측정/초기화 버튼 행 — matcher·capture·틱 내장.
+ * 스코프는 {@link #setScope(AudioScope)}로 주입. 기대음 재생은 {@link ExpectedTonePlayBar}.
  */
-public class ExpectedAudioMeasurePane extends Composite {
+public class AudioMeasureBar extends Composite {
+
+    public static final class Cfg {
+        public String measureText = "파형 측정";
+        public String measuringText = "측정 중지";
+        public String resetText = "초기화";
+    }
 
     private final Display display;
     private final ApxSettings settings = ApxSettings.get();
     private final AudioCapture measureCapture = new AudioCapture();
-    private final Composite actionRow;
+    private final Cfg cfg;
     private final Button measureBtn;
-    private final AudioScope scope;
     private final ApxSettings.Listener settingsListener;
 
+    private AudioScope scope;
     private BeepMatcher matcher;
     private volatile MatchResult latestMatch;
     private volatile long capturedSamples;
     private String loadedPath;
-    private Runnable beforeMeasureStart;
-    private MicDeviceProvider micProvider;
     private boolean tickPolling;
 
-    public ExpectedAudioMeasurePane(Composite parent) {
+    public AudioMeasureBar(Composite parent) {
+        this(parent, new Cfg());
+    }
+
+    public AudioMeasureBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
+        this.cfg = (cfg != null) ? cfg : new Cfg();
         display = getDisplay();
-        GridLayout gl = new GridLayout(1, false);
-        gl.marginWidth = 0;
-        gl.marginHeight = 0;
-        setLayout(gl);
-        setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        // 3열 — 3번째에 ExpectedTonePlayBar를 붙일 수 있다.
+        setLayout(new GridLayout(3, true));
+        setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        // 3열 — 이솝/통짜가 3번째에 ExpectedTonePlayBar를 붙일 수 있다.
-        actionRow = new Composite(this, SWT.NONE);
-        actionRow.setLayout(new GridLayout(3, true));
-        actionRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        measureBtn = new Button(actionRow, SWT.TOGGLE);
-        measureBtn.setText("파형 측정");
+        measureBtn = new Button(this, SWT.TOGGLE);
+        measureBtn.setText(this.cfg.measureText);
         measureBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         measureBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -65,21 +66,14 @@ public class ExpectedAudioMeasurePane extends Composite {
             }
         });
 
-        Button resetBtn = new Button(actionRow, SWT.PUSH);
-        resetBtn.setText("초기화");
+        Button resetBtn = new Button(this, SWT.PUSH);
+        resetBtn.setText(this.cfg.resetText);
         resetBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         resetBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 resetMeasure();
             }
         });
-
-        scope = new AudioScope(this, 5000.0);
-        scope.setShowPitch(false);
-        scope.setShowTrend(false);
-        GridData scopeGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        scopeGd.minimumHeight = 180;
-        scope.setLayoutData(scopeGd);
 
         settingsListener = new ApxSettings.Listener() {
             public void onSettingsChanged(ApxSettings s) {
@@ -114,30 +108,21 @@ public class ExpectedAudioMeasurePane extends Composite {
         startMeasureTick();
     }
 
-
-    public void setBeforeMeasureStart(Runnable r) {
-        this.beforeMeasureStart = r;
-    }
-
-    public void setMicDeviceProvider(MicDeviceProvider provider) {
-        this.micProvider = provider;
-    }
-
-    /** 측정/초기화 옆(3열)에 재생 바 등을 붙일 때 사용. */
-    public Composite getActionRow() {
-        return actionRow;
-    }
-
-    /** 마이크 테스트가 장치를 쓰기 전 — 측정 일시정지(재개 가능). */
-    public void pauseForExclusive() {
-        if (measureCapture.isRunning()) {
-            measureCapture.stop();
-            if (measureBtn != null && !measureBtn.isDisposed()) {
-                measureBtn.setSelection(false);
-                measureBtn.setText("파형 측정");
-            }
-            msg("측정 일시정지 — 마이크 테스트와 장치 충돌 방지");
+    /**
+     * 파형 그래프 주입 — {@link AudioScope}를 넘겨야 그래프가 구동된다.
+     * 주입하지 않으면 이 바는 <b>버튼만</b> 표시하고 그래프는 나오지 않는다.
+     */
+    public void setScope(AudioScope scope) {
+        this.scope = scope;
+        if (scope != null && !scope.isDisposed() && matcher != null) {
+            scope.clear();
+            scope.setExpected(matcher.getTemplate(), matcher.getSampleRate());
         }
+    }
+
+    /** 이 바 자신(3열) — ExpectedTonePlayBar를 세 번째 칸에 붙일 때 사용. */
+    public Composite getActionRow() {
+        return this;
     }
 
     private boolean loadExpectedWav(boolean announceError) {
@@ -159,7 +144,7 @@ public class ExpectedAudioMeasurePane extends Composite {
             measureCapture.stop();
             if (measureBtn != null && !measureBtn.isDisposed()) {
                 measureBtn.setSelection(false);
-                measureBtn.setText("파형 측정");
+                measureBtn.setText(cfg.measureText);
             }
         }
         try {
@@ -177,9 +162,6 @@ public class ExpectedAudioMeasurePane extends Composite {
         } catch (Exception ex) {
             matcher = null;
             loadedPath = null;
-            if (announceError) {
-                msg("기대음 로드 실패: " + ex.getMessage());
-            }
             return false;
         }
     }
@@ -195,18 +177,14 @@ public class ExpectedAudioMeasurePane extends Composite {
         if (on) {
             if (!loadExpectedWav(true)) {
                 measureBtn.setSelection(false);
-                msg("기대 경고음 .wav를 먼저 등록하세요.");
                 return;
             }
-            if (beforeMeasureStart != null) {
-                beforeMeasureStart.run();
-            }
-            AudioCapture.Device dev = micProvider != null ? micProvider.selectedDevice() : null;
+            AudioCapture.Device dev = AudioCapture.findInputDevice(settings.getMicName());
             if (dev == null) {
                 measureBtn.setSelection(false);
-                msg("마이크가 없습니다");
                 return;
             }
+            settings.setMicName(dev.name);
             boolean fresh = (capturedSamples == 0);
             matcher.arm();
             applyMatcherThresholds();
@@ -221,17 +199,14 @@ public class ExpectedAudioMeasurePane extends Composite {
                         latestMatch = matcher.feed(block, t);
                     }
                 });
-                measureBtn.setText("측정 중지");
-                msg(fresh ? "파형 측정 중…" : "파형 측정 재개…");
+                measureBtn.setText(cfg.measuringText);
             } catch (Exception ex) {
                 measureBtn.setSelection(false);
-                measureBtn.setText("파형 측정");
-                msg("마이크 열기 실패: " + ex.getMessage());
+                measureBtn.setText(cfg.measureText);
             }
         } else {
             measureCapture.stop();
-            measureBtn.setText("파형 측정");
-            msg("측정 일시정지 — 다시 누르면 이어서 측정");
+            measureBtn.setText(cfg.measureText);
         }
     }
 
@@ -247,14 +222,9 @@ public class ExpectedAudioMeasurePane extends Composite {
                 scope.setExpected(matcher.getTemplate(), matcher.getSampleRate());
             }
         }
-        if (measureCapture.isRunning()) {
-            msg("파형 측정 초기화 — 계속 측정 중");
-        } else {
-            if (measureBtn != null && !measureBtn.isDisposed()) {
-                measureBtn.setSelection(false);
-                measureBtn.setText("파형 측정");
-            }
-            msg("파형 측정 초기화");
+        if (!measureCapture.isRunning() && measureBtn != null && !measureBtn.isDisposed()) {
+            measureBtn.setSelection(false);
+            measureBtn.setText(cfg.measureText);
         }
     }
 
@@ -262,10 +232,11 @@ public class ExpectedAudioMeasurePane extends Composite {
         tickPolling = true;
         display.timerExec(60, new Runnable() {
             public void run() {
-                if (!tickPolling || isDisposed() || scope == null || scope.isDisposed()) {
+                if (!tickPolling || isDisposed()) {
                     return;
                 }
-                if (measureCapture.isRunning() && matcher != null) {
+                if (measureCapture.isRunning() && matcher != null
+                        && scope != null && !scope.isDisposed()) {
                     int sr = matcher.getSampleRate();
                     double elapsedSec = capturedSamples / (double) sr;
                     double elapsedMs = elapsedSec * 1000.0;
@@ -274,15 +245,6 @@ public class ExpectedAudioMeasurePane extends Composite {
                     if (mr != null) {
                         scope.updatePass(elapsedMs, mr.isPass);
                         scope.setMatchTrend(mr.freqSim, mr.waveSim, mr.freqThr, mr.waveThr, elapsedSec);
-                        if (mr.isPass) {
-                            msg(String.format("일치 → PASS  ·  주파수 %.0f%% / 파형 %.0f%%",
-                                    mr.freqSim * 100, mr.waveSim * 100));
-                        } else if (mr.hasSound) {
-                            msg(String.format("불일치 → FAIL  ·  주파수 %.0f%% / 파형 %.0f%%",
-                                    mr.freqSim * 100, mr.waveSim * 100));
-                        } else {
-                            msg("파형 측정 중… (소리 대기)");
-                        }
                     }
                 }
                 if (tickPolling && !isDisposed()) {
@@ -290,9 +252,5 @@ public class ExpectedAudioMeasurePane extends Composite {
                 }
             }
         });
-    }
-
-    private void msg(String m) {
-        // 상태 표시 제거(미니멀)
     }
 }

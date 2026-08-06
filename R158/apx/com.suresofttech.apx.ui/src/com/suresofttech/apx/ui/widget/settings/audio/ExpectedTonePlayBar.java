@@ -1,4 +1,4 @@
-﻿package com.suresofttech.apx.ui.widget.settings.audio;
+package com.suresofttech.apx.ui.widget.settings.audio;
 
 import java.io.File;
 
@@ -19,12 +19,20 @@ import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
  * 기대음 재생/정지 토글 — {@link TonePlayer}.
+ * 버튼명은 {@link Cfg} 로 클라이언트가 주입한다.
  */
 public class ExpectedTonePlayBar extends Composite {
+
+    /** 클라이언트 주입 버튼명 — 기본값 유지, 필요한 것만 덮어쓴다. */
+    public static final class Cfg {
+        public String playText = "기대음 재생";
+        public String playingText = "기대음 정지";
+    }
 
     private final Display display;
     private final ApxSettings settings = ApxSettings.get();
     private final TonePlayer tonePlayer = new TonePlayer();
+    private final Cfg cfg;
     private final Button playBtn;
     private boolean syncPolling;
     private double[] samples;
@@ -32,7 +40,12 @@ public class ExpectedTonePlayBar extends Composite {
     private String loadedPath;
 
     public ExpectedTonePlayBar(Composite parent) {
+        this(parent, new Cfg());
+    }
+
+    public ExpectedTonePlayBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
+        this.cfg = (cfg != null) ? cfg : new Cfg();
         display = getDisplay();
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
@@ -41,7 +54,7 @@ public class ExpectedTonePlayBar extends Composite {
         setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         playBtn = new Button(this, SWT.TOGGLE);
-        playBtn.setText("기대음 재생");
+        playBtn.setText(cfg.playText);
         playBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         playBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -67,11 +80,11 @@ public class ExpectedTonePlayBar extends Composite {
                 return;
             }
             tonePlayer.play(samples, sampleRate);
-            playBtn.setText("기대음 정지");
+            playBtn.setText(cfg.playingText);
             msg("기대음 재생 중…");
         } else {
             tonePlayer.stop();
-            playBtn.setText("기대음 재생");
+            playBtn.setText(cfg.playText);
             msg("기대음 재생 정지");
         }
     }
@@ -113,7 +126,7 @@ public class ExpectedTonePlayBar extends Composite {
                 }
                 if (playBtn.getSelection() && !tonePlayer.isPlaying()) {
                     playBtn.setSelection(false);
-                    playBtn.setText("기대음 재생");
+                    playBtn.setText(cfg.playText);
                 }
                 if (syncPolling && !isDisposed()) {
                     display.timerExec(60, this);
