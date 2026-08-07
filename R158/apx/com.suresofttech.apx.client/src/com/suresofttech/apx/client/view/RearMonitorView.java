@@ -22,6 +22,8 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
  * 후방 모니터 — 설정과 동일 범례({@link RearGridCanvas#applyDefaultLegend} +
  * {@link ApxSettings#isRearShowLegend}).
  * 측정 중 Select는 MEASURING만. PASS/FAIL은 중단 시 클라 {@link #setVerdicts}.
+ *
+ * <p>격자 색으로 상태를 표시한다. 판독값(집계·좌표별 판정 글) UI는 제공하지 않는다.
  */
 public class RearMonitorView extends ViewPart {
 
@@ -150,8 +152,33 @@ public class RearMonitorView extends ViewPart {
         setVerdicts(list);
     }
 
+    /**
+     * 중단 시 Kickoff 최종 동기 판정 — 판독값 UI 미제공이므로 no-op.
+     * Kickoff 호출 호환용으로 남긴다.
+     */
+    public void setFinalVerdict(boolean pass, Long overallMs, String summary) {
+        // no-op: 판독값 UI 미제공
+    }
+
+    /** 저장된 후방 증거 스냅샷 요약 — 판독값 UI 미제공이므로 no-op. */
+    public void setEvidenceNote(String note) {
+        // no-op: 판독값 UI 미제공
+    }
+
     public RearGridCanvas getCanvas() {
         return canvas;
+    }
+
+    /**
+     * 대기 중인 그리기를 즉시 반영 — {@link #setVerdicts} 직후 캡처 시
+     * PASS/FAIL 색이 빠진 화면이 찍히는 것을 막는다.
+     */
+    public void refreshNow() {
+        if (canvas == null || canvas.isDisposed()) {
+            return;
+        }
+        canvas.redraw();
+        canvas.update();
     }
 
     public byte[] capturePng() {
