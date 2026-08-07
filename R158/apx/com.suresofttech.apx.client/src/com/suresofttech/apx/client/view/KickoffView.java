@@ -26,6 +26,8 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.measure.EvidenceBundle;
+import com.suresofttech.apx.core.measure.EvidenceStore;
+import com.suresofttech.apx.core.measure.MeasureConfigSnapshot;
 import com.suresofttech.apx.core.measure.MeasureEvidence;
 import com.suresofttech.apx.core.measure.MeasureSession;
 import com.suresofttech.apx.core.measure.MeasureSyncResult;
@@ -39,13 +41,14 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
  * 측정 Kickoff — Start/Stop/설정.
  * 측정 중: 음향·비전 PASS 시각(물리지연 포함) + 자체 판단(gap+분석) 표시.
  * 중단 시: (max−min)≤30ms 동기 포함 최종 PASS/FAIL. L2 캘리브 보정 없음.
- * 증거: {@link #setEvidenceDir}(또는 "저장 경로…" 버튼) 폴더 아래 채널별로 나눠 저장한다.
+ * 증거: {@link #setEvidenceDir} = 증거 <b>루트</b>, {@link #setTcId} = 측정 TC.
+ * 실제 저장은 {@code <루트>/<tcId>/audio|vision|rear/} ({@link EvidenceStore}).
  * <ul>
  *   <li>{@code audio/} — {@code full.wav}, {@code clip.wav}(PASS 시작~해제),
  *       {@code wave_pass.png}, {@code wave_full.png}</li>
  *   <li>{@code vision/} — {@code evidence_pre_-1f.png}, {@code evidence_decide.png},
  *       {@code evidence_post_+1f.png}</li>
- *   <li>{@code rear/} — PASS/FAIL만 {@code <tcId>_c_r_VERDICT_WxH.png}, {@code combined_….png}</li>
+ *   <li>{@code rear/} — PASS/FAIL만 {@code <셀tcId>_c_r_VERDICT_WxH.png}, {@code combined_….png}</li>
  * </ul>
  */
 public class KickoffView extends ViewPart {
@@ -63,15 +66,19 @@ public class KickoffView extends ViewPart {
     private Label overallLbl;
     private Label evidenceLbl;
 
-    /** 이번 측정에서 저장된 후방 스냅샷 tcId — 결과 탭 조회 테스트로 넘긴다. */
-    private final List<String> lastTcIds = new ArrayList<String>();
+    /** 이번 측정에서 저장된 후방 셀 스냅샷 id — 결과 탭 조회 테스트로 넘긴다. */
+    private final List<String> lastRearTcIds = new ArrayList<String>();
 
     private MeasureSession.Listener sessionListener;
     private boolean visionSnapTaken;
     private boolean rearSnapTaken;
-    /** 클라가 넣는 증거 루트. null이면 stop 시 {@code ~/apx-evidence/<ts>/}. */
+    /** 클라가 넣는 증거 루트. null이면 stop 시 {@code ~/apx-evidence}. */
     private File evidenceDir;
-    /** 직전 측정이 실제로 저장된 폴더 — 결과 탭 스크럽이 바로 물 수 있게. */
+    /** Aesop/클라 측정 TC id. null이면 저장 시 시각 스탬프로 자동 부여. */
+    private String measureTcId;
+    /** 직전 저장에 쓰인 측정 TC id(sanitize 후). */
+    private String lastMeasureTcId;
+    /** 직전 측정 TC 폴더 — 결과 탭 스크럽이 바로 물 수 있게. */
     private File lastEvidenceDir;
 
     @Override
@@ -109,7 +116,7 @@ public class KickoffView extends ViewPart {
 
         evidenceDirBtn = new Button(parent, SWT.PUSH);
         evidenceDirBtn.setText("저장 경로…");
-        evidenceDirBtn.setToolTipText("증거(스냅샷·wav) 저장 폴더를 직접 지정합니다");
+        evidenceDirBtn.setToolTipText("증거 루트 폴더(아래에 TC별 하위 폴더가 생깁니다)");
         evidenceDirBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         evidenceDirBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -124,7 +131,7 @@ public class KickoffView extends ViewPart {
         overallLbl = statusLabel(parent, "최종: — (중단 시 판정)");
 
         evidenceLbl = new Label(parent, SWT.WRAP);
-        evidenceLbl.setText("증거: (중단 시 저장) · 저장 경로: 기본(~/apx-evidence/<시각>)");
+        evidenceLbl.setText("증거: (중단 시 저장) · 루트: ~/apx-evidence/<tcId>/");
         GridData eg = new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1);
         eg.widthHint = 280;
         evidenceLbl.setLayoutData(eg);
@@ -283,9 +290,11 @@ public class KickoffView extends ViewPart {
 
         String path = saveEvidence(session.getEvidence(), rear, sync);
         if (path != null) {
-            evidenceLbl.setText("증거 저장: " + path);
-            // 결과 탭이 이 폴더로 전 구간 스크럽을 물린다
-            LastMeasureResult.get().publishEvidence(new File(path), lastTcIds);
+            String tc = lastMeasureTcId == null ? "" : lastMeasureTcId;
+            evidenceLbl.setText("증거 저장 [" + tc + "]: " + path);
+            // 결과 탭이 이 TC 폴더로 전 구간 스크럽을 물린다
+            LastMeasureResult.get().publishEvidence(
+                    new File(path), lastMeasureTcId, lastRearTcIds);
         } else {
             evidenceLbl.setText("증거: 저장 실패 또는 없음");
         }
@@ -302,8 +311,8 @@ public class KickoffView extends ViewPart {
     }
 
     /**
-     * 증거 저장 폴더. 이솝/클라가 경로를 넣으면 그 아래에 규약 파일명이 생성된다.
-     * null이면 다음 stop 시 {@code ~/apx-evidence/<yyyyMMdd_HHmmss>/} 사용.
+     * 증거 <b>루트</b>. 실제 1회 측정은 {@code <루트>/<tcId>/} 아래 ({@link EvidenceStore}).
+     * null이면 다음 stop 시 {@code ~/apx-evidence/<tcId>/} 사용.
      */
     public void setEvidenceDir(File dir) {
         this.evidenceDir = dir;
@@ -313,11 +322,29 @@ public class KickoffView extends ViewPart {
         return evidenceDir;
     }
 
-    /** "저장 경로…" — 증거 저장 폴더를 사용자가 직접 지정. 취소하면 기존 값 유지. */
+    /**
+     * 측정 TC id(Aesop). stop 시 {@code <루트>/<tcId>/}에 저장한다.
+     * null/빈 문자열이면 시각 스탬프({@code yyyyMMdd_HHmmss})를 쓴다.
+     * 후방 셀 스냅샷 파일명의 {@code TC-001}과는 별개다.
+     */
+    public void setTcId(String tcId) {
+        this.measureTcId = tcId;
+    }
+
+    public String getTcId() {
+        return measureTcId;
+    }
+
+    /** 직전 저장에 사용된 측정 TC id. 저장 전이면 null. */
+    public String getLastMeasureTcId() {
+        return lastMeasureTcId;
+    }
+
+    /** "저장 경로…" — 증거 루트를 사용자가 직접 지정. 취소하면 기존 값 유지. */
     private void chooseEvidenceDir() {
         DirectoryDialog dlg = new DirectoryDialog(getSite().getShell(), SWT.OPEN);
-        dlg.setText("증거 저장 폴더 선택");
-        dlg.setMessage("스냅샷·wav 등 측정 증거를 저장할 폴더를 선택하세요.");
+        dlg.setText("증거 루트 폴더 선택");
+        dlg.setMessage("TC별 하위 폴더가 생길 루트를 선택하세요.");
         if (evidenceDir != null) {
             dlg.setFilterPath(evidenceDir.getAbsolutePath());
         } else {
@@ -329,14 +356,10 @@ public class KickoffView extends ViewPart {
         }
         evidenceDir = new File(picked);
         if (evidenceLbl != null && !evidenceLbl.isDisposed()) {
-            evidenceLbl.setText("증거 저장 경로: " + evidenceDir.getAbsolutePath());
+            evidenceLbl.setText("증거 루트: " + evidenceDir.getAbsolutePath()
+                    + " (저장 시 <tcId>/ 하위)");
         }
-        // 조회 API가 같은 폴더를 보도록 캔버스 스냅샷 폴더도 함께 지정(<루트>/rear)
-        RearMonitorView rear = findRear();
-        RearGridCanvas c = rear == null ? null : rear.getCanvas();
-        if (c != null && !c.isDisposed()) {
-            c.setSnapshotDir(new File(evidenceDir, EvidenceBundle.REAR_DIR));
-        }
+        // 실제 rear/ 는 stop 시 TC 폴더 아래로 지정된다(resolveEvidenceDir)
     }
 
     /**
@@ -521,11 +544,11 @@ public class KickoffView extends ViewPart {
         }
         try {
             File dir = resolveEvidenceDir();
-            if (!dir.exists() && !dir.mkdirs()) {
+            if (dir == null || (!dir.exists() && !dir.mkdirs())) {
                 return null;
             }
             applyAudioPassSpan(ev);
-            // 채널별 하위 폴더 — <증거루트>/audio, /vision, /rear
+            // 채널별 하위 폴더 — <루트>/<tcId>/audio|vision|rear
             ev.saveTo(new File(dir, EvidenceBundle.AUDIO_DIR));
             saveVisionEvidence(new File(dir, EvidenceBundle.VISION_DIR));
             saveRearSnapshots(new File(dir, EvidenceBundle.REAR_DIR), rear);
@@ -541,7 +564,7 @@ public class KickoffView extends ViewPart {
      * 결과 재오픈용 메타 — 앱을 껐다 켜도 결과 탭이 PASS 시각·판정·타임라인 길이를
      * 복원할 수 있어야 한다(메모리 {@link LastMeasureResult}는 세션과 함께 사라진다).
      */
-    private static void writeEvidenceMeta(File dir, MeasureEvidence ev, MeasureSyncResult sync)
+    private void writeEvidenceMeta(File dir, MeasureEvidence ev, MeasureSyncResult sync)
             throws Exception {
         double durationMs = 0;
         double[] samples = ev.getAudioSamples();
@@ -549,6 +572,14 @@ public class KickoffView extends ViewPart {
         if (samples != null && sr > 0) {
             durationMs = samples.length * 1000.0 / sr;
         }
+        List<double[]> audioSpans = null;
+        AudioMonitorView audio = findAudio();
+        if (audio != null && audio.getScope() != null && !audio.getScope().isDisposed()) {
+            audioSpans = audio.getScope().getPassSpans();
+        }
+        MeasureConfigSnapshot snap = MeasureSession.get().getSnapshot();
+        double[] roiNorm = snap == null ? null : snap.roiNorm;
+        double simThr = snap == null ? 0 : snap.simThr;
         EvidenceBundle.writeMeta(dir,
                 sync != null && sync.overallPass,
                 sync == null ? "" : sync.summary,
@@ -556,7 +587,8 @@ public class KickoffView extends ViewPart {
                 sync == null ? null : sync.syncSpreadMs,
                 sync != null && sync.syncOk,
                 durationMs,
-                ev.getAudioPassStartMs(), ev.getAudioPassEndMs());
+                ev.getAudioPassStartMs(), ev.getAudioPassEndMs(),
+                audioSpans, roiNorm, simThr);
     }
 
     /** 마지막으로 증거를 저장한 폴더 — 결과 탭이 바로 열 수 있게. */
@@ -603,12 +635,27 @@ public class KickoffView extends ViewPart {
         MeasureSession.get().moveVisionRecordingTo(dir);
     }
 
+    /**
+     * {@code <루트>/<tcId>/} 준비. tcId 미설정이면 시각 스탬프.
+     * {@link #lastMeasureTcId}·{@link #lastEvidenceDir}를 갱신한다.
+     */
     private File resolveEvidenceDir() {
-        if (evidenceDir != null) {
-            return evidenceDir;
+        File root = evidenceDir;
+        if (root == null) {
+            root = new File(System.getProperty("user.home"), "apx-evidence");
         }
-        String ts = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        return new File(System.getProperty("user.home"), "apx-evidence" + File.separator + ts);
+        String id = measureTcId;
+        if (id == null || id.trim().isEmpty()) {
+            id = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        }
+        File dir = EvidenceStore.at(root).prepare(id);
+        if (dir == null) {
+            lastMeasureTcId = null;
+            return null;
+        }
+        lastMeasureTcId = dir.getName();
+        lastEvidenceDir = dir;
+        return dir;
     }
 
     /**
@@ -664,8 +711,8 @@ public class KickoffView extends ViewPart {
             canvas.getCombinedSnapshot(tcIds);
         }
         rear.setEvidenceNote(evidenceNote(tcIds));
-        lastTcIds.clear();
-        lastTcIds.addAll(tcIds);
+        lastRearTcIds.clear();
+        lastRearTcIds.addAll(tcIds);
     }
 
     /** 후방 판독값에 표기할 저장 결과 요약 — 파일명 규약을 그대로 보여준다. */

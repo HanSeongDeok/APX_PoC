@@ -29,13 +29,15 @@ import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.client.result.EvidenceScrubber;
+import com.suresofttech.apx.core.measure.EvidenceStore;
 import com.suresofttech.apx.core.measure.MeasureSyncResult;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
- * 최근 측정 결과 View — DB 없이 {@link LastMeasureResult} 1건만 표시.
+ * 최근 측정 결과 View — 메모리 {@link LastMeasureResult} 1건 + 파일 {@link EvidenceStore} TC 폴더.
  * 측정 시각(검출·자체판단·동기) + 모니터 스냅샷
  * (음향=PASS 밴드 종료 시점, 비전=최초 PASS, 후방=overallPass).
+ * 지난 TC는 증거 루트에서 {@link EvidenceScrubber#openTc} / 폴더 열기로 복원.
  */
 public class ResultView extends ViewPart {
 
@@ -139,7 +141,7 @@ public class ResultView extends ViewPart {
 
         openDirBtn = new Button(bar, SWT.PUSH);
         openDirBtn.setText("증거 폴더 열기…");
-        openDirBtn.setToolTipText("지난 TC의 증거 폴더를 열어 그때 측정을 되짚습니다");
+        openDirBtn.setToolTipText("TC 폴더(meta.properties·audio/·vision/·rear/)를 열어 되짚습니다");
         openDirBtn.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         openDirBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -155,11 +157,11 @@ public class ResultView extends ViewPart {
         scrubber.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
     }
 
-    /** 지난 증거 폴더 선택 → 스크럽 재연결. */
+    /** 지난 TC 증거 폴더 선택 → 스크럽 재연결. */
     private void chooseEvidenceDir() {
         DirectoryDialog dlg = new DirectoryDialog(getSite().getShell(), SWT.OPEN);
-        dlg.setText("증거 폴더 열기");
-        dlg.setMessage("audio/ · vision/ · rear/ 가 들어 있는 증거 루트를 선택하세요.");
+        dlg.setText("TC 증거 폴더 열기");
+        dlg.setMessage("meta.properties 와 audio/ · vision/ · rear/ 가 있는 TC 폴더를 선택하세요.");
         if (openedEvidenceDir != null) {
             dlg.setFilterPath(openedEvidenceDir.getAbsolutePath());
         } else {
@@ -171,7 +173,27 @@ public class ResultView extends ViewPart {
         }
     }
 
-    /** 증거 폴더를 스크럽에 물린다(같은 폴더면 다시 열지 않음). */
+    /**
+     * {@link EvidenceStore} + 측정 TC id로 스크럽 연결.
+     * 이솝이 첫 TC로 돌아갈 때: {@code openTc(EvidenceStore.at(root), "TC-01")}.
+     */
+    public boolean openTc(EvidenceStore store, String tcId) {
+        if (scrubber == null || scrubber.isDisposed()) {
+            return false;
+        }
+        boolean ok = scrubber.openTc(store, tcId);
+        File dir = (ok && store != null) ? store.tcDir(tcId) : null;
+        openedEvidenceDir = ok ? dir : null;
+        if (ok && dir != null) {
+            scrubPathLbl.setText("[" + tcId + "] " + dir.getAbsolutePath());
+        } else {
+            scrubPathLbl.setText("TC 열기 실패: " + tcId);
+        }
+        layoutScroll();
+        return ok;
+    }
+
+    /** 증거 폴더(TC 폴더)를 스크럽에 물린다(같은 폴더면 다시 열지 않음). */
     private void openEvidence(File dir) {
         if (dir == null || scrubber == null || scrubber.isDisposed()) {
             return;
@@ -414,6 +436,11 @@ public class ResultView extends ViewPart {
         // 스크럽·조회 섹션은 결과 유무와 무관하게 늘 열려 있다 — 지난 TC 폴더를 직접 열 수 있어야 하므로
         if (r != null && r.getEvidenceDir() != null) {
             openEvidence(r.getEvidenceDir());
+            if (r.getMeasureTcId() != null && scrubPathLbl != null && !scrubPathLbl.isDisposed()
+                    && openedEvidenceDir != null) {
+                scrubPathLbl.setText("[" + r.getMeasureTcId() + "] "
+                        + openedEvidenceDir.getAbsolutePath());
+            }
             setTcIds(r.getRearTcIds());
         }
         if (r == null || !r.hasResult()) {
