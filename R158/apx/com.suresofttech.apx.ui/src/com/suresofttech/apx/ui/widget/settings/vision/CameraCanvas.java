@@ -158,4 +158,9 @@ public class CameraCanvas extends Canvas {
         }
         return data;
     }
+
+    /** 현재 화면 PNG. dispose/비표시면 null. */
+    public byte[] capturePng() {
+        return com.suresofttech.apx.ui.widget.SwtCapture.toPng(this);
+    }
 }

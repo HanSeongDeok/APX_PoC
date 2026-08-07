@@ -17,17 +17,35 @@ import org.eclipse.swt.widgets.Display;
 
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
+import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
  * ROI 드래그 + NCC 오버레이 — 공용 {@link CameraCanvas}에 붙인다.
  * (웹캠 화면 표시·폴링은 View/{@link CameraSelectBar} 쪽 책임.)
+ * 모니터용: {@link #setInteractive(false)}, {@link #setFixedConfig}.
  */
 public final class RoiNcc {
 
     public interface MatchListener {
         void onMatch(RoiMatchResult r);
+    }
+
+    /** 측정 세션용 고정 비전 설정 (ApxSettings 무시). */
+    public static final class FixedVisionConfig {
+        public final boolean useReferenceImage;
+        public final String visionRefPath;
+        public final double[] roiNorm;
+        public final double simThr;
+
+        public FixedVisionConfig(boolean useReferenceImage, String visionRefPath,
+                double[] roiNorm, double simThr) {
+            this.useReferenceImage = useReferenceImage;
+            this.visionRefPath = visionRefPath;
+            this.roiNorm = roiNorm == null ? null : roiNorm.clone();
+            this.simThr = simThr;
+        }
     }
 
     public static final class Style {
@@ -53,6 +71,9 @@ public final class RoiNcc {
     private Color hitColor, missColor, dragColor;
     private int roiLineWidth = 2;
     private int dragThickness = 1;
+    private boolean interactive = true;
+    /** null이면 ApxSettings, 있으면 측정 고정 스냅샷. */
+    private FixedVisionConfig fixedConfig;
 
     public RoiNcc(CameraCanvas canvas) {
         this(canvas, new Style());
@@ -73,13 +94,16 @@ public final class RoiNcc {
         });
         canvas.addMouseListener(new MouseAdapter() {
             public void mouseDown(MouseEvent e) {
+                if (!interactive) {
+                    return;
+                }
                 dragging = true;
                 dragX0 = dragX1 = e.x;
                 dragY0 = dragY1 = e.y;
             }
 
             public void mouseUp(MouseEvent e) {
-                if (!dragging) {
+                if (!interactive || !dragging) {
                     return;
                 }
                 dragging = false;
@@ -90,7 +114,7 @@ public final class RoiNcc {
         });
         canvas.addMouseMoveListener(new MouseMoveListener() {
             public void mouseMove(MouseEvent e) {
-                if (dragging) {
+                if (interactive && dragging) {
                     dragX1 = e.x;
                     dragY1 = e.y;
                     canvas.redraw();
@@ -105,13 +129,13 @@ public final class RoiNcc {
 
         settingsListener = new ApxSettings.Listener() {
             public void onSettingsChanged(ApxSettings s) {
-                if (canvas.isDisposed()) {
+                if (fixedConfig != null || canvas.isDisposed()) {
                     return;
                 }
                 final String fp = visionFingerprintOf(s);
                 display.asyncExec(new Runnable() {
                     public void run() {
-                        if (canvas.isDisposed()) {
+                        if (canvas.isDisposed() || fixedConfig != null) {
                             return;
                         }
                         if (fp.equals(visionFingerprint)) {
@@ -140,6 +164,43 @@ public final class RoiNcc {
         this.matchListener = l;
     }
 
+    /** false면 ROI 드래그 금지(표시·매칭만). */
+    public void setInteractive(boolean on) {
+        this.interactive = on;
+        if (!on) {
+            dragging = false;
+        }
+    }
+
+    public boolean isInteractive() {
+        return interactive;
+    }
+
+    /**
+     * 측정용 고정 설정. null이면 다시 {@link ApxSettings} 연동.
+     * 고정 중에는 설정 변경 리스너를 무시한다.
+     */
+    public void setFixedConfig(FixedVisionConfig cfg) {
+        this.fixedConfig = cfg;
+        rebuildDetectorFromSettings();
+    }
+
+    public FixedVisionConfig getFixedConfig() {
+        return fixedConfig;
+    }
+
+    /** 측정 중단 시 — post 미완이어도 pre/decide 확정. */
+    public void flushEvidence() {
+        if (det != null) {
+            det.flushEvidence();
+        }
+    }
+
+    /** ±3프레임 증거 ({@code evidence_pre_-3f} 등). flush 후 호출. */
+    public EvidenceCapture.Evidence getEvidence() {
+        return det == null ? null : det.getEvidence();
+    }
+
     public void setStyle(Style style) {
         applyStyle(style);
         if (!canvas.isDisposed()) {
@@ -148,13 +209,18 @@ public final class RoiNcc {
     }
 
     public void applySimThrFromSettings() {
+        double thr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
         if (det != null) {
-            det.setSimThr(settings.getSimThr());
+            det.setSimThr(thr);
         }
         fireMatch(last);
     }
 
     public void rebuildDetectorFromSettings() {
+        if (fixedConfig != null) {
+            rebuildFromFixed(fixedConfig);
+            return;
+        }
         visionFingerprint = visionFingerprintOf(settings);
         if (settings.isUseReferenceImage()) {
             String path = settings.getVisionRefPath();
@@ -175,6 +241,32 @@ public final class RoiNcc {
             return;
         }
         ensureLiveReferenceDetector();
+    }
+
+    private void rebuildFromFixed(FixedVisionConfig cfg) {
+        visionFingerprint = "fixed|" + cfg.useReferenceImage + "|" + cfg.visionRefPath;
+        if (cfg.useReferenceImage) {
+            String path = cfg.visionRefPath;
+            if (path == null || !new File(path).isFile()) {
+                det = null;
+                last = null;
+                fireMatch(null);
+                return;
+            }
+            try {
+                det = new RoiMatchDetector(path, null, cfg.simThr);
+                int[] roi = normToRoi(cfg.roiNorm, det.canonWidth(), det.canonHeight());
+                if (roi != null) {
+                    det.setRoi(roi);
+                }
+                det.setSimThr(cfg.simThr);
+            } catch (Exception ex) {
+                det = null;
+            }
+            fireMatch(null);
+            return;
+        }
+        ensureLiveReferenceDetectorFixed(cfg);
     }
 
     private void applyStyle(Style s) {
@@ -225,17 +317,52 @@ public final class RoiNcc {
         }
     }
 
-    private void onNewFrame(BufferedImage bi) {
-        if (!settings.isUseReferenceImage() && det == null && bi != null) {
-            ensureLiveReferenceDetector();
+    private void ensureLiveReferenceDetectorFixed(FixedVisionConfig cfg) {
+        BufferedImage bi = CameraService.get().latest();
+        if (bi == null) {
+            det = null;
+            last = null;
+            fireMatch(null);
             return;
         }
-        if (!settings.isUseReferenceImage() && det != null && bi != null
+        try {
+            int[] roi = normToRoi(cfg.roiNorm, bi.getWidth(), bi.getHeight());
+            det = new RoiMatchDetector(bi, roi, cfg.simThr);
+            det.setAlignEnabled(false);
+            det.setSimThr(cfg.simThr);
+            RoiMatchResult r = det.process(bi);
+            last = r;
+            fireMatch(r);
+            canvas.redraw();
+        } catch (Exception ex) {
+            det = null;
+            last = null;
+            fireMatch(null);
+        }
+    }
+
+    private void onNewFrame(BufferedImage bi) {
+        boolean useRef = fixedConfig != null ? fixedConfig.useReferenceImage : settings.isUseReferenceImage();
+        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
+        if (!useRef && det == null && bi != null) {
+            if (fixedConfig != null) {
+                ensureLiveReferenceDetectorFixed(fixedConfig);
+            } else {
+                ensureLiveReferenceDetector();
+            }
+            return;
+        }
+        if (!useRef && det != null && bi != null
                 && (bi.getWidth() != det.canonWidth() || bi.getHeight() != det.canonHeight())) {
-            ensureLiveReferenceDetector();
+            if (fixedConfig != null) {
+                ensureLiveReferenceDetectorFixed(fixedConfig);
+            } else {
+                ensureLiveReferenceDetector();
+            }
             return;
         }
         if (det != null && bi != null) {
+            det.setSimThr(simThr);
             RoiMatchResult r = det.process(bi);
             last = r;
             fireMatch(r);
@@ -248,6 +375,10 @@ public final class RoiNcc {
     }
 
     private void commitRoiFromDrag() {
+        if (!interactive) {
+            canvas.redraw();
+            return;
+        }
         BufferedImage disp = canvas.getFrame();
         if (disp == null) {
             canvas.redraw();
@@ -288,8 +419,8 @@ public final class RoiNcc {
         RoiMatchResult r = last;
         BufferedImage disp = canvas.getFrame();
         boolean roiInCanon = (r != null && r.roi != null);
-        int[] roi = roiInCanon ? r.roi
-                : (disp != null ? settings.getRoi(disp.getWidth(), disp.getHeight()) : null);
+        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
+        int[] roi = roiInCanon ? r.roi : resolveDisplayRoi(disp);
         if (roi != null && disp != null) {
             double sx = 1.0;
             double sy = 1.0;
@@ -302,12 +433,12 @@ public final class RoiNcc {
             int wy = (int) Math.round(dy + roi[0] * sy * scale);
             int ww = (int) Math.round((roi[3] - roi[2]) * sx * scale);
             int wh = (int) Math.round((roi[1] - roi[0]) * sy * scale);
-            boolean hit = r != null && "ok".equals(r.state) && r.ncc >= settings.getSimThr();
+            boolean hit = r != null && "ok".equals(r.state) && r.ncc >= simThr;
             gc.setForeground(hit ? hitColor : missColor);
             gc.setLineWidth(roiLineWidth);
             gc.drawRectangle(wx, wy, ww, wh);
         }
-        if (dragging) {
+        if (interactive && dragging) {
             gc.setForeground(dragColor);
             gc.setLineWidth(dragThickness);
             gc.drawRectangle(Math.min(dragX0, dragX1), Math.min(dragY0, dragY1),
@@ -316,9 +447,35 @@ public final class RoiNcc {
         Point sz = canvas.getSize();
         String ncc = (r != null && "ok".equals(r.state))
                 ? String.format("NCC %.2f", r.ncc) : "NCC --";
-        String hud = ncc + "   ROI " + roiText(roi) + "   드래그로 ROI 지정";
+        String hud = ncc + "   ROI " + roiText(roi)
+                + (interactive ? "   드래그로 ROI 지정" : "   (모니터)");
         gc.setForeground(display.getSystemColor(SWT.COLOR_WHITE));
         gc.drawText(hud, 8, Math.max(8, sz.y - 22), true);
+    }
+
+    private int[] resolveDisplayRoi(BufferedImage disp) {
+        if (disp == null) {
+            return null;
+        }
+        if (fixedConfig != null) {
+            return normToRoi(fixedConfig.roiNorm, disp.getWidth(), disp.getHeight());
+        }
+        return settings.getRoi(disp.getWidth(), disp.getHeight());
+    }
+
+    private static int[] normToRoi(double[] n, int w, int h) {
+        if (n == null || n.length < 4 || w <= 0 || h <= 0) {
+            return null;
+        }
+        int y1 = (int) Math.round(n[0] * h);
+        int y2 = (int) Math.round(n[1] * h);
+        int x1 = (int) Math.round(n[2] * w);
+        int x2 = (int) Math.round(n[3] * w);
+        y1 = Math.max(0, Math.min(h - 1, y1));
+        y2 = Math.max(y1 + 1, Math.min(h, y2));
+        x1 = Math.max(0, Math.min(w - 1, x1));
+        x2 = Math.max(x1 + 1, Math.min(w, x2));
+        return new int[] { y1, y2, x1, x2 };
     }
 
     private void fireMatch(RoiMatchResult r) {
