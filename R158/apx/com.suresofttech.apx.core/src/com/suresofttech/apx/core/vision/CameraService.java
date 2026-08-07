@@ -4,8 +4,11 @@ import java.awt.Dimension;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.github.sarxos.webcam.Webcam;
+import com.github.sarxos.webcam.WebcamDiscoveryEvent;
+import com.github.sarxos.webcam.WebcamDiscoveryListener;
 
 /**
  * 웹캠 한 대를 열어 최신 프레임을 공유하는 서비스 (파이썬 main_window.py 의 단일 cap 대응).
@@ -33,6 +36,15 @@ public final class CameraService {
         }
     }
 
+    /**
+     * 장치 목록이 바뀌었을 때(USB 연결/분리). 드라이버 스레드에서 호출되므로
+     * UI는 반드시 자기 디스플레이 스레드로 넘겨서 처리해야 한다.
+     */
+    public interface DeviceListener {
+        /** @param currentLost 사용 중이던 카메라가 사라졌으면 true */
+        void onDevicesChanged(boolean currentLost);
+    }
+
     private static final CameraService INSTANCE = new CameraService();
 
     public static CameraService get() {
@@ -44,6 +56,12 @@ public final class CameraService {
 
     private Webcam current;
     private int currentIndex = -1;
+    /** 사용 중인 장치의 이름 — 인덱스는 재연결 시 바뀔 수 있어 이름으로 대조한다. */
+    private String currentName;
+
+    private final CopyOnWriteArrayList<DeviceListener> deviceListeners =
+            new CopyOnWriteArrayList<DeviceListener>();
+    private boolean discoveryHooked;
 
     // 프레임 공유 캐시: 여러 뷰(기어·클러스터)가 짧은 시간에 latest()를 여러 번 불러도
     // getImage()(프레임 복사)는 CACHE_NS 안에 1회만 → 부하↓ + 두 뷰가 같은 프레임 → 동기 정확.
@@ -114,6 +132,75 @@ public final class CameraService {
         return n.contains("usb") || n.contains("uvc");
     }
 
+    /**
+     * USB 연결/분리 구독. 첫 구독 시 드라이버 디스커버리에 훅을 건다
+     * (측정 장비는 현장에서 케이블이 자주 바뀌므로 목록을 수동 새로고침에만 맡기지 않는다).
+     */
+    public synchronized void addDeviceListener(DeviceListener l) {
+        if (l == null) {
+            return;
+        }
+        deviceListeners.add(l);
+        hookDiscovery();
+    }
+
+    public void removeDeviceListener(DeviceListener l) {
+        deviceListeners.remove(l);
+    }
+
+    private void hookDiscovery() {
+        if (discoveryHooked) {
+            return;
+        }
+        try {
+            Webcam.addDiscoveryListener(new WebcamDiscoveryListener() {
+                public void webcamFound(WebcamDiscoveryEvent event) {
+                    fireDevicesChanged();
+                }
+
+                public void webcamGone(WebcamDiscoveryEvent event) {
+                    fireDevicesChanged();
+                }
+            });
+            discoveryHooked = true;
+        } catch (Throwable t) {
+            // 드라이버가 디스커버리를 지원하지 않으면 수동 새로고침으로만 동작
+        }
+    }
+
+    private void fireDevicesChanged() {
+        boolean lost = isCurrentGone();
+        for (DeviceListener l : deviceListeners) {
+            try {
+                l.onDevicesChanged(lost);
+            } catch (Exception ignored) {
+                // 구독자 하나가 죽어도 나머지는 알린다
+            }
+        }
+    }
+
+    /** 사용 중이던 카메라가 목록에서 사라졌는지 — 이름 기준(인덱스는 재연결 시 바뀐다). */
+    public synchronized boolean isCurrentGone() {
+        if (currentName == null) {
+            return false;
+        }
+        try {
+            for (Webcam w : Webcam.getWebcams()) {
+                if (currentName.equals(w.getName())) {
+                    return false;
+                }
+            }
+        } catch (Throwable t) {
+            return true;
+        }
+        return true;
+    }
+
+    /** 사용 중인 카메라 표시명. 없으면 null. */
+    public synchronized String currentName() {
+        return currentName == null ? null : displayName(currentName);
+    }
+
     /** 지정 인덱스 웹캠 열기(기존 것 닫고). 성공 여부 반환. */
     public synchronized boolean open(int index) {
         close();
@@ -127,12 +214,36 @@ public final class CameraService {
             cam.open(true);                 // async — 내부 스레드가 최신 프레임 유지
             current = cam;
             currentIndex = index;
+            currentName = cam.getName();
             return cam.isOpen();
         } catch (Throwable t) {
             current = null;
             currentIndex = -1;
+            currentName = null;
             return false;
         }
+    }
+
+    /**
+     * 이름으로 다시 연다 — 케이블을 뽑았다 꽂으면 인덱스가 바뀌므로 재연결은 이름 기준.
+     * @return 찾아서 열었으면 true
+     */
+    public synchronized boolean reopenByName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        try {
+            List<Webcam> ws = Webcam.getWebcams();
+            for (int i = 0; i < ws.size(); i++) {
+                String raw = ws.get(i).getName();
+                if (name.equals(raw) || name.equals(displayName(raw))) {
+                    return open(i);
+                }
+            }
+        } catch (Throwable t) {
+            return false;
+        }
+        return false;
     }
 
     /**
@@ -201,6 +312,7 @@ public final class CameraService {
             }
             current = null;
             currentIndex = -1;
+            currentName = null;
             cachedFrame = null;
         }
     }

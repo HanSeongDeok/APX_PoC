@@ -40,7 +40,7 @@ public final class RoiMatchDetector {
     private boolean haveSig;
     private int[] sigRow;
     private double tPrevFrame;
-    private final EvidenceCapture ev = new EvidenceCapture(3, 3);
+    private final EvidenceCapture ev = new EvidenceCapture(1, 1);
     private Mat lastReturned;
     private RoiMatchResult lastResult;
     private double lastSsim;
