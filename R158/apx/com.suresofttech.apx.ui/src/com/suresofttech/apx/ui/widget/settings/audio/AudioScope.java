@@ -39,7 +39,8 @@ import ChartDirector.XYChart;
  */
 public class AudioScope extends Canvas {
 
-    private static final double MATCH_WIN_MS = 10000.0;   // 흐르는 창 = 10초
+    /** 라이브·스크럽 공통 흐르는 창 폭(ms). 설정/모니터와 결과 wav 재렌더가 동일. */
+    public static final double MATCH_WIN_MS = 10000.0;
     private static final double ENV_COL_MS = 4.0;         // 파형 포락선 열 폭(ms)
     private static final int CAP_M = 1200;                // 음정·추이 링 점 수
     private static final int ENV_CAP = (int) (MATCH_WIN_MS / ENV_COL_MS) + 600;
@@ -52,7 +53,9 @@ public class AudioScope extends Canvas {
     private static final int BG = 0xffffff;
     private static final String FONT = "Malgun Gothic";
     private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
-    private static final int DEFAULT_TICK_APPROX = 10;   // 기본 X축 목표 눈금 수(10s창 → 1000ms 간격)
+    private static final int DEFAULT_TICK_APPROX = 10;
+    /** 설정·모니터·결과 스크럽 공통 기본 X축 눈금 간격(ms). */
+    public static final double DEFAULT_TICK_MS = 1000.0;
 
     // 플롯영역 여백(px) — baseChart 의 setPlotArea 와 drawPassBand 오버레이가 반드시 공유해야
     // PASS 밴드가 스크롤되는 파형 데이터와 정확히 정렬된다(불일치 시 x좌표가 커질수록 밀림).
@@ -68,7 +71,7 @@ public class AudioScope extends Canvas {
 
     // ── 표출 스타일(클라이언트 주입) — 기본값 유지, setter로 재정의 ──
     private int tickApprox = DEFAULT_TICK_APPROX;              // X축 목표 눈금 수
-    private double tickMs = 0;                                 // >0 이면 눈금 간격(ms) 직접 지정(tickApprox 무시)
+    private double tickMs = DEFAULT_TICK_MS;                   // >0 이면 눈금 간격(ms) 직접 지정(tickApprox 무시)
     private int passAlpha = 80;                               // PASS 밴드 투명도(0~255)
     private String waveTitle = "파형 그래프";   // 파형 패널 제목
 
@@ -108,6 +111,11 @@ public class AudioScope extends Canvas {
     // 결과 스크럽(정적 구간 렌더) — 라이브 스트리밍 대신 wav 구간을 한 번에 그린다.
     private double cursorMs = -1;   // <0 이면 커서 없음
     private Color cursorColor;
+    /**
+     * true면 X축을 winMin~winMax 그대로 쓴다(스크럽).
+     * false면 눈금에 맞춰 축을 늘린다(라이브) — 늘린 구간엔 포락선이 없어 양끝이 비어 보인다.
+     */
+    private boolean exactXAxis;
 
     private Image composite;
 
@@ -123,6 +131,9 @@ public class AudioScope extends Canvas {
                 }
                 if (composite != null && !composite.isDisposed()) {
                     e.gc.drawImage(composite, 0, 0);
+                    // PASS/커서는 파형 리빌드와 분리 — updatePass 직후 즉시 반영
+                    Rectangle ca = getClientArea();
+                    paintOverlays(e.gc, Math.max(120, ca.width), Math.max(160, ca.height));
                 } else {
                     e.gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
                     e.gc.fillRectangle(getClientArea());
@@ -201,7 +212,9 @@ public class AudioScope extends Canvas {
     /**
      * <b>실시간 PASS 밴딩</b> — 매 틱 현재 시각(ms)과 합격 여부를 넘긴다.
      * 합격 중이면 열린 밴드를 현재 시각까지 <b>실시간으로 늘리고</b>, 불합격이 되면 그 밴드를 닫는다.
-     * (리빌드는 하지 않음 — 호출측이 {@code setMatchTrend} 로 커밋. isPass 는 {@code MatchResult.isPass}.)
+     * 파형 ChartDirector 리빌드 없이 오버레이만 즉시 paint — 짧은 PASS도 초록으로 보인다.
+     *
+     * <p>축은 마지막 파형 리빌드와 공유한다. 오버레이만 축을 앞서 바꾸면 PNG와 밴드가 어긋난다.
      */
     public void updatePass(double nowMs, boolean isPass) {
         if (isPass) {
@@ -214,17 +227,30 @@ public class AudioScope extends Canvas {
         } else {
             passOpen = -1;                                      // 불합격 → 현재 밴드 닫음
         }
+        if (!isDisposed()) {
+            redraw();
+            update(); // 파형 ChartDirector 리빌드 대기 없이 즉시 페인트
+        }
     }
 
     /** PASS 판정 구간(ms)을 파형 그래프에 <b>초록 밴드</b>로 <b>누적</b> 추가(닫힌 구간). */
     public void addPassSpan(double startMs, double endMs) {
+        addPassSpanQuiet(startMs, endMs);
+        if (!isDisposed()) {
+            redraw();
+            update();
+        }
+    }
+
+    /** 밴드만 목록에 추가(리빌드/리드로우 없음). 스크럽에서 여러 구간 일괄 복원용. */
+    public void addPassSpanQuiet(double startMs, double endMs) {
         passSpans.add(new double[] { Math.min(startMs, endMs), Math.max(startMs, endMs) });
-        rebuildAndRedraw();
     }
 
     /** PASS 밴드 1개만 표시(기존 것 지우고 설정) — 단일 판정용 편의. */
     public void setPassSpan(double startMs, double endMs) {
         passSpans.clear();
+        passOpen = -1;
         addPassSpan(startMs, endMs);
     }
 
@@ -232,7 +258,10 @@ public class AudioScope extends Canvas {
     public void clearPass() {
         passSpans.clear();
         passOpen = -1;
-        rebuildAndRedraw();
+        if (!isDisposed()) {
+            redraw();
+            update();
+        }
     }
 
     /**
@@ -264,6 +293,7 @@ public class AudioScope extends Canvas {
         if (w == null || w.length == 0) {
             return;
         }
+        this.exactXAxis = false;
         if (targetFreq > 0) {
             this.targetHz = targetFreq;
         }
@@ -406,13 +436,17 @@ public class AudioScope extends Canvas {
         winMin = startMs;
         winMax = endMs;
         this.cursorMs = cursorMs;
+        // 라이브 setData 와 동일 — tickMs 그리드(floor/ceil). exact면 짧은 wav에서 0~4.5s처럼 줄어듦
+        this.exactXAxis = false;
         rebuildAndRedraw();
     }
 
     /** 스크럽 커서만 이동(파형 창은 그대로). 음수면 커서 제거. */
     public void setCursorMs(double ms) {
         this.cursorMs = ms;
-        rebuildAndRedraw();
+        if (!isDisposed()) {
+            redraw();   // 커서는 paint 오버레이 — 전체 차트 리빌드 불필요
+        }
     }
 
     public double getCursorMs() {
@@ -432,6 +466,7 @@ public class AudioScope extends Canvas {
         mLast = -1;
         winMin = 0;
         winMax = MATCH_WIN_MS;
+        exactXAxis = false;
         passSpans.clear();
         passOpen = -1;
         rebuildAndRedraw();
@@ -447,14 +482,26 @@ public class AudioScope extends Canvas {
         if (composite == null || composite.isDisposed()) {
             return null;
         }
+        // composite는 파형만 — PASS/커서는 임시 스냅에만 구워 이중 오버레이를 피한다
+        Rectangle b = composite.getBounds();
+        Image snap = new Image(getDisplay(), b.width, b.height);
+        GC bake = new GC(snap);
+        try {
+            bake.drawImage(composite, 0, 0);
+            paintOverlays(bake, b.width, b.height);
+        } finally {
+            bake.dispose();
+        }
         try {
             ImageLoader loader = new ImageLoader();
-            loader.data = new ImageData[] { composite.getImageData() };
+            loader.data = new ImageData[] { snap.getImageData() };
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             loader.save(bos, SWT.IMAGE_PNG);
             return bos.toByteArray();
         } catch (Exception ex) {
             return null;
+        } finally {
+            snap.dispose();
         }
     }
 
@@ -502,17 +549,12 @@ public class AudioScope extends Canvas {
         gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
         gc.fillRectangle(0, 0, w, h);
         if (showPitch) {
-            // 상단: 파형(좌) | 주파수(우)
+            // 상단: 파형(좌) | 주파수(우) — PASS/커서는 paintOverlays
             int halfW = w / 2;
             drawPng(gc, wavePng(halfW, topH), 0, 0);
-            drawPassBand(gc, 0, 0, halfW, topH);
-            drawCursor(gc, 0, 0, halfW, topH);
             drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
         } else {
-            // 파형 전폭
             drawPng(gc, wavePng(w, topH), 0, 0);
-            drawPassBand(gc, 0, 0, w, topH);
-            drawCursor(gc, 0, 0, w, topH);
         }
         if (showTrend) {
             drawPng(gc, trendPng(w, botH), 0, topH);
@@ -523,6 +565,19 @@ public class AudioScope extends Canvas {
             composite.dispose();
         }
         composite = comp;
+    }
+
+    /** PASS 밴드·스크럽 커서를 파형 패널 위에 덧그림(리빌드와 분리). */
+    private void paintOverlays(GC gc, int w, int h) {
+        int topH = showTrend ? h / 2 : h;
+        if (showPitch) {
+            int halfW = w / 2;
+            drawPassBand(gc, 0, 0, halfW, topH);
+            drawCursor(gc, 0, 0, halfW, topH);
+        } else {
+            drawPassBand(gc, 0, 0, w, topH);
+            drawCursor(gc, 0, 0, w, topH);
+        }
     }
 
     private void drawPng(GC gc, byte[] png, int x, int y) {
@@ -596,6 +651,7 @@ public class AudioScope extends Canvas {
 
     private XYChart baseChart(int w, int h, String title, int approxTicks, boolean showLegend) {
         XYChart c = new XYChart(w, h, BG);
+        c.setAntiAlias(true);   // 계단현상 완화 — 파형 가장자리가 부드럽게
         int right = showLegend ? PLOT_R_LEGEND : PLOT_R_PLAIN;
         int plotW = Math.max(1, w - PLOT_L - right);
         c.setPlotArea(PLOT_L, PLOT_T, plotW, Math.max(1, h - PLOT_V_CHROME), BG, -1, 0xdddddd, 0xf0f0f0, -1);
@@ -603,12 +659,21 @@ public class AudioScope extends Canvas {
         if (showLegend) {
             c.addLegend(w - LEGEND_W, 26, true, FONT, 8);
         }
-        // 눈금을 정수 그리드에 정렬(라이브 이동 시 소수점 라벨 방지) + 정수 ms 포맷
+        // 눈금 간격 + 정수 ms 포맷. 스크럽은 창 범위를 그대로, 라이브는 그리드에 맞춤.
+        // axLo/axHi 는 paint 오버레이(PASS/커서)와 공유한다.
         double tick = (tickMs > 0) ? tickMs : msTick(winMax - winMin, approxTicks);
-        axLo = Math.floor(winMin / tick) * tick;
-        axHi = Math.ceil(winMax / tick) * tick;
-        if (axHi - axLo < tick) {
-            axHi = axLo + tick;
+        if (exactXAxis) {
+            axLo = winMin;
+            axHi = winMax;
+            if (axHi - axLo < 1) {
+                axHi = axLo + 1;
+            }
+        } else {
+            axLo = Math.floor(winMin / tick) * tick;
+            axHi = Math.ceil(winMax / tick) * tick;
+            if (axHi - axLo < tick) {
+                axHi = axLo + tick;
+            }
         }
         c.xAxis().setLinearScale(axLo, axHi, tick);
         c.xAxis().setLabelFormat("{value|0}ms");
@@ -640,6 +705,7 @@ public class AudioScope extends Canvas {
         int h = Math.max(90, height);
 
         XYChart c = new XYChart(w, h, BG);
+        c.setAntiAlias(true);
         int plotW = Math.max(1, w - PLOT_L - PLOT_R_PLAIN);
         c.setPlotArea(PLOT_L, PLOT_T, plotW, Math.max(1, h - PLOT_V_CHROME),
                 BG, -1, 0xdddddd, 0xf0f0f0, -1);
@@ -687,11 +753,19 @@ public class AudioScope extends Canvas {
             hiV[k] = mx * 100.0;
             loV[k] = mn * 100.0;
         }
-        AreaLayer ah = c.addAreaLayer(hiV, C_FILL);
-        ah.setXData(tx);
-        AreaLayer al = c.addAreaLayer(loV, C_FILL);
-        al.setXData(tx);
+        addWaveArea(c, tx, hiV);
+        addWaveArea(c, tx, loV);
         return c.makeChart2(Chart.PNG);
+    }
+
+    /**
+     * 파형 채움 레이어 — <b>테두리 없이</b> 채운다.
+     * AreaLayer 기본 테두리(윤곽선)가 열마다 그려지면 얇은 파형이 굵은 덩어리로 보인다.
+     */
+    private static void addWaveArea(XYChart c, double[] tX, double[] data) {
+        AreaLayer a = c.addAreaLayer(data, C_FILL);
+        a.setXData(tX);
+        a.setBorderColor(Chart.Transparent);
     }
 
     private byte[] wavePng(int w, int h) {
@@ -715,11 +789,63 @@ public class AudioScope extends Canvas {
             m++;
         }
         if (m >= 2) {
-            double[] tX = Arrays.copyOf(tx, m);
-            AreaLayer ah = c.addAreaLayer(Arrays.copyOf(hi, m), C_FILL);   // 0..+peak
-            ah.setXData(tX);
-            AreaLayer al = c.addAreaLayer(Arrays.copyOf(lo, m), C_FILL);   // 0..-peak
-            al.setXData(tX);
+            // 한 픽셀 = 한 열(max/min) — 녹음 파형과 같은 밀도.
+            // 버킷 경계를 <b>시간(axLo 기준)</b>으로 고정한다. 인덱스로 나누면 프레임마다
+            // 경계가 밀려 같은 소리가 픽셀을 오가며 "지글지글" 떨린다.
+            int plotW = Math.max(1, w - PLOT_L - PLOT_R_PLAIN);
+            double span = axHi - axLo;
+            double[] tX;
+            double[] hiV;
+            double[] loV;
+            if (span > 0 && m > plotW) {
+                double[] bHi = new double[plotW];
+                double[] bLo = new double[plotW];
+                boolean[] has = new boolean[plotW];
+                for (int i = 0; i < m; i++) {
+                    int px = (int) ((tx[i] - axLo) / span * plotW);
+                    if (px < 0) {
+                        px = 0;
+                    } else if (px >= plotW) {
+                        px = plotW - 1;
+                    }
+                    if (!has[px]) {
+                        has[px] = true;
+                        bHi[px] = hi[i];
+                        bLo[px] = lo[i];
+                    } else {
+                        if (hi[i] > bHi[px]) {
+                            bHi[px] = hi[i];
+                        }
+                        if (lo[i] < bLo[px]) {
+                            bLo[px] = lo[i];
+                        }
+                    }
+                }
+                int k = 0;
+                for (int px = 0; px < plotW; px++) {
+                    if (has[px]) {
+                        k++;
+                    }
+                }
+                tX = new double[k];
+                hiV = new double[k];
+                loV = new double[k];
+                int j = 0;
+                for (int px = 0; px < plotW; px++) {
+                    if (has[px]) {
+                        tX[j] = axLo + (px + 0.5) * span / plotW;
+                        hiV[j] = bHi[px];
+                        loV[j] = bLo[px];
+                        j++;
+                    }
+                }
+            } else {
+                tX = Arrays.copyOf(tx, m);
+                hiV = Arrays.copyOf(hi, m);
+                loV = Arrays.copyOf(lo, m);
+            }
+            addWaveArea(c, tX, hiV);   // 0..+peak
+            addWaveArea(c, tX, loV);   // 0..-peak
         }
         return c.makeChart2(Chart.PNG);
     }

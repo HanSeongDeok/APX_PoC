@@ -20,10 +20,21 @@ import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 파형 측정/초기화 버튼 행 — matcher·capture·틱 내장.
+ * 파형 측정/초기화 버튼 행 — matcher·capture 내장.
  * 스코프는 {@link #setScope(AudioScope)}로 주입. 기대음 재생은 {@link ExpectedTonePlayBar}.
+ *
+ * <p>설정 다이얼로그는 모니터와 <b>구동만</b> 다르다(위젯 {@link AudioScope}는 동일):
+ * <ul>
+ *   <li>PASS 밴드 — 캡처 블록마다 오버레이만(가벼움 → 실시간)</li>
+ *   <li>파형 — {@link #WAVE_POLL_MS} 폴링으로 ChartDirector 리빌드
+ *       (블록마다 setData 하면 설정 UI가 멈춰 파형이 안 움직임)</li>
+ * </ul>
+ * 모니터({@code AudioMonitorView})는 뷰가 단순해 블록마다 setData 해도 버틴다.
  */
 public class AudioMeasureBar extends Composite {
+
+    /** 파형 ChartDirector 리빌드 주기. 블록(~46ms)마다 돌리면 설정 창이 죽는다. */
+    private static final int WAVE_POLL_MS = 50;
 
     public static final class Cfg {
         public String measureText = "파형 측정";
@@ -41,9 +52,14 @@ public class AudioMeasureBar extends Composite {
     private AudioScope scope;
     private BeepMatcher matcher;
     private volatile MatchResult latestMatch;
+    private volatile double latestElapsedSec;
     private volatile long capturedSamples;
     private String loadedPath;
-    private boolean tickPolling;
+    private boolean wavePolling;
+    /** PASS UI 갱신 합치기 — 블록마다 asyncExec 폭주 방지. */
+    private volatile boolean passUiScheduled;
+    /** 파형 리빌드 중이면 다음 폴링 스킵(큐 적체 방지). */
+    private boolean waveBusy;
 
     public AudioMeasureBar(Composite parent) {
         this(parent, new Cfg());
@@ -53,7 +69,6 @@ public class AudioMeasureBar extends Composite {
         super(parent, SWT.NONE);
         this.cfg = (cfg != null) ? cfg : new Cfg();
         display = getDisplay();
-        // 3열 — 3번째에 ExpectedTonePlayBar를 붙일 수 있다.
         setLayout(new GridLayout(3, true));
         setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
@@ -98,20 +113,16 @@ public class AudioMeasureBar extends Composite {
         settings.addListener(settingsListener);
         addDisposeListener(new DisposeListener() {
             public void widgetDisposed(DisposeEvent e) {
-                tickPolling = false;
+                wavePolling = false;
                 measureCapture.stop();
                 settings.removeListener(settingsListener);
             }
         });
 
         loadExpectedWav(false);
-        startMeasureTick();
+        startWavePoll();
     }
 
-    /**
-     * 파형 그래프 주입 — {@link AudioScope}를 넘겨야 그래프가 구동된다.
-     * 주입하지 않으면 이 바는 <b>버튼만</b> 표시하고 그래프는 나오지 않는다.
-     */
     public void setScope(AudioScope scope) {
         this.scope = scope;
         if (scope != null && !scope.isDisposed() && matcher != null) {
@@ -120,7 +131,6 @@ public class AudioMeasureBar extends Composite {
         }
     }
 
-    /** 이 바 자신(3열) — ExpectedTonePlayBar를 세 번째 칸에 붙일 때 사용. */
     public Composite getActionRow() {
         return this;
     }
@@ -154,6 +164,7 @@ public class AudioMeasureBar extends Composite {
                     settings.getAudioFreqThr(), settings.getAudioWaveThr(), 0.015);
             capturedSamples = 0;
             latestMatch = null;
+            latestElapsedSec = 0;
             if (scope != null && !scope.isDisposed()) {
                 scope.clear();
                 scope.setExpected(matcher.getTemplate(), wav.sampleRate);
@@ -190,13 +201,16 @@ public class AudioMeasureBar extends Composite {
             applyMatcherThresholds();
             if (fresh) {
                 latestMatch = null;
+                latestElapsedSec = 0;
             }
             try {
                 measureCapture.start(dev.info, matcher.getSampleRate(), new AudioCapture.BlockListener() {
                     public void onBlock(double[] block, double now) {
                         capturedSamples += block.length;
-                        double t = capturedSamples / (double) matcher.getSampleRate();
+                        final double t = capturedSamples / (double) matcher.getSampleRate();
                         latestMatch = matcher.feed(block, t);
+                        latestElapsedSec = t;
+                        schedulePassUi();
                     }
                 });
                 measureBtn.setText(cfg.measuringText);
@@ -210,11 +224,78 @@ public class AudioMeasureBar extends Composite {
         }
     }
 
+    /** PASS 오버레이만 UI에 예약(합침). ChartDirector setData는 하지 않음. */
+    private void schedulePassUi() {
+        if (passUiScheduled) {
+            return;
+        }
+        passUiScheduled = true;
+        display.asyncExec(new Runnable() {
+            public void run() {
+                passUiScheduled = false;
+                applyPassBand(latestMatch, latestElapsedSec);
+            }
+        });
+    }
+
+    private void applyPassBand(MatchResult mr, double elapsedSec) {
+        if (isDisposed() || scope == null || scope.isDisposed()) {
+            return;
+        }
+        if (!measureCapture.isRunning()) {
+            return;
+        }
+        double nowMs = elapsedSec * 1000.0;
+        boolean pass = mr != null && mr.isPass;
+        if (pass) {
+            double gap = mr.blockGapMs > 0 ? mr.blockGapMs : 0;
+            if (gap > 0) {
+                scope.updatePass(Math.max(0, nowMs - gap), true);
+            }
+            scope.updatePass(nowMs, true);
+        } else {
+            scope.updatePass(nowMs, false);
+        }
+    }
+
+    /** 파형만 주기적 리빌드 — 한 번에 하나만, 끝나면 다음 예약. */
+    private void startWavePoll() {
+        wavePolling = true;
+        display.timerExec(WAVE_POLL_MS, new Runnable() {
+            public void run() {
+                if (!wavePolling || isDisposed()) {
+                    return;
+                }
+                if (!waveBusy && measureCapture.isRunning() && matcher != null
+                        && scope != null && !scope.isDisposed()) {
+                    waveBusy = true;
+                    try {
+                        int sr = matcher.getSampleRate();
+                        if (sr > 0) {
+                            double elapsedSec = capturedSamples / (double) sr;
+                            // 파형 프레임과 PASS를 같이 맞춤(폴링 직전 최신 판정)
+                            applyPassBand(latestMatch, latestElapsedSec > 0
+                                    ? latestElapsedSec : elapsedSec);
+                            double[] wave = matcher.getBuffer().clone();
+                            scope.setData(wave, sr, matcher.getTargetFreq(), elapsedSec);
+                        }
+                    } finally {
+                        waveBusy = false;
+                    }
+                }
+                if (wavePolling && !isDisposed()) {
+                    display.timerExec(WAVE_POLL_MS, this);
+                }
+            }
+        });
+    }
+
     private void resetMeasure() {
         if (matcher != null) {
             matcher.arm();
         }
         latestMatch = null;
+        latestElapsedSec = 0;
         capturedSamples = 0;
         if (scope != null && !scope.isDisposed()) {
             scope.clear();
@@ -226,31 +307,5 @@ public class AudioMeasureBar extends Composite {
             measureBtn.setSelection(false);
             measureBtn.setText(cfg.measureText);
         }
-    }
-
-    private void startMeasureTick() {
-        tickPolling = true;
-        display.timerExec(60, new Runnable() {
-            public void run() {
-                if (!tickPolling || isDisposed()) {
-                    return;
-                }
-                if (measureCapture.isRunning() && matcher != null
-                        && scope != null && !scope.isDisposed()) {
-                    int sr = matcher.getSampleRate();
-                    double elapsedSec = capturedSamples / (double) sr;
-                    double elapsedMs = elapsedSec * 1000.0;
-                    scope.setData(matcher.getBuffer(), sr, matcher.getTargetFreq(), elapsedSec);
-                    MatchResult mr = latestMatch;
-                    if (mr != null) {
-                        scope.updatePass(elapsedMs, mr.isPass);
-                        scope.setMatchTrend(mr.freqSim, mr.waveSim, mr.freqThr, mr.waveThr, elapsedSec);
-                    }
-                }
-                if (tickPolling && !isDisposed()) {
-                    display.timerExec(60, this);
-                }
-            }
-        });
     }
 }
