@@ -10,28 +10,27 @@ import org.eclipse.ui.part.ViewPart;
 import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.core.measure.MeasureEvidence;
 import com.suresofttech.apx.core.measure.MeasureSession;
+import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 
 /**
  * 음향 모니터 — {@link AudioScope} 파형.
- * 초록 PASS 밴드는 블록 {@code match.isPass} 구간에만 그린다.
- * 결과/증거 스냅샷: PASS 시작 → PASS 아닌 시점(밴드 종료)에 캡처. 중단 시 열린 밴드 flush.
+ * 초록 PASS 밴드는 블록 {@code match.isPass} 구간에 그린다.
+ * <b>캡처 블록마다</b>{@link MeasureSession.Listener#onAudioTick}으로 갱신해
+ * UI 폴링 간격보다 짧은 PASS도 밴드가 빠지지 않게 한다.
  *
+ * <p>결과/증거 스냅샷: PASS 시작 → PASS 아닌 시점(밴드 종료)에 캡처. 중단 시 열린 밴드 flush.
  * <p>음정 추적·일치도 추이·판독값 UI는 제공하지 않는다(파형만).
  */
 public class AudioMonitorView extends ViewPart {
 
     public static final String ID = "com.suresofttech.apx.client.view.audioMonitor";
 
-    private static final int POLL_MS = 80;
-
     private AudioScope scope;
     private Display display;
-    private boolean tickPolling;
-    /** 직전 폴링의 블록/래치 PASS — falling edge 스냅샷용. */
+    private MeasureSession.Listener tickListener;
+    /** 직전 블록의 isPass — falling edge 스냅샷용. */
     private boolean prevBlockPass;
-    /** 세션 래치 후 밴드를 passAtMs부터 연 적이 있으면 true. */
-    private boolean passBandAnchored;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -42,26 +41,27 @@ public class AudioMonitorView extends ViewPart {
         scope.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         scope.setShowPitch(false);
         scope.setShowTrend(false);
+        scope.setTickMs(AudioScope.DEFAULT_TICK_MS); // 설정 화면과 동일 1s 눈금
     }
 
-    /** 측정 시작 시 Kickoff가 호출 — 기대 템플릿·그래프 초기화 + 폴링 시작. */
+    /** 측정 시작 시 Kickoff가 호출 — 기대 템플릿·그래프 초기화 + 블록 틱 구독. */
     public void onMeasureStarted(MeasureSession session) {
         if (scope == null || scope.isDisposed() || session == null) {
             return;
         }
+        stopTickListener();
         prevBlockPass = false;
-        passBandAnchored = false;
         scope.clear();
         double[] tmpl = session.getAudioTemplate();
         int sr = session.getAudioSampleRate();
         if (tmpl != null && sr > 0) {
             scope.setExpected(tmpl, sr);
         }
-        startPolling();
+        startTickListener();
     }
 
     public void onMeasureStopped() {
-        tickPolling = false;
+        stopTickListener();
     }
 
     /**
@@ -75,10 +75,12 @@ public class AudioMonitorView extends ViewPart {
         MeasureSession s = MeasureSession.get();
         boolean hadOpen = prevBlockPass;
         if (prevBlockPass) {
-            pushScope(s, false); // 밴드 닫기 + 리빌드
+            double nowMs = s.getElapsedSec() * 1000.0;
+            scope.updatePass(nowMs, false);
             prevBlockPass = false;
+            // 파형 한 번 더 커밋
+            pushWave(s, s.getElapsedSec());
         }
-        // PASS 밴드가 한 번도 없으면 찍지 않음(빈 파형만 Result에 올리는 것 방지)
         boolean hadSpan = !scope.getPassSpans().isEmpty() || hadOpen || s.isAudioPass();
         if (hadSpan) {
             capturePassSpanToEvidence();
@@ -93,55 +95,82 @@ public class AudioMonitorView extends ViewPart {
         return scope == null || scope.isDisposed() ? null : scope.capturePng();
     }
 
-    private void startPolling() {
-        tickPolling = true;
-        display.timerExec(POLL_MS, new Runnable() {
-            public void run() {
-                if (!tickPolling || scope == null || scope.isDisposed()) {
+    private void startTickListener() {
+        tickListener = new MeasureSession.Listener() {
+            public void onAudioTick(final MatchResult match, final double[] waveBuf,
+                    final double elapsedSec) {
+                if (display == null || display.isDisposed()) {
                     return;
                 }
-                pollScope();
-                if (tickPolling && !scope.isDisposed()) {
-                    display.timerExec(POLL_MS, this);
-                }
+                display.asyncExec(new Runnable() {
+                    public void run() {
+                        applyAudioTick(match, waveBuf, elapsedSec);
+                    }
+                });
             }
-        });
+
+            public void onVisionMatch(RoiMatchResult result) {
+            }
+
+            public void onState(boolean audioPass, boolean visionPass, boolean overallPass) {
+            }
+        };
+        MeasureSession.get().addListener(tickListener);
     }
 
-    private void pollScope() {
+    private void stopTickListener() {
+        if (tickListener != null) {
+            MeasureSession.get().removeListener(tickListener);
+            tickListener = null;
+        }
+    }
+
+    /**
+     * 캡처 스레드가 넘긴 블록 결과 — isPass면 그 블록 구간 전체를 초록 밴드로 덮는다.
+     * (폴링보다 촘촘해서 짧은 PASS 누락 없음. 세션 latch로 밴드를 붙들어 두지 않음.)
+     */
+    private void applyAudioTick(MatchResult match, double[] waveBuf, double elapsedSec) {
+        if (scope == null || scope.isDisposed()) {
+            return;
+        }
         MeasureSession s = MeasureSession.get();
         if (!s.isRunning()) {
             return;
         }
-        MatchResult match = s.getLatestMatch();
-        // 블록 isPass 또는 세션 래치 — 짧은 PASS가 폴링 사이에 빠져도 초록 밴드가 보이게
-        boolean passBand = (match != null && match.isPass) || s.isAudioPass();
-        pushScope(s, passBand);
+        boolean passBand = match != null && match.isPass;
+        double nowMs = elapsedSec * 1000.0;
+        if (passBand) {
+            // 블록 시작~끝까지 밴드 — 한 블록짜리 PASS도 폭이 있게 남는다
+            double gap = match.blockGapMs > 0 ? match.blockGapMs : 0;
+            if (gap > 0) {
+                scope.updatePass(Math.max(0, nowMs - gap), true);
+            }
+            scope.updatePass(nowMs, true);
+        } else {
+            scope.updatePass(nowMs, false);
+        }
 
-        // PASS 구간 종료 시점 → 결과/증거 스냅샷 (밴드가 다 그려진 상태)
+        int sr = s.getAudioSampleRate();
+        if (sr > 0) {
+            // 캡처 스레드 버퍼와 경합 방지 — 폴링 때와 같이 복사본 사용
+            double[] wave = s.getWaveBuffer();
+            if (wave != null) {
+                scope.setData(wave, sr, s.getTargetFreq(), elapsedSec);
+            }
+        }
+
         if (prevBlockPass && !passBand) {
             capturePassSpanToEvidence();
         }
         prevBlockPass = passBand;
     }
 
-    private void pushScope(MeasureSession s, boolean passBand) {
+    private void pushWave(MeasureSession s, double elapsedSec) {
         int sr = s.getAudioSampleRate();
         double[] waveBuf = s.getWaveBuffer();
         if (sr <= 0 || waveBuf == null) {
             return;
         }
-        double elapsedSec = s.getElapsedSec();
-        double nowMs = elapsedSec * 1000.0;
-        // 래치된 검출 시각부터 밴드를 열어 Kickoff PASS @ ms 와 맞춤
-        if (passBand && s.isAudioPass() && !passBandAnchored) {
-            Long at = s.getAudioPassMs();
-            if (at != null) {
-                scope.updatePass(at.doubleValue(), true);
-                passBandAnchored = true;
-            }
-        }
-        scope.updatePass(nowMs, passBand);
         scope.setData(waveBuf, sr, s.getTargetFreq(), elapsedSec);
     }
 
@@ -152,7 +181,7 @@ public class AudioMonitorView extends ViewPart {
         }
         byte[] png = scope.capturePng();
         if (png != null) {
-            ev.putAudioPng(png); // 최초 PASS 구간만 보관(ResultView·wave_center)
+            ev.putAudioPng(png);
         }
     }
 
@@ -165,7 +194,7 @@ public class AudioMonitorView extends ViewPart {
 
     @Override
     public void dispose() {
-        tickPolling = false;
+        stopTickListener();
         super.dispose();
     }
 }
