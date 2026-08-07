@@ -44,6 +44,9 @@ public final class SelfCheck {
         check("matching: waveSim≥0.9 (" + fmt(r.waveSim) + ")", r.waveSim >= 0.9);
         check("matching: isPass=true", r.isPass);
         check("matching: match latched", r.match && !Double.isNaN(r.onsetT));
+        check("matching: passMs=blockGap+analysis",
+                r.passMs != null && r.analysisMs != null
+                        && Math.abs(r.passMs.doubleValue() - (r.blockGapMs + r.analysisMs.doubleValue())) < 1e-6);
 
         // 불일치(900Hz) → FAIL
         BeepMatcher m2 = new BeepMatcher(tmpl, sr);

@@ -160,6 +160,11 @@ public final class RoiMatchDetector {
         return ev.getEvidence();
     }
 
+    /** 측정 중단 시 — post 미완이어도 pre/decide 확정. */
+    public void flushEvidence() {
+        ev.flush();
+    }
+
     /** ui용 진입점 — BufferedImage(webcam)로 받아 내부에서 Mat 변환/해제. */
     public RoiMatchResult process(BufferedImage bi) {
         double tArrive = now();
@@ -174,7 +179,9 @@ public final class RoiMatchDetector {
         if (rawGap > 0) {
             pushGap(rawGap);
         }
-        double gapMs = medianGap();
+        // D_gap = 1/fps (프레임 양자화). 폴링이 카메라보다 잦으면 median이 작아지므로
+        // 실측 FPS 주기와 중앙값 중 타당한 쪽을 쓴다(미지이면 30fps→33.3ms).
+        double gapMs = resolveFrameGapMs(medianGap());
         Mat frame = Cv.toMat(bi);
         try {
             lastResult = processMat(frame, tArrive, gapMs);
@@ -182,6 +189,24 @@ public final class RoiMatchDetector {
         } finally {
             frame.release();
         }
+    }
+
+    /**
+     * 프레임 간격(ms). CameraService 실측 FPS → 1000/fps, 없으면 30fps 가정.
+     * 실측 median이 fps 주기의 0.5~2.5배면 median 채택(가변 fps 대응).
+     */
+    private static double resolveFrameGapMs(double measuredMedianMs) {
+        double fps = 0;
+        try {
+            fps = CameraService.get().fps();
+        } catch (Throwable ignored) {
+            fps = 0;
+        }
+        double nominal = (fps > 1.0) ? (1000.0 / fps) : (1000.0 / 30.0);
+        if (measuredMedianMs >= nominal * 0.5 && measuredMedianMs <= nominal * 2.5) {
+            return measuredMedianMs;
+        }
+        return nominal;
     }
 
     private void pushGap(double g) {

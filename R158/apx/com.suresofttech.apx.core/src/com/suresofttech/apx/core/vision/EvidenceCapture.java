@@ -89,6 +89,24 @@ public final class EvidenceCapture {
         return evidence;
     }
 
+    /**
+     * 측정 중단 시 호출 — post가 아직 안 찼어도 pre/decide를 확정한다.
+     * post가 없으면 decide를 post로 복제(파이썬 stop 시 부분 증거와 동일 목적).
+     */
+    public void flush() {
+        if (evidence != null) {
+            return;
+        }
+        if (collectDecide == null) {
+            return;
+        }
+        Snap post = (ring != null && !ring.isEmpty()) ? ring.peekLast() : collectDecide;
+        evidence = new Evidence(collectPre, collectDecide, post);
+        collectPre = null;
+        collectDecide = null;
+        collectCount = -1;
+    }
+
     public void reset() {
         collectPre = null;
         collectDecide = null;

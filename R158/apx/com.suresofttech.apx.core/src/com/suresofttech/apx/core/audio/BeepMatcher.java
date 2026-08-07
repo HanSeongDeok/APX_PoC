@@ -31,6 +31,8 @@ public final class BeepMatcher {
     private Double bg = null;           // 배경 에너지 EMA
     private boolean armed = false;
     private double onsetT = Double.NaN;
+    /** 전환 확정 시 {passMs, blockGapMs, analysisMs}. 미확정이면 null. */
+    private double[] pass;
 
     public BeepMatcher(double[] template, int sr, double band, double energyFactor,
                        double freqThr, double waveThr, double pulseSec) {
@@ -100,6 +102,7 @@ public final class BeepMatcher {
     public void arm() {
         armed = true;
         onsetT = Double.NaN;
+        pass = null;
         java.util.Arrays.fill(buf, 0.0);
         bg = null;
     }
@@ -107,6 +110,7 @@ public final class BeepMatcher {
     public void reset() {
         armed = false;
         onsetT = Double.NaN;
+        pass = null;
     }
 
     public double getTargetFreq() {
@@ -175,7 +179,9 @@ public final class BeepMatcher {
 
     /** 오디오 블록(mono) 처리. now=시각(초, 검출 타임스탬프용). */
     public MatchResult feed(double[] block, double now) {
+        long tAna0 = System.nanoTime();
         int n = block.length;
+        double blockGapMs = n * 1000.0 / sr;
         // 롤링 버퍼 갱신
         if (n >= buflen) {
             System.arraycopy(block, n - buflen, buf, 0, buflen);
@@ -201,8 +207,13 @@ public final class BeepMatcher {
         if (armed && Double.isNaN(onsetT) && isPass) {
             onsetT = now;
             match = true;
+            double analysisMs = (System.nanoTime() - tAna0) / 1e6;
+            pass = new double[] { blockGapMs + analysisMs, blockGapMs, analysisMs };
         }
         return new MatchResult(targetFreq, ratio, hasSound, freqSim, waveSim,
-                combined, freqThr, waveThr, isPass, match, onsetT);
+                combined, freqThr, waveThr, isPass, match, onsetT,
+                blockGapMs,
+                pass != null ? Double.valueOf(pass[2]) : null,
+                pass != null ? Double.valueOf(pass[0]) : null);
     }
 }

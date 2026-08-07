@@ -173,7 +173,9 @@ public final class AudioCapture {
         line.open(fmt);
         line.start();
         running = true;
-        final int blockSamples = 256;   // 5.8ms @44.1kHz — 블록 양자화 지연 축소(검출 ~30ms 목표)
+        // 설계값(JAVA_STACK): D_blk = 2048/sr ≈ 46ms @44.1kHz.
+        // 자체판단 passMs = blockGap(=n/sr) + analysis.
+        final int blockSamples = 2048;
         final byte[] raw = new byte[blockSamples * 2];
         thread = new Thread(new Runnable() {
             public void run() {

@@ -22,6 +22,7 @@ public final class RoiMatchResult {
     public double procMs;             // 이 프레임 판단(처리) 속도 — 매 프레임 라이브
     public double frameGapMs;
     public Double analysisMs;         // 전환 순간(없으면 null)
+    /** 자체 판단(ms) = frameGap(=1/fps) + analysis. 전환 확정 시에만. 물리지연(D_cap) 미포함. */
     public Double passMs;
 
     public Integer lockInliers;

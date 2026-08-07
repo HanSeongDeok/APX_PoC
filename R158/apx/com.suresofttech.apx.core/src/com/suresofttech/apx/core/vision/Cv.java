@@ -72,6 +72,26 @@ public final class Cv {
         return m;
     }
 
+    /** 한글/유니코드 경로 대응 imwrite (imencode → Files.write). */
+    public static boolean imwriteKr(String path, Mat img) {
+        if (path == null || img == null || img.empty()) {
+            return false;
+        }
+        try {
+            ensureLoaded();
+            MatOfByte buf = new MatOfByte();
+            if (!Imgcodecs.imencode(".png", img, buf)) {
+                buf.release();
+                return false;
+            }
+            Files.write(Paths.get(path), buf.toArray());
+            buf.release();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** OpenCV Mat(BGR 3ch 또는 GRAY 1ch) → AWT BufferedImage. */
     public static BufferedImage toBufferedImage(Mat m) {
         int ch = m.channels();
