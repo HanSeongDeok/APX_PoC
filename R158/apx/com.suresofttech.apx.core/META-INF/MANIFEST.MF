@@ -16,6 +16,7 @@ Bundle-ClassPath: .,
 Export-Package: com.suresofttech.apx.core.audio,
  com.suresofttech.apx.core.config,
  com.suresofttech.apx.core.dsp,
+ com.suresofttech.apx.core.measure,
  com.suresofttech.apx.core.rear,
  com.suresofttech.apx.core.sync,
  com.suresofttech.apx.core.vision
