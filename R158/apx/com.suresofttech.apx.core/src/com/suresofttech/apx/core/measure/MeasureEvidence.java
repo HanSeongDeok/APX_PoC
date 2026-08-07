@@ -9,12 +9,12 @@ import com.suresofttech.apx.core.audio.WavIo;
 
 /**
  * 측정 증거 버퍼. WAV·스코프 PNG·PASS 시각 메타(메모리).
- * 디스크 규약(노션 음향 설계):
+ * 디스크 규약 — 음향 폴더({@code <증거루트>/audio/}):
  * <ul>
- *   <li>{@code full.wav} — {@link #saveFull}</li>
- *   <li>{@code clip.wav} — PASS 초록 밴드 시작~끝 ({@link #setAudioPassSpan})</li>
- *   <li>{@code wave_center.png} — PASS 시점 파형(Evidence.wavePng 중심)</li>
- *   <li>{@code pass_times.txt} — 검출/자체판단 메타</li>
+ *   <li>{@code full.wav} — 측정 전체 ({@link #saveFull})</li>
+ *   <li>{@code clip.wav} — PASS 시작~PASS 해제까지 ({@link #setAudioPassSpan})</li>
+ *   <li>{@code wave_pass.png} — PASS 시점 파형 스냅샷</li>
+ *   <li>{@code wave_full.png} — 측정 종료 시점 전체 파형 스냅샷</li>
  * </ul>
  * 비전 프레임·후방 PNG는 각각 EvidenceCapture / RearGridCanvas 규약으로 클라가 저장.
  */
@@ -23,6 +23,7 @@ public final class MeasureEvidence {
     private double[] audioSamples = new double[0];
     private int audioSampleRate;
     private byte[] audioScopePng;
+    private byte[] audioFullPng;
     private byte[] visionCanvasPng;
     private byte[] rearCanvasPng;
     private Long audioPassMs;
@@ -64,11 +65,22 @@ public final class MeasureEvidence {
         }
     }
 
-    /** 음향 스코프 PNG — 최초 PASS 밴드 종료 스냅샷만 보관. → wave_center.png */
+    /** 음향 스코프 PNG — 최초 PASS 구간 스냅샷만 보관. → wave_pass.png */
     public synchronized void putAudioPng(byte[] png) {
         if (this.audioScopePng == null && png != null) {
             this.audioScopePng = png.clone();
         }
+    }
+
+    /** 측정 종료 시점 전체 파형 스냅샷 — 매번 최신으로 갱신. → wave_full.png */
+    public synchronized void putAudioFullPng(byte[] png) {
+        if (png != null) {
+            this.audioFullPng = png.clone();
+        }
+    }
+
+    public synchronized byte[] getAudioFullSnapshot() {
+        return audioFullPng == null ? null : audioFullPng.clone();
     }
 
     /** 비전 캔버스 PNG — ResultView 메모리 표시용(최초만). 디스크는 EvidenceCapture 규약. */
@@ -184,6 +196,27 @@ public final class MeasureEvidence {
         return audioPassEndMs;
     }
 
+    /**
+     * 구간 WAV 바이트 [startMs, endMs) — 파일로 떨구지 않고 클라가 바로 받아갈 때.
+     * 범위가 비었거나 샘플이 없으면 null.
+     */
+    public synchronized byte[] getRangeWavBytes(double startMs, double endMs) throws Exception {
+        if (audioSamples == null || audioSamples.length == 0 || audioSampleRate <= 0) {
+            return null;
+        }
+        File tmp = File.createTempFile("apx-clip-", ".wav");
+        try {
+            if (saveRange(tmp, startMs, endMs) == null) {
+                return null;
+            }
+            return readAll(tmp);
+        } finally {
+            if (!tmp.delete()) {
+                tmp.deleteOnExit();
+            }
+        }
+    }
+
     /** 구간 WAV 저장 [startMs, endMs). */
     public synchronized File saveRange(File path, double startMs, double endMs) throws Exception {
         if (path == null || audioSamples == null || audioSamples.length == 0 || audioSampleRate <= 0) {
@@ -198,9 +231,8 @@ public final class MeasureEvidence {
     }
 
     /**
-     * 클라 {@code setSnapshotDir} 폴더에 음향 규약 파일 저장.
-     * {@code full.wav}, {@code wave_center.png},
-     * (PASS 밴드 있으면) {@code clip.wav} = 초록 시작~끝, {@code pass_times.txt}.
+     * 음향 증거 폴더에 규약 파일 저장 — {@code full.wav}, {@code wave_pass.png},
+     * {@code wave_full.png}, (PASS 구간 있으면) {@code clip.wav} = PASS 시작~해제.
      */
     public synchronized void saveTo(File dir) throws Exception {
         if (dir == null) {
@@ -210,31 +242,13 @@ public final class MeasureEvidence {
             throw new IllegalStateException("증거 폴더 생성 실패: " + dir);
         }
         saveFull(new File(dir, "full.wav"));
-        writeBytes(new File(dir, "wave_center.png"), audioScopePng);
+        writeBytes(new File(dir, "wave_pass.png"), audioScopePng);
+        writeBytes(new File(dir, "wave_full.png"), audioFullPng);
         if (audioPassStartMs != null && audioPassEndMs != null
                 && audioPassEndMs.doubleValue() > audioPassStartMs.doubleValue()) {
             saveRange(new File(dir, "clip.wav"),
                     audioPassStartMs.doubleValue(), audioPassEndMs.doubleValue());
         }
-        writeTimes(new File(dir, "pass_times.txt"));
-    }
-
-    /** PASS 시각 메타 — 물리지연 포함 검출시각 + 자체 판단(gap+분석). */
-    private void writeTimes(File f) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# PASS times (no L2 calibration)\n");
-        sb.append("# detectMs = wall/common-clock from measure start (includes D_mic/D_cap)\n");
-        sb.append("# judgeMs  = tool overhead = gap + analysis\n");
-        sb.append("audio.detectMs=").append(audioPassMs == null ? "" : audioPassMs).append('\n');
-        sb.append("audio.judgeMs=").append(audioJudgeMs == null ? "" : audioJudgeMs).append('\n');
-        sb.append("audio.passSpanStartMs=")
-                .append(audioPassStartMs == null ? "" : audioPassStartMs).append('\n');
-        sb.append("audio.passSpanEndMs=")
-                .append(audioPassEndMs == null ? "" : audioPassEndMs).append('\n');
-        sb.append("vision.detectMs=").append(visionPassMs == null ? "" : visionPassMs).append('\n');
-        sb.append("vision.judgeMs=").append(visionJudgeMs == null ? "" : visionJudgeMs).append('\n');
-        sb.append("overall.detectMs=").append(overallPassMs == null ? "" : overallPassMs).append('\n');
-        writeBytes(f, sb.toString().getBytes("UTF-8"));
     }
 
     private static void writeBytes(File f, byte[] data) throws Exception {

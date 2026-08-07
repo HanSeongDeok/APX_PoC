@@ -2,7 +2,6 @@ package com.suresofttech.apx.core.measure;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.suresofttech.apx.core.audio.AudioCapture;
@@ -13,15 +12,20 @@ import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.Verdict;
 import com.suresofttech.apx.core.sync.SyncBus;
+import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.Cv;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
+import com.suresofttech.apx.core.vision.VisionEvidenceStore;
+import com.suresofttech.apx.core.vision.VisionRecorder;
 
 /**
  * 측정 세션 — 시작 시 설정 스냅샷 고정, 음향·비전 엔진·후방 판정 상태·증거 버퍼.
- * 후방: 측정 중은 {@link #markRearMeasuring()}. PASS/FAIL은 중단 시 Kickoff가
- * {@link #setRearVerdict} / markRearPass 등으로 반영한다.
+ *
+ * <p>후방은 판정 <b>저장소</b>만 제공한다({@link #setRearVerdict}/{@link #getRearVerdict}).
+ * "이번 측정 결과를 어느 격자 포인트에 넣을지"는 시험 계획(어느 포인트가 어느 TC인지)을
+ * 아는 클라이언트가 정한다 — core는 그 매핑 규칙을 갖지 않는다.
  */
 public final class MeasureSession {
 
@@ -51,8 +55,10 @@ public final class MeasureSession {
     private AudioRecorder recorder;
     private volatile long capturedSamples;
     private volatile MatchResult latestMatch;
+    /** 측정 중 마이크가 빠지거나 입력이 끊긴 사유. 정상이면 null. */
+    private volatile String audioError;
     private volatile boolean audioPass;
-    private Long audioPassAtMs;
+    private volatile Long audioPassAtMs;
     /** 자체 판단(ms) = blockGap + analysis. 미확정 null. */
     private Double audioJudgeMs;
     private Double audioGapMs;
@@ -61,18 +67,22 @@ public final class MeasureSession {
     private RoiMatchDetector visionDet;
     private volatile RoiMatchResult latestVision;
     private volatile boolean visionPass;
-    private Long visionPassAtMs;
+    private volatile Long visionPassAtMs;
     /** 자체 판단(ms) = frameGap + analysis. 미확정 null. */
     private Double visionJudgeMs;
     private Double visionGapMs;
     private Double visionAnalysisMs;
     /** stop 시 detector에서 보존 — 전/중/후 프레임 증거. */
     private EvidenceCapture.Evidence visionFrameEvidence;
+    /** 측정 전체 구간 비전 녹화(결과 탭 스크럽용). */
+    private final VisionRecorder visionRecorder = new VisionRecorder();
+    private VisionRecorder.Recording visionRecording;
+    /** 녹화 임시 폴더 — 중단 후 증거 폴더로 옮긴다. */
+    private File visionRecordDir;
 
     private final Object rearLock = new Object();
     private Verdict[][] rearVerdicts; // [col][row], null = NONE
 
-    private long startEpochMs;
     /** SyncBus 공통시계(초) — 측정 시작 시각. PASS ms = (stamp − startNanoSec)*1000. */
     private volatile double startNanoSec;
 
@@ -102,7 +112,7 @@ public final class MeasureSession {
     }
 
     /**
-     * 비전 판정 전·중·후 프레임 증거 ({@code evidence_pre_-3f} 등).
+     * 비전 판정 전·중·후 프레임 증거 ({@code evidence_pre_-1f} 등).
      * {@link #stop()} 이후에도 유지.
      */
     public synchronized EvidenceCapture.Evidence getVisionFrameEvidence() {
@@ -110,7 +120,7 @@ public final class MeasureSession {
     }
 
     /**
-     * 클라 {@code RoiNcc} detector에서 수확한 ±3프레임 증거 수용.
+     * 클라 {@code RoiNcc} detector에서 수확한 ±1프레임 증거 수용.
      * (모니터는 Session.visionDet가 아닌 RoiNcc det로 process 하므로 stop 전에 넘긴다)
      */
     public synchronized void acceptVisionFrameEvidence(EvidenceCapture.Evidence e) {
@@ -121,7 +131,7 @@ public final class MeasureSession {
 
     /**
      * 클라 폴더에 비전 증거 PNG 저장 (OpenCV Mat은 core에서만 다룸).
-     * {@code evidence_pre_-3f.png} / {@code evidence_decide.png} / {@code evidence_post_+3f.png}
+     * {@code evidence_pre_-1f.png} / {@code evidence_decide.png} / {@code evidence_post_+1f.png}
      */
     public synchronized void saveVisionFrameEvidenceTo(File dir) {
         if (dir == null || visionFrameEvidence == null) {
@@ -130,9 +140,10 @@ public final class MeasureSession {
         if (!dir.exists()) {
             dir.mkdirs();
         }
-        writeVisionSnap(dir, "evidence_pre_-3f.png", visionFrameEvidence.pre);
-        writeVisionSnap(dir, "evidence_decide.png", visionFrameEvidence.decide);
-        writeVisionSnap(dir, "evidence_post_+3f.png", visionFrameEvidence.post);
+        // 파일명은 VisionEvidenceStore가 단일 출처 — 조회 API와 어긋나지 않게.
+        writeVisionSnap(dir, VisionEvidenceStore.Frame.PRE.fileName(), visionFrameEvidence.pre);
+        writeVisionSnap(dir, VisionEvidenceStore.Frame.DECIDE.fileName(), visionFrameEvidence.decide);
+        writeVisionSnap(dir, VisionEvidenceStore.Frame.POST.fileName(), visionFrameEvidence.post);
     }
 
     private static void writeVisionSnap(File dir, String name, EvidenceCapture.Snap snap) {
@@ -204,6 +215,31 @@ public final class MeasureSession {
         return latestMatch;
     }
 
+    /**
+     * 측정 중 음향 입력이 끊긴 사유(마이크 분리 등). 정상이면 null.
+     * null이 아니면 그 시점 이후 {@code full.wav}는 더 이상 쌓이지 않는다.
+     */
+    public String getAudioError() {
+        return audioError;
+    }
+
+    /**
+     * 비전 녹화 중 해상도가 달라 레터박스로 맞춘 프레임 수.
+     * 0보다 크면 측정 도중 카메라·해상도가 바뀌었다는 뜻.
+     */
+    public int getVisionResizedFrames() {
+        return visionRecorder.getResizedFrames();
+    }
+
+    /** 녹화 컨테이너의 프레임 크기 — 아직 안 열렸으면 0. */
+    public int getVisionRecordWidth() {
+        return visionRecorder.getWidth();
+    }
+
+    public int getVisionRecordHeight() {
+        return visionRecorder.getHeight();
+    }
+
     public RoiMatchResult getLatestVision() {
         return latestVision;
     }
@@ -255,14 +291,23 @@ public final class MeasureSession {
         this.visionGapMs = null;
         this.visionAnalysisMs = null;
         this.visionFrameEvidence = null;
-        this.startEpochMs = System.currentTimeMillis();
+        this.visionRecording = null;
         SyncBus.get().reset();
         this.startNanoSec = SyncBus.now();
         initRearVerdicts(snap);
+        startVisionRecording();
 
         final BeepMatcher feedMatcher = bm;
         final AudioRecorder feedRec = rec;
         final double t0 = this.startNanoSec;
+        this.audioError = null;
+        // 측정 도중 마이크가 빠지면 무음이 조용히 녹음된다 — 사유를 세션 상태로 올린다.
+        cap.setErrorListener(new AudioCapture.ErrorListener() {
+            public void onCaptureError(String reason) {
+                audioError = reason;
+                fireState();
+            }
+        });
         cap.start(dev.info, bm.getSampleRate(), new AudioCapture.BlockListener() {
             public void onBlock(double[] block, double now) {
                 feedRec.feed(block);
@@ -287,6 +332,7 @@ public final class MeasureSession {
                         audioAnalysisMs = mr.analysisMs;
                         evidence.setAudioJudgeMs(mr.passMs.doubleValue());
                     }
+                    recordOverallPassIfComplete();
                     fireState();
                 }
                 fireAudio(mr, feedMatcher.getBuffer(), tAudio);
@@ -317,7 +363,99 @@ public final class MeasureSession {
             visionFrameEvidence = visionDet.getEvidence();
         }
         visionDet = null;
+        visionRecording = visionRecorder.stop();
         fireState();
+    }
+
+    // ── 비전 FULL 녹화 ──────────────────────────────────────────
+
+    /**
+     * 측정 시작~중단 전체 녹화를 임시 폴더에 쌓는다. 증거 루트는 중단 시점에
+     * 클라가 정하므로(저장 경로 버튼), 여기서는 temp에 쓰고
+     * {@link #moveVisionRecordingTo}가 최종 폴더로 옮긴다.
+     */
+    private void startVisionRecording() {
+        try {
+            File tmp = File.createTempFile("apx-rec-", "");
+            if (!tmp.delete() || !tmp.mkdirs()) {
+                return;
+            }
+            tmp.deleteOnExit();
+            visionRecordDir = tmp;
+            // 열려 있는 카메라 해상도를 미리 넘겨 writer를 사전 오픈 —
+            // 첫 프레임에 열면 오픈에 걸리는 수백 ms 동안 측정 앞부분이 유실된다.
+            BufferedImage probe = CameraService.get().latest();
+            if (probe != null) {
+                visionRecorder.start(tmp, probe.getWidth(), probe.getHeight());
+            } else {
+                visionRecorder.start(tmp);
+            }
+        } catch (Exception ex) {
+            visionRecordDir = null;
+        }
+    }
+
+    /**
+     * 비전 프레임 투입 — UI가 새 카메라 프레임을 받을 때마다 호출.
+     * 시각은 PASS 시각과 같은 공통시계 기준(측정 시작=0)이라 결과 스크럽이 정렬된다.
+     */
+    public void recordVisionFrame(BufferedImage bi) {
+        if (!running || bi == null || !visionRecorder.isRunning()) {
+            return;
+        }
+        double tMs = (SyncBus.now() - startNanoSec) * 1000.0;
+        visionRecorder.feed(bi, tMs);
+    }
+
+    /** 중단 후 남은 녹화 산출물({@code full.avi} + {@code frames.csv}). 없으면 null. */
+    public synchronized VisionRecorder.Recording getVisionRecording() {
+        return visionRecording;
+    }
+
+    /**
+     * 녹화본을 증거 폴더로 옮긴다 — {@code <visionDir>/full.avi}, {@code frames.csv}.
+     * @return 옮겨진 영상 파일(없으면 null)
+     */
+    public synchronized File moveVisionRecordingTo(File visionDir) {
+        VisionRecorder.Recording rec = visionRecording;
+        if (rec == null || visionDir == null) {
+            return null;
+        }
+        if (!visionDir.exists() && !visionDir.mkdirs()) {
+            return null;
+        }
+        File video = moveInto(rec.video, new File(visionDir, VisionRecorder.VIDEO_NAME));
+        moveInto(rec.index, new File(visionDir, VisionRecorder.INDEX_NAME));
+        if (visionRecordDir != null) {
+            visionRecordDir.delete();   // 비었으면 정리(남아 있으면 deleteOnExit이 처리)
+        }
+        if (video != null) {
+            visionRecording = new VisionRecorder.Recording(
+                    video, new File(visionDir, VisionRecorder.INDEX_NAME),
+                    rec.frameCount, rec.lastMs);
+        }
+        return video;
+    }
+
+    /** rename 실패(다른 볼륨 등) 시 복사로 폴백. */
+    private static File moveInto(File src, File dst) {
+        if (src == null || !src.isFile()) {
+            return null;
+        }
+        if (dst.exists() && !dst.delete()) {
+            return null;
+        }
+        if (src.renameTo(dst)) {
+            return dst;
+        }
+        try {
+            java.nio.file.Files.copy(src.toPath(), dst.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            src.delete();
+            return dst;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     /**
@@ -386,22 +524,14 @@ public final class MeasureSession {
             visionGapMs = Double.valueOf(r.frameGapMs);
             visionAnalysisMs = r.analysisMs;
         }
+        recordOverallPassIfComplete();
         fireState();
     }
 
-    /** Select 포인트 전부 MEASURING. */
-    public void markRearMeasuring() {
-        setAllSelectedVerdict(Verdict.MEASURING);
-    }
-
-    /** Select 포인트 전부 PASS (Kickoff 제품 규칙용). */
-    public void markRearPass() {
-        setAllSelectedVerdict(Verdict.PASS);
-        if (evidence != null && audioPass && visionPass) {
-            evidence.setOverallPassMs(System.currentTimeMillis() - startEpochMs);
-        }
-    }
-
+    /**
+     * 후방 판정 <b>저장</b>만 담당한다. 어느 포인트에 무엇을 넣을지(=측정 결과를 격자에
+     * 매핑하는 규칙)는 시험 계획을 아는 클라이언트 몫이라 core에 두지 않는다.
+     */
     public void setRearVerdict(int col, int row, Verdict v) {
         synchronized (rearLock) {
             if (rearVerdicts == null || snapshot == null) {
@@ -476,20 +606,20 @@ public final class MeasureSession {
         }
     }
 
-    private void setAllSelectedVerdict(Verdict v) {
-        if (snapshot == null) {
+    /**
+     * 두 채널이 모두 PASS가 된 시각(늦은 쪽)을 증거에 기록 — 한쪽이 latch될 때마다 호출.
+     *
+     * <p>예전에는 클라가 중단을 누른 시각을 넣었는데, 그건 "조건이 충족된 시각"이 아니라
+     * "운영자가 버튼을 누른 시각"이라 증거로 의미가 없었다. 두 시각 모두 측정 시작 기준
+     * 공통시계라 max가 곧 전체 충족 시점이다. 최초 1회만 기록된다.
+     */
+    private void recordOverallPassIfComplete() {
+        Long a = audioPassAtMs;
+        Long v = visionPassAtMs;
+        if (evidence == null || a == null || v == null) {
             return;
         }
-        List<int[]> pts = snapshot.rearSelectedPoints;
-        if (pts == null) {
-            return;
-        }
-        for (int i = 0; i < pts.size(); i++) {
-            int[] p = pts.get(i);
-            if (p != null && p.length >= 2) {
-                setRearVerdict(p[0], p[1], v);
-            }
-        }
+        evidence.setOverallPassMs(Math.max(a.longValue(), v.longValue()));
     }
 
     private RoiMatchDetector ensureVisionDetector(BufferedImage bi) throws Exception {
