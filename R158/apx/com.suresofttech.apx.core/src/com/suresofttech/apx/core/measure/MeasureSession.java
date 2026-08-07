@@ -18,6 +18,7 @@ import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.core.vision.VisionEvidenceStore;
+import com.suresofttech.apx.core.vision.VisionMatchLog;
 import com.suresofttech.apx.core.vision.VisionRecorder;
 
 /**
@@ -79,6 +80,8 @@ public final class MeasureSession {
     private VisionRecorder.Recording visionRecording;
     /** 녹화 임시 폴더 — 중단 후 증거 폴더로 옮긴다. */
     private File visionRecordDir;
+    /** 프레임별 ROI hit/ncc — 결과 스크럽 PASS/FAIL 색 복원. */
+    private final VisionMatchLog visionMatchLog = new VisionMatchLog();
 
     private final Object rearLock = new Object();
     private Verdict[][] rearVerdicts; // [col][row], null = NONE
@@ -292,6 +295,7 @@ public final class MeasureSession {
         this.visionAnalysisMs = null;
         this.visionFrameEvidence = null;
         this.visionRecording = null;
+        this.visionMatchLog.clear();
         SyncBus.get().reset();
         this.startNanoSec = SyncBus.now();
         initRearVerdicts(snap);
@@ -417,11 +421,20 @@ public final class MeasureSession {
      * @return 옮겨진 영상 파일(없으면 null)
      */
     public synchronized File moveVisionRecordingTo(File visionDir) {
-        VisionRecorder.Recording rec = visionRecording;
-        if (rec == null || visionDir == null) {
+        if (visionDir == null) {
             return null;
         }
         if (!visionDir.exists() && !visionDir.mkdirs()) {
+            return null;
+        }
+        // 녹화본이 없어도 ROI 시계열은 남긴다(스크럽 색 복원)
+        try {
+            visionMatchLog.save(visionDir);
+        } catch (Exception ignored) {
+            // 매칭 로그 실패해도 아래 녹화 이동은 계속
+        }
+        VisionRecorder.Recording rec = visionRecording;
+        if (rec == null) {
             return null;
         }
         File video = moveInto(rec.video, new File(visionDir, VisionRecorder.VIDEO_NAME));
@@ -493,8 +506,19 @@ public final class MeasureSession {
             return;
         }
         latestVision = r;
+        // 스크럽용 시계열 — PASS latch와 무관하게 매 프레임 hit/ncc 기록
+        if (r != null) {
+            double tMs = (SyncBus.now() - startNanoSec) * 1000.0;
+            boolean hit = r.hit || ("ok".equals(r.state) && r.ncc >= r.simThr);
+            visionMatchLog.add(tMs, hit, r.ncc);
+        }
         latchVisionPass(r);
         fireVision(r);
+    }
+
+    /** 측정 중 쌓인 ROI 매칭 로그(결과 탭 복원용). */
+    public VisionMatchLog getVisionMatchLog() {
+        return visionMatchLog;
     }
 
     /**

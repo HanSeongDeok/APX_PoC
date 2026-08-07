@@ -13,6 +13,7 @@ import java.util.Properties;
 
 import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.vision.VisionEvidenceStore;
+import com.suresofttech.apx.core.vision.VisionMatchLog;
 import com.suresofttech.apx.core.vision.VisionRecorder;
 
 /**
@@ -135,6 +136,11 @@ public final class EvidenceBundle {
         return existing(new File(visionDir, VisionRecorder.INDEX_NAME));
     }
 
+    /** 프레임별 ROI hit/ncc ({@code matches.csv}). 없으면 빈 로그. */
+    public VisionMatchLog getVisionMatchLog() {
+        return VisionMatchLog.load(visionDir);
+    }
+
     // ── 후방 ────────────────────────────────────────────────────
 
     /** 개별 판정 스냅샷 목록(파일명순). combined_ 는 제외. */
@@ -199,6 +205,52 @@ public final class EvidenceBundle {
         return getDouble("audioPassEndMs");
     }
 
+    /**
+     * 음향 PASS 밴드 목록. meta {@code audioPassSpans=s-e;s-e} 우선,
+     * 없으면 start/end 단일 구간.
+     */
+    public List<double[]> getAudioPassSpans() {
+        List<double[]> parsed = parseSpans(meta.getProperty("audioPassSpans"));
+        if (!parsed.isEmpty()) {
+            return parsed;
+        }
+        Double s = getAudioPassStartMs();
+        Double e = getAudioPassEndMs();
+        if (s != null && e != null && e.doubleValue() > s.doubleValue()) {
+            List<double[]> one = new ArrayList<double[]>(1);
+            one.add(new double[] { s.doubleValue(), e.doubleValue() });
+            return one;
+        }
+        return parsed;
+    }
+
+    /** 측정 스냅샷 ROI 정규화 좌표 {y1,y2,x1,x2}. 없으면 null. */
+    public double[] getRoiNorm() {
+        String s = meta.getProperty("roiNorm");
+        if (s == null || s.isEmpty()) {
+            return null;
+        }
+        String[] p = s.split(",");
+        if (p.length < 4) {
+            return null;
+        }
+        try {
+            return new double[] {
+                    Double.parseDouble(p[0].trim()),
+                    Double.parseDouble(p[1].trim()),
+                    Double.parseDouble(p[2].trim()),
+                    Double.parseDouble(p[3].trim())
+            };
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    public double getSimThr() {
+        Double v = getDouble("simThr");
+        return v == null ? 0.85 : v.doubleValue();
+    }
+
     public boolean isSyncOk() {
         return Boolean.parseBoolean(meta.getProperty("syncOk", "false"));
     }
@@ -261,6 +313,21 @@ public final class EvidenceBundle {
             Long audioPassMs, Long visionPassMs,
             Double syncSpreadMs, boolean syncOk, double durationMs,
             Double audioPassStartMs, Double audioPassEndMs) throws Exception {
+        writeMeta(root, overallPass, summary, audioPassMs, visionPassMs,
+                syncSpreadMs, syncOk, durationMs,
+                audioPassStartMs, audioPassEndMs, null, null, 0);
+    }
+
+    /**
+     * @param audioPassSpans 음향 초록 밴드 목록(각 {start,end}). null이면 start/end만
+     * @param roiNorm 비전 ROI 정규화 좌표. null이면 생략
+     * @param simThr ROI 합격 임계(roiNorm 있을 때만 기록)
+     */
+    public static void writeMeta(File root, boolean overallPass, String summary,
+            Long audioPassMs, Long visionPassMs,
+            Double syncSpreadMs, boolean syncOk, double durationMs,
+            Double audioPassStartMs, Double audioPassEndMs,
+            List<double[]> audioPassSpans, double[] roiNorm, double simThr) throws Exception {
         if (root == null) {
             return;
         }
@@ -274,6 +341,15 @@ public final class EvidenceBundle {
         putIfPresent(p, "visionPassMs", visionPassMs);
         putIfPresent(p, "audioPassStartMs", audioPassStartMs);
         putIfPresent(p, "audioPassEndMs", audioPassEndMs);
+        String spans = formatSpans(audioPassSpans);
+        if (spans != null) {
+            p.setProperty("audioPassSpans", spans);
+        }
+        if (roiNorm != null && roiNorm.length >= 4) {
+            p.setProperty("roiNorm", roiNorm[0] + "," + roiNorm[1] + ","
+                    + roiNorm[2] + "," + roiNorm[3]);
+            p.setProperty("simThr", String.valueOf(simThr));
+        }
         if (syncSpreadMs != null) {
             p.setProperty("syncSpreadMs", String.valueOf(syncSpreadMs.doubleValue()));
         }
@@ -288,6 +364,48 @@ public final class EvidenceBundle {
         } finally {
             out.close();
         }
+    }
+
+    private static String formatSpans(List<double[]> spans) {
+        if (spans == null || spans.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < spans.size(); i++) {
+            double[] sp = spans.get(i);
+            if (sp == null || sp.length < 2) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(';');
+            }
+            sb.append(sp[0]).append('-').append(sp[1]);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private static List<double[]> parseSpans(String raw) {
+        List<double[]> out = new ArrayList<double[]>();
+        if (raw == null || raw.isEmpty()) {
+            return out;
+        }
+        String[] parts = raw.split(";");
+        for (int i = 0; i < parts.length; i++) {
+            String[] se = parts[i].split("-");
+            if (se.length < 2) {
+                continue;
+            }
+            try {
+                double s = Double.parseDouble(se[0].trim());
+                double e = Double.parseDouble(se[1].trim());
+                if (e > s) {
+                    out.add(new double[] { s, e });
+                }
+            } catch (NumberFormatException ignored) {
+                // skip
+            }
+        }
+        return out;
     }
 
     private static void putIfPresent(Properties p, String key, Long v) {
