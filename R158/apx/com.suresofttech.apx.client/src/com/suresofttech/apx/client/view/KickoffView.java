@@ -15,6 +15,7 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.IViewPart;
@@ -24,6 +25,7 @@ import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.audio.MatchResult;
+import com.suresofttech.apx.core.measure.EvidenceBundle;
 import com.suresofttech.apx.core.measure.MeasureEvidence;
 import com.suresofttech.apx.core.measure.MeasureSession;
 import com.suresofttech.apx.core.measure.MeasureSyncResult;
@@ -37,8 +39,14 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
  * 측정 Kickoff — Start/Stop/설정.
  * 측정 중: 음향·비전 PASS 시각(물리지연 포함) + 자체 판단(gap+분석) 표시.
  * 중단 시: (max−min)≤30ms 동기 포함 최종 PASS/FAIL. L2 캘리브 보정 없음.
- * 증거: {@link #setEvidenceDir}로 폴더를 넣으면 음향({@code full.wav}/{@code clip.wav}=초록 PASS 구간),
- * 비전({@code evidence_*}.png), 후방 PASS/FAIL만({@code <tcId>_c_r_VERDICT_WxH.png}) 저장.
+ * 증거: {@link #setEvidenceDir}(또는 "저장 경로…" 버튼) 폴더 아래 채널별로 나눠 저장한다.
+ * <ul>
+ *   <li>{@code audio/} — {@code full.wav}, {@code clip.wav}(PASS 시작~해제),
+ *       {@code wave_pass.png}, {@code wave_full.png}</li>
+ *   <li>{@code vision/} — {@code evidence_pre_-1f.png}, {@code evidence_decide.png},
+ *       {@code evidence_post_+1f.png}</li>
+ *   <li>{@code rear/} — PASS/FAIL만 {@code <tcId>_c_r_VERDICT_WxH.png}, {@code combined_….png}</li>
+ * </ul>
  */
 public class KickoffView extends ViewPart {
 
@@ -48,22 +56,28 @@ public class KickoffView extends ViewPart {
     private Button startBtn;
     private Button stopBtn;
     private Button settingsBtn;
+    private Button evidenceDirBtn;
     private Label audioLbl;
     private Label visionLbl;
     private Label syncLbl;
     private Label overallLbl;
     private Label evidenceLbl;
 
+    /** 이번 측정에서 저장된 후방 스냅샷 tcId — 결과 탭 조회 테스트로 넘긴다. */
+    private final List<String> lastTcIds = new ArrayList<String>();
+
     private MeasureSession.Listener sessionListener;
     private boolean visionSnapTaken;
     private boolean rearSnapTaken;
     /** 클라가 넣는 증거 루트. null이면 stop 시 {@code ~/apx-evidence/<ts>/}. */
     private File evidenceDir;
+    /** 직전 측정이 실제로 저장된 폴더 — 결과 탭 스크럽이 바로 물 수 있게. */
+    private File lastEvidenceDir;
 
     @Override
     public void createPartControl(Composite parent) {
         display = parent.getDisplay();
-        parent.setLayout(new GridLayout(3, false));
+        parent.setLayout(new GridLayout(4, false));
 
         startBtn = new Button(parent, SWT.PUSH);
         startBtn.setText("측정 시작");
@@ -93,21 +107,28 @@ public class KickoffView extends ViewPart {
             }
         });
 
+        evidenceDirBtn = new Button(parent, SWT.PUSH);
+        evidenceDirBtn.setText("저장 경로…");
+        evidenceDirBtn.setToolTipText("증거(스냅샷·wav) 저장 폴더를 직접 지정합니다");
+        evidenceDirBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        evidenceDirBtn.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                chooseEvidenceDir();
+            }
+        });
+
+        // 한 줄씩: 음향 → 비전 → 동기 → 최종 → 증거 (4열 그리드에서 가로로 붙지 않게 span=4)
         audioLbl = statusLabel(parent, "음향: —");
         visionLbl = statusLabel(parent, "비전: —");
         syncLbl = statusLabel(parent, "동기: — (≤30ms, CAN 추후)");
-        GridData sg = new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1);
-        syncLbl.setLayoutData(sg);
-
         overallLbl = statusLabel(parent, "최종: — (중단 시 판정)");
-        GridData og = new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1);
-        overallLbl.setLayoutData(og);
 
         evidenceLbl = new Label(parent, SWT.WRAP);
-        evidenceLbl.setText("증거: (중단 시 저장)");
-        GridData eg = new GridData(SWT.FILL, SWT.TOP, true, true, 3, 1);
+        evidenceLbl.setText("증거: (중단 시 저장) · 저장 경로: 기본(~/apx-evidence/<시각>)");
+        GridData eg = new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1);
         eg.widthHint = 280;
         evidenceLbl.setLayoutData(eg);
+
 
         sessionListener = new MeasureSession.Listener() {
             public void onAudioTick(MatchResult match, double[] waveBuf, double elapsedSec) {
@@ -133,9 +154,11 @@ public class KickoffView extends ViewPart {
     }
 
     private static Label statusLabel(Composite parent, String text) {
-        Label l = new Label(parent, SWT.NONE);
+        Label l = new Label(parent, SWT.WRAP);
         l.setText(text);
-        l.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridData gd = new GridData(SWT.FILL, SWT.CENTER, true, false, 4, 1);
+        gd.widthHint = 280;
+        l.setLayoutData(gd);
         return l;
     }
 
@@ -180,7 +203,8 @@ public class KickoffView extends ViewPart {
 
             MeasureSession session = MeasureSession.get();
             session.start();
-            session.markRearMeasuring();
+            // 지정 포인트를 측정중으로 — 어느 포인트가 이번 측정 대상인지는 클라 규칙이다
+            applyRearVerdicts(session, buildRearVerdicts(session, Verdict.MEASURING));
 
             if (audio != null) {
                 audio.onMeasureStarted(session);
@@ -208,27 +232,30 @@ public class KickoffView extends ViewPart {
         // 중단 시에만 후방 PASS/FAIL — 측정 중은 MEASURING 유지
         Verdict rearVerdict = sync.overallPass ? Verdict.PASS : Verdict.FAIL;
         List<VerdictResult> rearResults = buildRearVerdicts(session, rearVerdict);
-        if (sync.overallPass) {
-            session.markRearPass(); // overallPassMs 기록
-        }
         if (rear != null) {
-            rear.setVerdicts(rearResults);
+            rear.setVerdicts(rearResults);   // 내부에서 session에도 반영
+            rear.setFinalVerdict(sync.overallPass, bothPassedAtMs(sync), sync.summary);
+            rear.refreshNow();   // PASS/FAIL 색을 즉시 그린 뒤 캡처(빈 화면 스냅샷 방지)
         } else {
-            for (int i = 0; i < rearResults.size(); i++) {
-                VerdictResult r = rearResults.get(i);
-                session.setRearVerdict(r.getPoint().x, r.getPoint().y, r.getVerdict());
-            }
+            applyRearVerdicts(session, rearResults);
         }
 
         // 음향: PASS 밴드 종료 스냅샷. 비전 ±3프레임: RoiNcc→Session (det 파괴 전).
         // 후방 Result: overallPass일 때만(오프스크린 capturePng).
         if (audio != null) {
             audio.flushPassSpanSnapshotIfNeeded();
+            // 전체 파형 스냅샷(측정 종료 시점) — wave_full.png
+            MeasureEvidence aev = session.getEvidence();
+            byte[] fullPng = audio.capturePng();
+            if (aev != null && fullPng != null) {
+                aev.putAudioFullPng(fullPng);
+            }
         }
         if (vision != null) {
             vision.harvestEvidenceToSession(session);
         }
-        captureFirstPassSnapshots(session, false, sync.visionPass, sync.overallPass);
+        // 후방은 중단 시 항상 캡처(PASS/FAIL 무관) — 결과 View·증거에 후방 스냅샷이 비지 않도록
+        captureFirstPassSnapshots(session, false, sync.visionPass, true);
         session.stop();
 
         if (audio != null) {
@@ -254,13 +281,24 @@ public class KickoffView extends ViewPart {
 
         publishLastResult(sync, session.getEvidence());
 
-        String path = saveEvidence(session.getEvidence(), rear);
+        String path = saveEvidence(session.getEvidence(), rear, sync);
         if (path != null) {
             evidenceLbl.setText("증거 저장: " + path);
+            // 결과 탭이 이 폴더로 전 구간 스크럽을 물린다
+            LastMeasureResult.get().publishEvidence(new File(path), lastTcIds);
         } else {
             evidenceLbl.setText("증거: 저장 실패 또는 없음");
         }
+        relayoutStatus();
         refreshButtons();
+    }
+
+    /** WRAP 라벨 텍스트 변경 후 줄바꿈·세로 배치가 다시 잡히도록. */
+    private void relayoutStatus() {
+        Composite p = audioLbl == null || audioLbl.isDisposed() ? null : audioLbl.getParent();
+        if (p != null && !p.isDisposed()) {
+            p.layout(true, true);
+        }
     }
 
     /**
@@ -275,6 +313,32 @@ public class KickoffView extends ViewPart {
         return evidenceDir;
     }
 
+    /** "저장 경로…" — 증거 저장 폴더를 사용자가 직접 지정. 취소하면 기존 값 유지. */
+    private void chooseEvidenceDir() {
+        DirectoryDialog dlg = new DirectoryDialog(getSite().getShell(), SWT.OPEN);
+        dlg.setText("증거 저장 폴더 선택");
+        dlg.setMessage("스냅샷·wav 등 측정 증거를 저장할 폴더를 선택하세요.");
+        if (evidenceDir != null) {
+            dlg.setFilterPath(evidenceDir.getAbsolutePath());
+        } else {
+            dlg.setFilterPath(System.getProperty("user.home"));
+        }
+        String picked = dlg.open();
+        if (picked == null) {
+            return;
+        }
+        evidenceDir = new File(picked);
+        if (evidenceLbl != null && !evidenceLbl.isDisposed()) {
+            evidenceLbl.setText("증거 저장 경로: " + evidenceDir.getAbsolutePath());
+        }
+        // 조회 API가 같은 폴더를 보도록 캔버스 스냅샷 폴더도 함께 지정(<루트>/rear)
+        RearMonitorView rear = findRear();
+        RearGridCanvas c = rear == null ? null : rear.getCanvas();
+        if (c != null && !c.isDisposed()) {
+            c.setSnapshotDir(new File(evidenceDir, EvidenceBundle.REAR_DIR));
+        }
+    }
+
     /**
      * 측정 중 표시만 — 후방은 MEASURING 유지.
      * 최종 PASS/FAIL·후방 setVerdicts는 중단 시.
@@ -284,6 +348,10 @@ public class KickoffView extends ViewPart {
             return;
         }
         MeasureSession s = MeasureSession.get();
+        // stop()의 fireState가 async로 오면 중단 직후 쓴 최종 판정을 덮어쓴다 → 측정 중만 갱신
+        if (!s.isRunning()) {
+            return;
+        }
         refreshPassLabels(audioPass, visionPass, s.getAudioPassMs(), s.getVisionPassMs());
         // 음향 스냅샷은 AudioMonitorView가 PASS→비PASS 엣지에서. 후방은 중단+overallPass만.
         captureFirstPassSnapshots(s, false, visionPass, false);
@@ -297,13 +365,27 @@ public class KickoffView extends ViewPart {
                         spread, MeasureSyncResult.SYNC_TOL_MS));
             }
             overallLbl.setText("최종: — (중단 시 판정)");
-        } else if (s.isRunning()) {
+        } else {
             syncLbl.setText("동기: — (중단 시 판정, ≤30ms)");
             overallLbl.setText("최종: — (중단 시 판정)");
         }
+        relayoutStatus();
     }
 
-    /** Select 포인트에 동일 최종 판정 목록 생성. */
+    /** 만든 판정 목록을 세션 저장소에 반영 — 후방 View가 없을 때/시작 시. */
+    private static void applyRearVerdicts(MeasureSession session, List<VerdictResult> results) {
+        for (int i = 0; i < results.size(); i++) {
+            VerdictResult r = results.get(i);
+            session.setRearVerdict(r.getPoint().x, r.getPoint().y, r.getVerdict());
+        }
+    }
+
+    /**
+     * <b>측정 결과 → 후방 격자 매핑 규칙(클라 영역).</b>
+     * 이 데모는 "지정 포인트 전부에 같은 판정"이라는 단순 규칙을 쓴다.
+     * 포인트마다 TC가 다른 실제 운용에서는 이 메서드를 시험 계획에 맞게 바꾼다 —
+     * core는 어느 포인트가 어느 TC인지 모르므로 이 규칙을 갖지 않는다.
+     */
     private static List<VerdictResult> buildRearVerdicts(MeasureSession session, Verdict verdict) {
         List<VerdictResult> out = new ArrayList<VerdictResult>();
         if (session == null || session.getSnapshot() == null || verdict == null) {
@@ -320,6 +402,18 @@ public class KickoffView extends ViewPart {
             }
         }
         return out;
+    }
+
+    /**
+     * 두 채널이 <b>모두</b> PASS가 된 시각(늦은 쪽) — 후방 판독값의 "최종 @ ms".
+     * 한쪽이라도 미검출이면 null. {@code MeasureEvidence.overallPassMs}는 중단을 누른 시각이라
+     * 표출용으로는 쓰지 않는다.
+     */
+    private static Long bothPassedAtMs(MeasureSyncResult sync) {
+        if (sync == null || sync.audioPassMs == null || sync.visionPassMs == null) {
+            return null;
+        }
+        return Long.valueOf(Math.max(sync.audioPassMs.longValue(), sync.visionPassMs.longValue()));
     }
 
     private void refreshPassLabels(boolean audioPass, boolean visionPass, Long audioMs, Long visionMs) {
@@ -363,7 +457,7 @@ public class KickoffView extends ViewPart {
     /**
      * 비전/후방 모니터 스냅샷 → MeasureEvidence.
      * 음향은 {@link AudioMonitorView}가 PASS 밴드 종료 시점에 넣는다.
-     * @param rearPass true면 후방 — overallPass(음향∧비전∧동기≤30ms) + setVerdicts(PASS) 후
+     * @param rearPass true면 후방 캡처 — 중단 시 setVerdicts(PASS/FAIL) 반영 후 항상 true로 호출
      */
     private void captureFirstPassSnapshots(MeasureSession session,
             boolean audioPass, boolean visionPass, boolean rearPass) {
@@ -412,15 +506,16 @@ public class KickoffView extends ViewPart {
     }
 
     /**
-     * 클라 {@code setEvidenceDir} 폴더에 노션 규약 증거 저장.
+     * 클라 {@code setEvidenceDir} 폴더 아래 채널별 하위 폴더로 증거 저장.
      * <ul>
-     *   <li>음향: {@code full.wav}, {@code wave_center.png},
-     *       {@code clip.wav}(PASS 초록 시작~끝), {@code pass_times.txt}</li>
-     *   <li>비전: {@code evidence_pre_-3f.png}, {@code evidence_decide.png}, {@code evidence_post_+3f.png}</li>
-     *   <li>후방: PASS/FAIL만 {@code <tcId>_c_r_VERDICT_WxH.png}, {@code combined_…png}</li>
+     *   <li>{@code audio/}: {@code full.wav}, {@code clip.wav}(PASS 시작~해제),
+     *       {@code wave_pass.png}(PASS 시점), {@code wave_full.png}(전체)</li>
+     *   <li>{@code vision/}: {@code evidence_pre_-1f.png}, {@code evidence_decide.png},
+     *       {@code evidence_post_+1f.png}</li>
+     *   <li>{@code rear/}: PASS/FAIL만 {@code <tcId>_c_r_VERDICT_WxH.png}, {@code combined_…png}</li>
      * </ul>
      */
-    private String saveEvidence(MeasureEvidence ev, RearMonitorView rear) {
+    private String saveEvidence(MeasureEvidence ev, RearMonitorView rear, MeasureSyncResult sync) {
         if (ev == null) {
             return null;
         }
@@ -430,13 +525,43 @@ public class KickoffView extends ViewPart {
                 return null;
             }
             applyAudioPassSpan(ev);
-            ev.saveTo(dir);
-            saveVisionEvidence(dir);
-            saveRearSnapshots(dir, rear);
+            // 채널별 하위 폴더 — <증거루트>/audio, /vision, /rear
+            ev.saveTo(new File(dir, EvidenceBundle.AUDIO_DIR));
+            saveVisionEvidence(new File(dir, EvidenceBundle.VISION_DIR));
+            saveRearSnapshots(new File(dir, EvidenceBundle.REAR_DIR), rear);
+            writeEvidenceMeta(dir, ev, sync);
+            lastEvidenceDir = dir;
             return dir.getAbsolutePath();
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    /**
+     * 결과 재오픈용 메타 — 앱을 껐다 켜도 결과 탭이 PASS 시각·판정·타임라인 길이를
+     * 복원할 수 있어야 한다(메모리 {@link LastMeasureResult}는 세션과 함께 사라진다).
+     */
+    private static void writeEvidenceMeta(File dir, MeasureEvidence ev, MeasureSyncResult sync)
+            throws Exception {
+        double durationMs = 0;
+        double[] samples = ev.getAudioSamples();
+        int sr = ev.getAudioSampleRate();
+        if (samples != null && sr > 0) {
+            durationMs = samples.length * 1000.0 / sr;
+        }
+        EvidenceBundle.writeMeta(dir,
+                sync != null && sync.overallPass,
+                sync == null ? "" : sync.summary,
+                ev.getAudioPassMs(), ev.getVisionPassMs(),
+                sync == null ? null : sync.syncSpreadMs,
+                sync != null && sync.syncOk,
+                durationMs,
+                ev.getAudioPassStartMs(), ev.getAudioPassEndMs());
+    }
+
+    /** 마지막으로 증거를 저장한 폴더 — 결과 탭이 바로 열 수 있게. */
+    public File getLastEvidenceDir() {
+        return lastEvidenceDir;
     }
 
     /**
@@ -474,6 +599,8 @@ public class KickoffView extends ViewPart {
     /** 비전 증거 PNG — OpenCV는 {@link MeasureSession#saveVisionFrameEvidenceTo} (core). */
     private void saveVisionEvidence(File dir) {
         MeasureSession.get().saveVisionFrameEvidenceTo(dir);
+        // FULL 녹화본(full.avi + frames.csv) — 측정 중엔 temp에 쌓고 여기서 증거 폴더로 이동
+        MeasureSession.get().moveVisionRecordingTo(dir);
     }
 
     private File resolveEvidenceDir() {
@@ -486,7 +613,7 @@ public class KickoffView extends ViewPart {
 
     /**
      * 후방 스냅샷 — PASS/FAIL만 ({@code MEASURING}·{@code NONE} 제외).
-     * 데모 tcId = {@code P_c{col}_r{row}} (이솝은 실제 TC ID를 넘기면 됨).
+     * 데모 tcId = {@code TC-001, TC-002 …} (이솝은 실제 TC ID를 넘기면 됨).
      */
     private void saveRearSnapshots(File dir, RearMonitorView rear) {
         if (rear == null) {
@@ -519,13 +646,15 @@ public class KickoffView extends ViewPart {
             }
         }
         List<String> tcIds = new ArrayList<String>();
+        int seq = 0;
         for (int i = 0; i < verdicts.size(); i++) {
             VerdictResult r = verdicts.get(i);
             Verdict v = r.getVerdict();
             if (v != Verdict.PASS && v != Verdict.FAIL) {
                 continue; // MEASURING 스냅샷 안 찍음
             }
-            String tcId = "P_c" + r.getPoint().x + "_r" + r.getPoint().y;
+            // 좌표는 파일명 뒤쪽(_c_r_)에 이미 들어가므로 tcId엔 넣지 않는다(중복 방지).
+            String tcId = String.format("TC-%03d", Integer.valueOf(++seq));
             File f = canvas.saveVerdictSnapshot(r, tcId);
             if (f != null) {
                 tcIds.add(tcId);
@@ -534,6 +663,18 @@ public class KickoffView extends ViewPart {
         if (tcIds.size() >= 2) {
             canvas.getCombinedSnapshot(tcIds);
         }
+        rear.setEvidenceNote(evidenceNote(tcIds));
+        lastTcIds.clear();
+        lastTcIds.addAll(tcIds);
+    }
+
+    /** 후방 판독값에 표기할 저장 결과 요약 — 파일명 규약을 그대로 보여준다. */
+    private static String evidenceNote(List<String> tcIds) {
+        if (tcIds == null || tcIds.isEmpty()) {
+            return "저장된 스냅샷 없음";
+        }
+        return tcIds.size() + "건 (" + tcIds.get(0) + "…) · <tcId>_c_r_VERDICT_WxH.png"
+                + (tcIds.size() >= 2 ? " + combined" : "");
     }
 
     private void showMonitorViews() throws PartInitException {

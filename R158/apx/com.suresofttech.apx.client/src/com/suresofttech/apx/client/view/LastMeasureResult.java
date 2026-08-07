@@ -37,6 +37,10 @@ public final class LastMeasureResult {
     private volatile byte[] audioPassPng;
     private volatile byte[] visionPassPng;
     private volatile byte[] rearPassPng;
+    /** 증거가 저장된 폴더 — 결과 탭이 전 구간 스크럽을 물릴 대상. */
+    private volatile java.io.File evidenceDir;
+    /** 저장된 후방 스냅샷 tcId — 결과 탭 조회 API 테스트의 입력. */
+    private volatile java.util.List<String> rearTcIds = java.util.Collections.emptyList();
 
     private LastMeasureResult() {
     }
@@ -147,6 +151,33 @@ public final class LastMeasureResult {
         this.audioPassPng = audioPassPng == null ? null : audioPassPng.clone();
         this.visionPassPng = visionPassPng == null ? null : visionPassPng.clone();
         this.rearPassPng = rearPassPng == null ? null : rearPassPng.clone();
+        this.evidenceDir = null;   // 저장이 끝나면 publishEvidenceDir로 채운다
+        fire();
+    }
+
+    /**
+     * 증거 저장이 끝난 뒤 폴더와 후방 tcId를 알린다 — 결과 탭이 전 구간(비전 녹화·음향 wav)을
+     * 되짚고, 저장된 스냅샷을 조회 API로 확인할 수 있게. {@link #publish} 직후에 호출한다.
+     */
+    public synchronized void publishEvidence(java.io.File dir, java.util.List<String> tcIds) {
+        this.evidenceDir = dir;
+        this.rearTcIds = (tcIds == null)
+                ? java.util.Collections.<String>emptyList()
+                : java.util.Collections.unmodifiableList(new java.util.ArrayList<String>(tcIds));
+        fire();
+    }
+
+    /** 직전 측정의 증거 폴더. 저장 전이거나 실패면 null. */
+    public java.io.File getEvidenceDir() {
+        return evidenceDir;
+    }
+
+    /** 직전 측정에서 저장된 후방 스냅샷 tcId 목록(없으면 빈 목록). */
+    public java.util.List<String> getRearTcIds() {
+        return rearTcIds;
+    }
+
+    private void fire() {
         for (Listener l : listeners) {
             try {
                 l.onResult(this);
