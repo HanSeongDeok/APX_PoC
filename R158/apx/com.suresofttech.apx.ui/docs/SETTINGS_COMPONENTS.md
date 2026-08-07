@@ -128,3 +128,13 @@ rCanvas.loadDefaultCarImage();
 size.setCanvas(rCanvas);
 legend.setCanvas(rCanvas);
 ```
+
+## 설정 vs 측정 모니터
+
+| | 설정 View | 측정 모니터 View |
+|--|-----------|------------------|
+| 목적 | `ApxSettings` 편집 | Kickoff 세션의 **시작 스냅샷**으로 고정 표시·판정 |
+| 조립 | Mic/Wav/ROI/격자 등 최소 단위 + 편집 바 | `AudioScope` / `CameraCanvas`+`RoiNcc(interactive=false)` / `RearGridCanvas(interactive=false)` |
+| 엔진 | 설정 탭 단독 측정(AudioMeasureBar 등) | core `MeasureSession` + Client `KickoffView` (전체 PASS 시 후방 자동 PASS·증거 저장) |
+
+측정 레이아웃: `KickoffView` + `AudioMonitorView` / `VisionMonitorView` / `RearMonitorView` (`ClientPerspective`).
