@@ -1,6 +1,7 @@
 package com.suresofttech.apx.client.result;
 
 import java.io.File;
+import java.util.List;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
@@ -23,9 +24,6 @@ import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
  */
 public class AudioScrubPanel extends Composite {
 
-    /** 커서 주변으로 보여줄 기본 창 폭(ms) — 라이브 스코프와 같은 10초. */
-    private static final double DEFAULT_WINDOW_MS = 10000.0;
-
     private final AudioScope scope;
     private final Label infoLbl;
     private final AudioPlayer player = new AudioPlayer();
@@ -33,7 +31,8 @@ public class AudioScrubPanel extends Composite {
     private double[] samples;
     private int sampleRate;
     private double durationMs;
-    private double windowMs = DEFAULT_WINDOW_MS;
+    /** 라이브 {@link AudioScope#MATCH_WIN_MS} 와 동일. */
+    private double windowMs = AudioScope.MATCH_WIN_MS;
 
     public AudioScrubPanel(Composite parent) {
         super(parent, SWT.NONE);
@@ -46,6 +45,7 @@ public class AudioScrubPanel extends Composite {
         scope = new AudioScope(this, 5000.0);
         scope.setShowPitch(false);
         scope.setShowTrend(false);
+        scope.setTickMs(AudioScope.DEFAULT_TICK_MS); // 설정·라이브와 동일 1s 눈금
         scope.setWaveTitle("녹음 파형 (스크럽)");
         GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
         gd.heightHint = 220;
@@ -108,6 +108,26 @@ public class AudioScrubPanel extends Composite {
         scope.setPassSpan(startMs.doubleValue(), endMs.doubleValue());
     }
 
+    /**
+     * 라이브 모니터와 동일 — PASS 초록 밴드 여러 구간.
+     * null/빈 목록이면 밴드를 지운다.
+     */
+    public void setPassSpans(List<double[]> spans) {
+        scope.clearPass();
+        if (spans == null || spans.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < spans.size(); i++) {
+            double[] sp = spans.get(i);
+            if (sp != null && sp.length >= 2 && sp[1] > sp[0]) {
+                scope.addPassSpanQuiet(sp[0], sp[1]);
+            }
+        }
+        if (!scope.isDisposed()) {
+            scope.redraw();
+        }
+    }
+
     public double durationMs() {
         return durationMs;
     }
@@ -123,23 +143,17 @@ public class AudioScrubPanel extends Composite {
         }
     }
 
-    /** 그 시각의 파형 구간을 그리고 커서를 찍는다. */
+    /**
+     * 그 시각의 파형 구간을 그리고 커서를 찍는다.
+     * 창 계산은 라이브 {@code AudioScope} {@code updateWindow} 와 동일 —
+     * 짧은 wav여도 축은 최소 {@code windowMs}(기본 0~10000ms)를 유지한다.
+     */
     public void showAt(double tMs) {
         if (!hasAudio() || scope.isDisposed()) {
             return;
         }
-        double half = windowMs / 2.0;
-        double start = tMs - half;
-        double end = tMs + half;
-        // 창이 파일 밖으로 나가면 안쪽으로 민다(폭은 유지)
-        if (start < 0) {
-            start = 0;
-            end = Math.min(durationMs, windowMs);
-        }
-        if (end > durationMs) {
-            end = durationMs;
-            start = Math.max(0, end - windowMs);
-        }
+        double end = Math.max(windowMs, tMs);
+        double start = Math.max(0, tMs - windowMs);
         if (end <= start) {
             end = start + 1;
         }

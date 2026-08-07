@@ -12,6 +12,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 
 import com.suresofttech.apx.core.measure.EvidenceBundle;
+import com.suresofttech.apx.core.measure.EvidenceStore;
 
 /**
  * 증거 폴더 하나를 물려 <b>시간축으로 되짚는</b> 결과 재생기.
@@ -86,7 +87,26 @@ public class EvidenceScrubber extends Composite {
     }
 
     /**
-     * 증거 폴더를 연다 — {@code audio/full.wav}, {@code vision/full.avi}, {@code meta.properties}.
+     * {@link EvidenceStore}의 TC id로 연다 — 파일이 곧 DB row.
+     * @return 스크럽할 자료가 하나라도 있으면 true
+     */
+    public boolean openTc(EvidenceStore store, String tcId) {
+        if (store == null || tcId == null) {
+            headerLbl.setText("EvidenceStore/tcId 없음");
+            timeline.setDuration(0);
+            return false;
+        }
+        EvidenceBundle b = store.open(tcId);
+        if (b == null) {
+            headerLbl.setText("TC 증거 없음: " + tcId + " @ " + store.getRoot());
+            timeline.setDuration(0);
+            return false;
+        }
+        return open(b.getRoot());
+    }
+
+    /**
+     * 증거 폴더(TC 폴더)를 연다 — {@code audio/full.wav}, {@code vision/full.avi}, {@code meta.properties}.
      * @return 스크럽할 자료가 하나라도 있으면 true
      */
     public boolean open(File evidenceRoot) {
@@ -100,13 +120,18 @@ public class EvidenceScrubber extends Composite {
         }
         boolean hasVideo = vision.open(bundle.getVisionDir());
         boolean hasAudio = audio.open(bundle.getFullWav());
-        // 저장 당시 PASS 초록 밴드를 그대로 복원 — clip.wav 구간과 같은 범위
-        audio.setPassSpan(bundle.getAudioPassStartMs(), bundle.getAudioPassEndMs());
+        // ROI 좌표·임계 — 스크럽 시 PASS/FAIL 색 박스
+        vision.setRoiConfig(bundle.getRoiNorm(), bundle.getSimThr());
+        // 라이브 모니터와 동일: 저장된 PASS 초록 밴드 복원
+        java.util.List<double[]> audioSpans = bundle.getAudioPassSpans();
+        audio.setPassSpans(audioSpans);
+        java.util.List<double[]> visionSpans = vision.getMatchLog().passSpans();
 
         double duration = Math.max(bundle.durationMs(),
                 Math.max(vision.durationMs(), audio.durationMs()));
         timeline.setDuration(duration);
-        timeline.setMarkers(bundle.getAudioPassMs(), bundle.getVisionPassMs());
+        timeline.setMarkers(bundle.getAudioPassMs(), bundle.getVisionPassMs(),
+                audioSpans, visionSpans);
         headerLbl.setText(buildHeader(hasVideo, hasAudio));
 
         if (duration > 0) {
