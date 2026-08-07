@@ -22,6 +22,14 @@ public final class AudioCapture {
         void onBlock(double[] block, double now);
     }
 
+    /**
+     * 캡처가 더 이상 진행될 수 없을 때 — 마이크 분리, 드라이버 오류, 입력 정지.
+     * 측정 중 하드웨어가 빠지면 조용히 무음이 녹음되므로 반드시 위로 알린다.
+     */
+    public interface ErrorListener {
+        void onCaptureError(String reason);
+    }
+
     /** 입력 장치 식별자(콤보 표시용). */
     public static final class Device {
         public final String name;
@@ -37,9 +45,16 @@ public final class AudioCapture {
         }
     }
 
+    /** 입력이 이만큼(ms) 한 블록도 안 들어오면 장치가 빠진 것으로 본다. */
+    private static final long STALL_TIMEOUT_MS = 2000;
+
     private TargetDataLine line;
     private Thread thread;
     private volatile boolean running;
+    private volatile ErrorListener errorListener;
+    private volatile String lastError;
+    /** 마지막으로 블록을 받은 시각(nanoTime). 끊김 감시용. */
+    private volatile long lastBlockNanos;
 
     /**
      * 캡처 가능한 <b>실제</b> 입력 장치 목록.
@@ -173,6 +188,8 @@ public final class AudioCapture {
         line.open(fmt);
         line.start();
         running = true;
+        lastError = null;
+        lastBlockNanos = System.nanoTime();
         // 설계값(JAVA_STACK): D_blk = 2048/sr ≈ 46ms @44.1kHz.
         // 자체판단 passMs = blockGap(=n/sr) + analysis.
         final int blockSamples = 2048;
@@ -180,10 +197,28 @@ public final class AudioCapture {
         thread = new Thread(new Runnable() {
             public void run() {
                 while (running) {
-                    int read = line.read(raw, 0, raw.length);
-                    if (read <= 0) {
+                    int read;
+                    try {
+                        read = line.read(raw, 0, raw.length);
+                    } catch (Exception ex) {
+                        // 측정 중 마이크 분리 — 드라이버가 예외를 던지는 경로
+                        fail("마이크 입력 오류: " + ex.getMessage());
+                        return;
+                    }
+                    if (read < 0) {
+                        fail("마이크 입력이 종료되었습니다 (장치 분리)");
+                        return;
+                    }
+                    if (read == 0) {
+                        // 0을 계속 돌려주는 장치가 있다 — 바쁜 대기 대신 끊김으로 판정
+                        if (elapsedSinceBlockMs() > STALL_TIMEOUT_MS) {
+                            fail("마이크 입력이 " + STALL_TIMEOUT_MS + "ms 이상 들어오지 않습니다");
+                            return;
+                        }
+                        sleep(5);
                         continue;
                     }
+                    lastBlockNanos = System.nanoTime();
                     double[] block = new double[read / 2];
                     for (int i = 0; i < block.length; i++) {
                         int lo = raw[2 * i] & 0xff;
@@ -198,12 +233,49 @@ public final class AudioCapture {
         thread.start();
     }
 
+    /** 캡처 중단 사유 통지 대상 — {@link #start} 전에 걸어둔다. */
+    public void setErrorListener(ErrorListener l) {
+        this.errorListener = l;
+    }
+
+    /** 마지막 캡처 오류 사유. 정상이면 null. */
+    public String getLastError() {
+        return lastError;
+    }
+
+    /** 마지막 블록 이후 경과(ms). 캡처 중이 아니면 0. */
+    public long elapsedSinceBlockMs() {
+        return running ? (System.nanoTime() - lastBlockNanos) / 1000000L : 0;
+    }
+
     public boolean isRunning() {
         return running;
     }
 
     public void stop() {
         running = false;
+        closeLine();
+    }
+
+    /** 캡처 스레드에서 치명적 상황 — 라인을 닫고 위로 알린다. */
+    private void fail(String reason) {
+        if (!running) {
+            return;
+        }
+        running = false;
+        lastError = reason;
+        closeLine();
+        ErrorListener l = errorListener;
+        if (l != null) {
+            try {
+                l.onCaptureError(reason);
+            } catch (Exception ignored) {
+                // 통지 실패로 캡처 정리를 막지 않는다
+            }
+        }
+    }
+
+    private synchronized void closeLine() {
         if (line != null) {
             try {
                 line.stop();
@@ -212,6 +284,14 @@ public final class AudioCapture {
                 // 무시
             }
             line = null;
+        }
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
         }
     }
 }

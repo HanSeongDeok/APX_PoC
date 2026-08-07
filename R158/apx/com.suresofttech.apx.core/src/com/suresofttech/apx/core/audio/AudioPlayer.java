@@ -1,86 +1,129 @@
 package com.suresofttech.apx.core.audio;
 
-import javax.sound.sampled.AudioFormat;
+import java.io.File;
+
+import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.Clip;
 
 /**
- * 음향 발사 — mono double[-1,1) 를 기본 출력(스피커)으로 재생. SWT/RCP 무의존(core).
+ * 저장된 WAV를 임의 시점부터 재생. SWT無(core).
  *
- * <p>auto-trigger·L2 캘리브용: {@link #play}는 <b>발사(재생 시작) 시각</b>(공통시계 초)을 반환한다.
- * 이후 마이크가 그 소리를 검출한 시각과 비교하면 파이프라인 지연(스피커 출력버퍼 + 음향경로 +
- * D_mic + 판단속도)을 잴 수 있다. 여러 번 재서 평균=상수지연(보정용), 편차=지터(하드웨어 스펙 근거).
+ * <p>결과 탭 스크럽용 — 슬라이더를 옮긴 지점부터 실제 녹음을 들려준다.
+ * {@code full.wav}는 한 측정 분량이라 {@link Clip}으로 통째 올려도 부담이 없고,
+ * {@code setMicrosecondPosition}으로 프레임 단위 시점 이동이 된다.
  *
- * <p>재생은 데몬 스레드에서 비동기로 처리해 호출자(UI)를 막지 않는다.
+ * <p>재생 위치는 {@link #getPositionMs()}로 폴링한다 — UI가 슬라이더를 따라 움직일 때 쓴다.
  */
 public final class AudioPlayer {
 
-    private AudioPlayer() {
+    private Clip clip;
+    private File source;
+    /** 사용자가 "재생"을 눌러둔 상태인지(정지를 누르거나 끝까지 가면 false). */
+    private volatile boolean playing;
+
+    /**
+     * WAV 로드(이미 같은 파일이면 재사용). 실패 시 false.
+     */
+    public synchronized boolean open(File wav) {
+        if (wav == null || !wav.isFile()) {
+            return false;
+        }
+        if (clip != null && clip.isOpen() && wav.equals(source)) {
+            return true;
+        }
+        close();
+        AudioInputStream in = null;
+        try {
+            in = AudioSystem.getAudioInputStream(wav);
+            Clip c = AudioSystem.getClip();
+            c.open(in);
+            // LineListener(STOP)로 종료를 잡지 않는다 — 스크럽 중 play()가 내부적으로 stop()을
+            // 부르면 STOP이 함께 튀어 "재생이 끝났다"고 오인한다. 종료 판정은 호출측이
+            // isRunning()/getPositionMs()를 폴링해서 한다(어차피 슬라이더 갱신으로 매 틱 돈다).
+            clip = c;
+            source = wav;
+            return true;
+        } catch (Exception ex) {
+            close();
+            return false;
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception ignored) {
+                    // 무시
+                }
+            }
+        }
+    }
+
+    public synchronized boolean isOpen() {
+        return clip != null && clip.isOpen();
+    }
+
+    /** 사용자가 재생을 눌러둔 상태(스크럽으로 시점을 옮겨도 유지). */
+    public boolean isPlaying() {
+        return playing;
     }
 
     /**
-     * mono double[-1,1) 를 스피커로 비동기 재생.
-     * @return 발사 시각(초, System.nanoTime 기반 공통시계). 스피커 출력버퍼 지연은 이 시각 이후 추가.
+     * 클립이 <b>실제로</b> 소리를 내고 있는지 — 자연 종료 감지용.
+     * {@link #isPlaying()}(사용자 의도)와 구분한다: wav가 타임라인보다 짧으면
+     * 재생 의도는 유지된 채 이 값만 false가 된다.
      */
-    public static double play(final double[] samples, final int sr) {
-        double emit = System.nanoTime() * 1e-9;
-        if (samples == null || samples.length == 0 || sr <= 0) {
-            return emit;
-        }
-        final byte[] raw = to16bitLE(samples);
-        Thread t = new Thread(new Runnable() {
-            public void run() {
-                SourceDataLine line = null;
-                try {
-                    AudioFormat fmt = new AudioFormat(sr, 16, 1, true, false);   // signed 16bit mono LE
-                    line = AudioSystem.getSourceDataLine(fmt);
-                    line.open(fmt);
-                    line.start();
-                    line.write(raw, 0, raw.length);
-                    line.drain();
-                } catch (Exception e) {
-                    // 재생 실패(장치 없음 등) — 무시
-                } finally {
-                    if (line != null) {
-                        try {
-                            line.stop();
-                            line.close();
-                        } catch (Exception ignore) {
-                            // 무시
-                        }
-                    }
-                }
-            }
-        }, "apx-audio-play");
-        t.setDaemon(true);
-        t.start();
-        return emit;
+    public synchronized boolean isRunning() {
+        return clip != null && clip.isRunning();
     }
 
-    /** 순수 톤(사인파) 생성 후 재생. 캘리브용 간단 자극. @return 발사 시각(초). */
-    public static double playTone(double freqHz, double durSec, int sr) {
-        int n = Math.max(1, (int) (durSec * sr));
-        double[] s = new double[n];
-        double w = 2.0 * Math.PI * freqHz / sr;
-        for (int i = 0; i < n; i++) {
-            s[i] = 0.7 * Math.sin(w * i);
-        }
-        return play(s, sr);
+    /** 전체 길이(ms). 미오픈 시 0. */
+    public synchronized double durationMs() {
+        return clip == null ? 0 : clip.getMicrosecondLength() / 1000.0;
     }
 
-    private static byte[] to16bitLE(double[] s) {
-        byte[] raw = new byte[s.length * 2];
-        for (int i = 0; i < s.length; i++) {
-            double v = s[i];
-            if (v > 0.999969) {
-                v = 0.999969;
-            } else if (v < -1.0) {
-                v = -1.0;
-            }
-            int x = (int) Math.round(v * 32767.0);
-            raw[2 * i] = (byte) (x & 0xff);
-            raw[2 * i + 1] = (byte) ((x >> 8) & 0xff);
+    /** 현재 재생 위치(ms). */
+    public synchronized double getPositionMs() {
+        return clip == null ? 0 : clip.getMicrosecondPosition() / 1000.0;
+    }
+
+    /** 재생하지 않고 위치만 이동 — 스크럽 중 커서 동기용. */
+    public synchronized void seek(double ms) {
+        if (clip == null) {
+            return;
         }
-        return raw;
+        long us = (long) Math.max(0, Math.min(clip.getMicrosecondLength(), ms * 1000.0));
+        clip.setMicrosecondPosition(us);
+    }
+
+    /** 지정 시점부터 재생. 이미 재생 중이면 그 시점으로 옮겨 이어 재생. */
+    public synchronized void play(double fromMs) {
+        if (clip == null) {
+            return;
+        }
+        clip.stop();
+        seek(fromMs);
+        playing = true;
+        clip.start();
+    }
+
+    public synchronized void pause() {
+        if (clip != null) {
+            clip.stop();
+        }
+        playing = false;
+    }
+
+    public synchronized void close() {
+        if (clip != null) {
+            try {
+                clip.stop();
+                clip.close();
+            } catch (Exception ignored) {
+                // 무시
+            }
+            clip = null;
+        }
+        source = null;
+        playing = false;
     }
 }
