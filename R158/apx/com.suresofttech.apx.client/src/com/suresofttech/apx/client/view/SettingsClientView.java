@@ -4,148 +4,26 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Group;
 import org.eclipse.ui.part.ViewPart;
 
-import com.suresofttech.apx.core.config.ApxSettings;
-import com.suresofttech.apx.core.rear.RearGrid;
-import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
-import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
-import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
-import com.suresofttech.apx.ui.widget.settings.audio.AudioThresholdBar;
-import com.suresofttech.apx.ui.widget.settings.audio.ExpectedTonePlayBar;
-import com.suresofttech.apx.ui.widget.settings.audio.ExpectedWavBar;
-import com.suresofttech.apx.ui.widget.settings.audio.MicSelectBar;
-import com.suresofttech.apx.ui.widget.settings.audio.MicTestBar;
-import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
-import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
-import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
-import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
-import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
-import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
-
 /**
- * 이솝 RCP 설정 View — 최소 단위를 직접 조합.
+ * 설정 View — {@link SettingsForm} 조립.
  */
 public class SettingsClientView extends ViewPart {
 
-    private CameraSelectBar cameraSelect;
+    private SettingsForm form;
 
     @Override
     public void createPartControl(Composite parent) {
-        parent.setLayout(new GridLayout(3, true));
-        buildVisionColumn(parent);
-        buildAudioColumn(parent);
-        buildRearColumn(parent);
-    }
-
-    private void buildVisionColumn(Composite parent) {
-        Composite col = new Composite(parent, SWT.NONE);
-        col.setLayout(new GridLayout(1, false));
-        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        Group webcam = new Group(col, SWT.NONE);
-        webcam.setText("웹캠");
-        webcam.setLayout(new GridLayout(1, false));
-        webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        cameraSelect = new CameraSelectBar(webcam);
-        cameraSelect.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        CameraCanvas canvas = new CameraCanvas(webcam);
-        canvas.setPlaceholder("웹캠을 선택하세요");
-        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 320;
-        canvasGd.minimumHeight = 240;
-        canvas.setLayoutData(canvasGd);
-        cameraSelect.setCanvas(canvas);
-
-        RoiNcc roiNcc = new RoiNcc(canvas);
-
-        Composite refBlock = new Composite(col, SWT.NONE);
-        refBlock.setLayout(new GridLayout(1, false));
-        refBlock.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-
-        VisionThresholdBar visionThr = new VisionThresholdBar(refBlock);
-        visionThr.setRoiNcc(roiNcc);
-
-        cameraSelect.refreshCameras();
-    }
-
-    private void buildAudioColumn(Composite parent) {
-        Composite col = new Composite(parent, SWT.NONE);
-        col.setLayout(new GridLayout(1, false));
-        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        Group mic = new Group(col, SWT.NONE);
-        mic.setText("마이크");
-        mic.setLayout(new GridLayout(1, false));
-        mic.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-
-        MicSelectBar micBar = new MicSelectBar(mic);
-        micBar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-
-        MicTestBar micTest = new MicTestBar(mic);
-
-        Group expected = new Group(col, SWT.NONE);
-        expected.setText("기대 음향");
-        expected.setLayout(new GridLayout(1, false));
-        expected.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        new ExpectedWavBar(expected);
-
-        AudioMeasureBar measureBar = new AudioMeasureBar(expected);
-        ExpectedTonePlayBar playBar = new ExpectedTonePlayBar(measureBar.getActionRow());
-        playBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        AudioScope scope = new AudioScope(expected, 5000.0);
-        scope.setShowPitch(false);
-        scope.setShowTrend(false);
-        GridData scopeGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        scopeGd.minimumHeight = 180;
-        scope.setLayoutData(scopeGd);
-        measureBar.setScope(scope);
-
-        new AudioThresholdBar(expected);
-
-        micBar.refreshMics();
-    }
-
-    private void buildRearColumn(Composite parent) {
-        Composite col = new Composite(parent, SWT.NONE);
-        col.setLayout(new GridLayout(1, false));
-        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        Group rear = new Group(col, SWT.NONE);
-        rear.setText("후방");
-        rear.setLayout(new GridLayout(1, false));
-        rear.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        ApxSettings s = ApxSettings.get();
-        RearGridSizeBar sizeBar = new RearGridSizeBar(rear);
-        RearLegendBar legendBar = new RearLegendBar(rear);
-
-        RearGrid grid = new RearGrid(s.getRearCols(), s.getRearRows());
-        grid.selectPoints(s.getRearSelectedPoints());
-        RearGridCanvas canvas = new RearGridCanvas(rear, grid);
-        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 280;
-        canvasGd.minimumHeight = 200;
-        canvas.setLayoutData(canvasGd);
-        canvas.loadDefaultCarImage();
-
-        sizeBar.setCanvas(canvas);
-        legendBar.setCanvas(canvas);
-    }
-
-    public ApxSettings getSettings() {
-        return ApxSettings.get();
+        parent.setLayout(new GridLayout(1, false));
+        form = new SettingsForm(parent);
+        form.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
     }
 
     @Override
     public void setFocus() {
-        if (cameraSelect != null && !cameraSelect.isDisposed()) {
-            cameraSelect.setFocusToCombo();
+        if (form != null && !form.isDisposed() && form.getCameraSelect() != null) {
+            form.getCameraSelect().setFocusToCombo();
         }
     }
 }

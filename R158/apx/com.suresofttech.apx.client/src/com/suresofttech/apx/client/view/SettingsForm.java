@@ -6,11 +6,9 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Group;
-import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.RearGrid;
-import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioThresholdBar;
@@ -21,26 +19,29 @@ import com.suresofttech.apx.ui.widget.settings.audio.MicTestBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
+import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * 이솝 RCP 설정 View (커스텀판) — Cfg/Style 파라미터 주입 조립 예시.
+ * 설정 UI 조립(비전·음향·후방). View / Dialog 공용.
+ * 커스텀 파라미터(Style/Cfg/스코프/범례/프리셋)는 {@link SettingsClientView2}와 동일하게 주입한다.
+ * 값은 {@link ApxSettings}에 바로 반영된다.
  */
-public class SettingsClientView2 extends ViewPart {
+public class SettingsForm extends Composite {
 
-    private CameraSelectBar cameraSelect;
+    private final CameraSelectBar cameraSelect;
 
-    @Override
-    public void createPartControl(Composite parent) {
-        parent.setLayout(new GridLayout(3, true));
-        buildVisionColumn(parent);
-        buildAudioColumn(parent);
-        buildRearColumn(parent);
+    public SettingsForm(Composite parent) {
+        super(parent, SWT.NONE);
+        setLayout(new GridLayout(3, true));
+        cameraSelect = buildVisionColumn(this);
+        buildAudioColumn(this);
+        buildRearColumn(this);
     }
 
-    private void buildVisionColumn(Composite parent) {
+    private static CameraSelectBar buildVisionColumn(Composite parent) {
         Composite col = new Composite(parent, SWT.NONE);
         col.setLayout(new GridLayout(1, false));
         col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -50,17 +51,18 @@ public class SettingsClientView2 extends ViewPart {
         webcam.setLayout(new GridLayout(1, false));
         webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        cameraSelect = new CameraSelectBar(webcam);
+        CameraSelectBar cameraSelect = new CameraSelectBar(webcam);
         cameraSelect.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         CameraCanvas canvas = new CameraCanvas(webcam);
         canvas.setPlaceholder("웹캠을 선택하세요");
         GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 320;
-        canvasGd.minimumHeight = 240;
+        canvasGd.heightHint = 280;
+        canvasGd.minimumHeight = 200;
         canvas.setLayoutData(canvasGd);
         cameraSelect.setCanvas(canvas);
 
+        // ROI 오버레이 색·두께 커스텀
         RoiNcc.Style roiStyle = new RoiNcc.Style();
         roiStyle.hit = new RGB(0, 200, 0);
         roiStyle.miss = new RGB(220, 60, 60);
@@ -73,6 +75,7 @@ public class SettingsClientView2 extends ViewPart {
         refBlock.setLayout(new GridLayout(1, false));
         refBlock.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
+        // 비전 NCC 임계 기본값·step·버튼명 커스텀
         VisionThresholdBar.Cfg vThr = new VisionThresholdBar.Cfg();
         vThr.defaultThr = 0.75;
         vThr.step = 0.05;
@@ -82,9 +85,10 @@ public class SettingsClientView2 extends ViewPart {
         visionThr.setRoiNcc(roiNcc);
 
         cameraSelect.refreshCameras();
+        return cameraSelect;
     }
 
-    private void buildAudioColumn(Composite parent) {
+    private static void buildAudioColumn(Composite parent) {
         Composite col = new Composite(parent, SWT.NONE);
         col.setLayout(new GridLayout(1, false));
         col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -96,31 +100,34 @@ public class SettingsClientView2 extends ViewPart {
 
         MicSelectBar micBar = new MicSelectBar(mic);
         micBar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-
-        MicTestBar micTest = new MicTestBar(mic);
+        new MicTestBar(mic);
 
         Group expected = new Group(col, SWT.NONE);
         expected.setText("기대 음향 (커스텀)");
         expected.setLayout(new GridLayout(1, false));
         expected.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
+        // 기대 경고음 라벨 커스텀
         ExpectedWavBar.Cfg wavCfg = new ExpectedWavBar.Cfg();
         wavCfg.titleText = "기대 경고음 파일 (.wav)";
         wavCfg.placeholderText = "경고음 .wav를 선택하세요";
         new ExpectedWavBar(expected, wavCfg);
 
+        // 파형 측정/초기화 버튼명 커스텀
         AudioMeasureBar.Cfg measCfg = new AudioMeasureBar.Cfg();
         measCfg.measureText = "측정 시작";
         measCfg.measuringText = "측정 중지";
         measCfg.resetText = "리셋";
         AudioMeasureBar measureBar = new AudioMeasureBar(expected, measCfg);
 
+        // 기대음 재생 버튼명 커스텀
         ExpectedTonePlayBar.Cfg toneCfg = new ExpectedTonePlayBar.Cfg();
         toneCfg.playText = "기대음 듣기";
         toneCfg.playingText = "재생 정지";
         ExpectedTonePlayBar playBar = new ExpectedTonePlayBar(measureBar.getActionRow(), toneCfg);
         playBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+        // 파형 스코프 표출 스타일 커스텀 (X축 틱 · PASS 색/투명도 · 제목)
         AudioScope scope = new AudioScope(expected, 5000.0);
         scope.setShowPitch(false);
         scope.setShowTrend(false);
@@ -129,10 +136,11 @@ public class SettingsClientView2 extends ViewPart {
         scope.setPassAlpha(90);
         scope.setWaveTitle("측정 파형 (커스텀)");
         GridData scopeGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        scopeGd.minimumHeight = 180;
+        scopeGd.minimumHeight = 160;
         scope.setLayoutData(scopeGd);
         measureBar.setScope(scope);
 
+        // 음향 임계 기본값·step·라벨 커스텀
         AudioThresholdBar.Cfg aThr = new AudioThresholdBar.Cfg();
         aThr.defaultThr = 0.90;
         aThr.step = 0.05;
@@ -141,11 +149,10 @@ public class SettingsClientView2 extends ViewPart {
         aThr.plusText = "+ 엄격";
         new AudioThresholdBar(expected, aThr);
 
-
         micBar.refreshMics();
     }
 
-    private void buildRearColumn(Composite parent) {
+    private static void buildRearColumn(Composite parent) {
         Composite col = new Composite(parent, SWT.NONE);
         col.setLayout(new GridLayout(1, false));
         col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -156,10 +163,11 @@ public class SettingsClientView2 extends ViewPart {
         rear.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         ApxSettings s = ApxSettings.get();
+        // 고정크기(프리셋) 목록·라벨 커스텀
         RearGridSizeBar.Cfg sizeCfg = new RearGridSizeBar.Cfg();
         sizeCfg.presetText = "고정 크기";
         sizeCfg.customText = "직접 입력";
-        sizeCfg.presets = new int[][] { { 4, 6 }, { 3, 4 }, { 5, 7 }, { 6, 10 } };   // 고정크기 목록 커스텀
+        sizeCfg.presets = new int[][] { { 4, 6 }, { 3, 4 }, { 5, 7 }, { 6, 10 } };
         RearGridSizeBar sizeBar = new RearGridSizeBar(rear, sizeCfg);
 
         RearLegendBar.Cfg legendCfg = new RearLegendBar.Cfg();
@@ -168,26 +176,20 @@ public class SettingsClientView2 extends ViewPart {
 
         RearGrid grid = new RearGrid(s.getRearCols(), s.getRearRows());
         grid.selectPoints(s.getRearSelectedPoints());
-
         RearGridCanvas canvas = new RearGridCanvas(rear, grid);
         GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 280;
-        canvasGd.minimumHeight = 200;
+        canvasGd.heightHint = 240;
+        canvasGd.minimumHeight = 180;
         canvas.setLayoutData(canvasGd);
         canvas.loadDefaultCarImage();
-        canvas.applyDefaultLegend(); // 모니터와 동일 범례
+        // 모니터와 동일 범례 (RearGridCanvas.DEFAULT_LEGEND_*)
+        canvas.applyDefaultLegend();
+
         sizeBar.setCanvas(canvas);
         legendBar.setCanvas(canvas);
     }
 
-    public ApxSettings getSettings() {
-        return ApxSettings.get();
-    }
-
-    @Override
-    public void setFocus() {
-        if (cameraSelect != null && !cameraSelect.isDisposed()) {
-            cameraSelect.setFocusToCombo();
-        }
+    public CameraSelectBar getCameraSelect() {
+        return cameraSelect;
     }
 }
