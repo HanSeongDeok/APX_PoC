@@ -1,7 +1,12 @@
 package com.suresofttech.apx.ui.widget.settings.rear;
 
 import java.awt.Point;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.MouseAdapter;
@@ -12,6 +17,7 @@ import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageData;
+import org.eclipse.swt.graphics.ImageLoader;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Canvas;
@@ -19,15 +25,37 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 
 import com.suresofttech.apx.core.rear.RearGrid;
+import com.suresofttech.apx.core.rear.Verdict;
+import com.suresofttech.apx.core.rear.VerdictResult;
 
 /**
  * 후방 최소 단위 — 차량(후방 그림) + 검증 포인트 격자.
  * Select 클릭({@link RearGrid#selectSingle}). 범례는 {@link #setShowLegend}로 on/off.
+ * 모니터용: {@link #setInteractive(false)}, {@link #setCellVerdict}.
+ * 판정 스냅샷: {@link #setSnapshotDir}/{@link #saveVerdictSnapshot}/{@link #getCombinedSnapshot}.
  */
 public class RearGridCanvas extends Canvas {
 
     /** 기본 차량 후방 이미지 파일명 (고정). {@code ui/ref/} 하위. */
     public static final String DEFAULT_CAR_IMAGE_NAME = "차량 후방 레이아웃_Default.png";
+
+    /** 설정·모니터 공통 범례 이름 (선택·측정중·합격·불합격). */
+    public static final String[] DEFAULT_LEGEND_NAMES =
+            new String[] { "선택", "측정중", "합격", "불합격" };
+
+    /** 설정·모니터 공통 범례 색. */
+    public static RGB[] defaultLegendColors() {
+        return new RGB[] {
+                new RGB(135, 206, 250),
+                new RGB(230, 200, 40),
+                new RGB(40, 170, 70),
+                new RGB(200, 40, 40)
+        };
+    }
+
+    /** 파일명: {@code <tcId>_c<col>_r<row>_<VERDICT>_<cols>x<rows>.png} */
+    private static final Pattern SNAP_NAME = Pattern.compile(
+            "^(.+)_c(\\d+)_r(\\d+)_(NONE|MEASURING|PASS|FAIL)_(\\d+)x(\\d+)\\.png$");
 
     private static final String REF_REL =
             "com.suresofttech.apx.ui" + File.separator + "src" + File.separator
@@ -38,6 +66,10 @@ public class RearGridCanvas extends Canvas {
     private Runnable onChange;
     private Image carImg;
     private boolean showLegend = true;
+    private boolean interactive = true;
+    private Verdict[][] cellVerdicts;
+    /** 판정 스냅샷 저장 폴더(없으면 임시폴더/rear_snapshots). */
+    private File snapshotDir;
 
     // 상태 범례(클라이언트 커스텀 가능) — 기본 이름/색은 생성자에서 설정.
     private String[] legendLabels;
@@ -101,6 +133,9 @@ public class RearGridCanvas extends Canvas {
         });
         addMouseListener(new MouseAdapter() {
             public void mouseDown(MouseEvent e) {
+                if (!interactive) {
+                    return;
+                }
                 if (e.button == 1) {
                     onClick(e.x, e.y);
                 }
@@ -108,6 +143,10 @@ public class RearGridCanvas extends Canvas {
         });
         addMouseMoveListener(new org.eclipse.swt.events.MouseMoveListener() {
             public void mouseMove(MouseEvent e) {
+                if (!interactive) {
+                    setCursor(getDisplay().getSystemCursor(SWT.CURSOR_ARROW));
+                    return;
+                }
                 updateCursor(e.x, e.y);
             }
         });
@@ -164,6 +203,383 @@ public class RearGridCanvas extends Canvas {
 
     public boolean isShowLegend() {
         return showLegend;
+    }
+
+    /** false면 클릭 Select 잠금(모니터 View). */
+    public void setInteractive(boolean on) {
+        this.interactive = on;
+        if (!on && !isDisposed()) {
+            setCursor(getDisplay().getSystemCursor(SWT.CURSOR_ARROW));
+        }
+    }
+
+    public boolean isInteractive() {
+        return interactive;
+    }
+
+    /** 셀 판정 색(MEASURING/PASS/FAIL). Select 점 위에 표시. */
+    public void setCellVerdict(int col, int row, Verdict v) {
+        if (grid == null) {
+            return;
+        }
+        ensureVerdictGrid();
+        if (col < 0 || row < 0 || col >= cellVerdicts.length || row >= cellVerdicts[col].length) {
+            return;
+        }
+        cellVerdicts[col][row] = v == null ? Verdict.NONE : v;
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    /** {@link VerdictResult} 편의 — {@link #setCellVerdict} 위임. */
+    public void setVerdict(VerdictResult r) {
+        if (r == null) {
+            return;
+        }
+        Point p = r.getPoint();
+        setCellVerdict(p.x, p.y, r.getVerdict());
+    }
+
+    /**
+     * 여러 포인트 판정을 한 번에 반영(측정 중단 시 클라 PASS/FAIL).
+     * 기존 판정만 지우고 Select는 유지한 채 결과색을 입힌다.
+     */
+    public void setVerdicts(List<VerdictResult> results) {
+        if (grid == null) {
+            return;
+        }
+        ensureVerdictGrid();
+        for (int c = 0; c < cellVerdicts.length; c++) {
+            for (int r = 0; r < cellVerdicts[c].length; r++) {
+                cellVerdicts[c][r] = Verdict.NONE;
+            }
+        }
+        if (results != null) {
+            for (int i = 0; i < results.size(); i++) {
+                VerdictResult vr = results.get(i);
+                if (vr == null) {
+                    continue;
+                }
+                Point p = vr.getPoint();
+                int c = p.x;
+                int rr = p.y;
+                if (c >= 0 && c < cellVerdicts.length
+                        && rr >= 0 && rr < cellVerdicts[c].length) {
+                    cellVerdicts[c][rr] = vr.getVerdict();
+                    if (!grid.isSelected(c, rr)) {
+                        grid.setSelected(c, rr, true);
+                    }
+                }
+            }
+        }
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    public void clearVerdicts() {
+        cellVerdicts = null;
+        if (!isDisposed()) {
+            redraw();
+        }
+    }
+
+    /** 설정과 동일한 기본 범례 이름·색 적용. */
+    public void applyDefaultLegend() {
+        setLegend(DEFAULT_LEGEND_NAMES, defaultLegendColors());
+    }
+
+    /** 해당 셀 판정. 없으면 null. */
+    public VerdictResult getVerdict(int col, int row) {
+        if (grid == null || cellVerdicts == null
+                || col < 0 || col >= cellVerdicts.length
+                || row < 0 || row >= cellVerdicts[col].length) {
+            return null;
+        }
+        Verdict v = cellVerdicts[col][row];
+        if (v == null || v == Verdict.NONE) {
+            return null;
+        }
+        return new VerdictResult(col, row, v);
+    }
+
+    /** Point 규약: x=col, y=row. */
+    public VerdictResult getVerdict(Point p) {
+        return (p == null) ? null : getVerdict(p.x, p.y);
+    }
+
+    /** 판정된(NONE 아닌) 포인트 목록. */
+    public List<VerdictResult> getVerdicts() {
+        List<VerdictResult> out = new ArrayList<VerdictResult>();
+        if (cellVerdicts == null) {
+            return out;
+        }
+        for (int c = 0; c < cellVerdicts.length; c++) {
+            for (int r = 0; r < cellVerdicts[c].length; r++) {
+                Verdict v = cellVerdicts[c][r];
+                if (v != null && v != Verdict.NONE) {
+                    out.add(new VerdictResult(c, r, v));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 현재 판정 상태 PNG (메모리·Result용).
+     * 화면 paint와 무관하게 {@link #renderImage} 오프스크린으로 그린다.
+     */
+    public byte[] capturePng() {
+        if (isDisposed() || grid == null) {
+            return null;
+        }
+        Image img = renderImage(grid.getCols(), grid.getRows(), getVerdicts());
+        try {
+            ImageLoader loader = new ImageLoader();
+            loader.data = new ImageData[] { img.getImageData() };
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            loader.save(bos, SWT.IMAGE_PNG);
+            return bos.toByteArray();
+        } catch (Exception ex) {
+            return null;
+        } finally {
+            img.dispose();
+        }
+    }
+
+    // ── 판정 스냅샷 = 파일 저장 + TC 이름으로 조회 ──────────────────────────────
+
+    /** 스냅샷 저장 폴더 지정(없으면 시스템 임시폴더/rear_snapshots). */
+    public void setSnapshotDir(File dir) {
+        this.snapshotDir = dir;
+    }
+
+    private File dir() {
+        File d = (snapshotDir != null) ? snapshotDir
+                : new File(System.getProperty("java.io.tmpdir"), "rear_snapshots");
+        if (!d.exists()) {
+            d.mkdirs();
+        }
+        return d;
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    /** 파일명: {@code <tcId>_c<col>_r<row>_<VERDICT>_<cols>x<rows>.png} */
+    private static String snapshotName(String tcId, VerdictResult r, int cols, int rows) {
+        Point p = r.getPoint();
+        return safe(tcId) + "_c" + p.x + "_r" + p.y + "_" + r.getVerdict().name()
+                + "_" + cols + "x" + rows + ".png";
+    }
+
+    private void deleteSnapshotsFor(String tcId) {
+        final String key = safe(tcId);
+        File[] all = dir().listFiles();
+        if (all == null) {
+            return;
+        }
+        for (File f : all) {
+            SnapMeta m = parseSnapshotName(f.getName());
+            if (m != null && key.equals(m.tcId)) {
+                f.delete();
+            }
+        }
+    }
+
+    /**
+     * 이솝 측정 중지→save 시 판정 스냅샷 파일 저장.
+     * 파일명에 Point·Verdict·격자크기를 넣어 DB 없이도 통합 재렌더 가능.
+     */
+    public File saveVerdictSnapshot(VerdictResult r, String tcId) {
+        if (r == null || tcId == null || grid == null) {
+            return null;
+        }
+        int cols = grid.getCols();
+        int rows = grid.getRows();
+        deleteSnapshotsFor(tcId);
+        List<VerdictResult> one = new ArrayList<VerdictResult>();
+        one.add(r);
+        File f = new File(dir(), snapshotName(tcId, r, cols, rows));
+        writePng(renderImage(cols, rows, one), f);
+        return f;
+    }
+
+    /** TC 1개 → 저장된 스냅샷 파일. 없으면 null. */
+    public File getSnapshot(String tcId) {
+        if (tcId == null) {
+            return null;
+        }
+        final String key = safe(tcId);
+        File[] all = dir().listFiles();
+        if (all == null) {
+            return null;
+        }
+        for (File f : all) {
+            SnapMeta m = parseSnapshotName(f.getName());
+            if (m != null && key.equals(m.tcId)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    /** TC 여러 개 → 개별 스냅샷 파일 목록. 없는 항목은 null. */
+    public List<File> getSnapshots(List<String> tcIds) {
+        List<File> out = new ArrayList<File>();
+        if (tcIds == null) {
+            return out;
+        }
+        for (String id : tcIds) {
+            out.add(getSnapshot(id));
+        }
+        return out;
+    }
+
+    /**
+     * 여러 TC 스냅샷 파일명에서 Point·Verdict·격자크기를 읽어 한 판에 합친 통합 이미지.
+     * @return {@code combined_<tcId>_....png} (해당 파일 없으면 null)
+     */
+    public File getCombinedSnapshot(List<String> tcIds) {
+        if (tcIds == null || tcIds.isEmpty()) {
+            return null;
+        }
+        List<VerdictResult> merged = new ArrayList<VerdictResult>();
+        StringBuilder key = new StringBuilder("combined");
+        int cols = -1;
+        int rows = -1;
+        for (String id : tcIds) {
+            File snap = getSnapshot(id);
+            if (snap == null) {
+                continue;
+            }
+            SnapMeta meta = parseSnapshotName(snap.getName());
+            if (meta == null) {
+                continue;
+            }
+            if (cols < 0) {
+                cols = meta.cols;
+                rows = meta.rows;
+            } else if (cols != meta.cols || rows != meta.rows) {
+                continue; // 동일 규격만 합침
+            }
+            merged.add(new VerdictResult(meta.col, meta.row, meta.verdict));
+            key.append('_').append(safe(id));
+        }
+        if (merged.isEmpty() || cols < 1 || rows < 1) {
+            return null;
+        }
+        File f = new File(dir(), key.toString() + ".png");
+        writePng(renderImage(cols, rows, merged), f);
+        return f;
+    }
+
+    private static SnapMeta parseSnapshotName(String name) {
+        if (name == null) {
+            return null;
+        }
+        Matcher m = SNAP_NAME.matcher(name);
+        if (!m.matches()) {
+            return null;
+        }
+        try {
+            SnapMeta meta = new SnapMeta();
+            meta.tcId = m.group(1);
+            meta.col = Integer.parseInt(m.group(2));
+            meta.row = Integer.parseInt(m.group(3));
+            meta.verdict = Verdict.valueOf(m.group(4));
+            meta.cols = Integer.parseInt(m.group(5));
+            meta.rows = Integer.parseInt(m.group(6));
+            return meta;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static final class SnapMeta {
+        String tcId;
+        int col;
+        int row;
+        Verdict verdict;
+        int cols;
+        int rows;
+    }
+
+    /** (크기, 결과들)을 라이브 판과 무관하게 오프스크린 이미지로 렌더. */
+    private Image renderImage(int cols, int rows, List<VerdictResult> results) {
+        RearGrid g = new RearGrid(cols, rows);
+        Verdict[][] vs = new Verdict[cols][rows];
+        for (int c = 0; c < cols; c++) {
+            for (int r = 0; r < rows; r++) {
+                vs[c][r] = Verdict.NONE;
+            }
+        }
+        if (results != null) {
+            for (VerdictResult r : results) {
+                if (r == null) {
+                    continue;
+                }
+                Point p = r.getPoint();
+                int c = p.x;
+                int rr = p.y;
+                if (c >= 0 && c < cols && rr >= 0 && rr < rows) {
+                    vs[c][rr] = r.getVerdict();
+                    g.setSelected(c, rr, true);
+                }
+            }
+        }
+        int w = Math.max(1, getSize().x > 0 ? getSize().x : 480);
+        int h = Math.max(1, getSize().y > 0 ? getSize().y : 320);
+        Image img = new Image(getDisplay(), w, h);
+        GC gc = new GC(img);
+        try {
+            paintBoard(gc, new Rectangle(0, 0, w, h), g, vs, false);
+        } finally {
+            gc.dispose();
+        }
+        return img;
+    }
+
+    private void writePng(Image img, File f) {
+        try {
+            ImageLoader loader = new ImageLoader();
+            loader.data = new ImageData[] { img.getImageData() };
+            loader.save(f.getAbsolutePath(), SWT.IMAGE_PNG);
+        } finally {
+            img.dispose();
+        }
+    }
+
+    private void ensureVerdictGrid() {
+        int cols = grid.getCols();
+        int rows = grid.getRows();
+        if (cellVerdicts == null || cellVerdicts.length != cols
+                || (cols > 0 && cellVerdicts[0].length != rows)) {
+            cellVerdicts = new Verdict[cols][rows];
+            for (int c = 0; c < cols; c++) {
+                for (int r = 0; r < rows; r++) {
+                    cellVerdicts[c][r] = Verdict.NONE;
+                }
+            }
+        }
+    }
+
+    private Color verdictColor(Verdict v) {
+        if (v == null || v == Verdict.NONE) {
+            return null;
+        }
+        if (v == Verdict.PASS) {
+            return cPass;
+        }
+        if (v == Verdict.FAIL) {
+            return cFail;
+        }
+        if (v == Verdict.MEASURING) {
+            return cMeas;
+        }
+        return null;
     }
 
     /**
@@ -292,30 +708,38 @@ public class RearGridCanvas extends Canvas {
     }
 
     private void paintScene(GC gc) {
-        Rectangle ca = getClientArea();
+        paintBoard(gc, getClientArea(), grid, cellVerdicts, true);
+    }
+
+    /**
+     * 보드 그리기. liveLayout=true면 클릭 히트용 gx0/gy0/cell 갱신.
+     * 스냅샷 오프스크린은 liveLayout=false.
+     */
+    private void paintBoard(GC gc, Rectangle ca, RearGrid g, Verdict[][] vs, boolean liveLayout) {
         gc.setBackground(cBg);
         gc.fillRectangle(ca);
-        if (grid == null || ca.width < 40 || ca.height < 40) {
+        if (g == null || ca.width < 40 || ca.height < 40) {
             return;
         }
         gc.setAntialias(SWT.ON);
 
-        int cols = grid.getCols();
-        int rows = grid.getRows();
-        int ccy = ca.height / 2;
-        int rearX = Math.max(60, (int) (ca.width * TRUNK_REAR_X_FRAC));
+        int cols = g.getCols();
+        int rows = g.getRows();
+        int ccy = ca.y + ca.height / 2;
+        int rearX = ca.x + Math.max(60, (int) (ca.width * TRUNK_REAR_X_FRAC));
         int trunkH0 = Math.max(40, (int) (ca.height * TRUNK_H_FRAC));
-        // 범례는 레이아웃에서 폭을 빼지 않음 — 차량·격자가 남는 폭을 우선 사용
-        int availW = Math.max(cols * 5, ca.width - rearX - GAP - 2 * PAD);
+        int availW = Math.max(cols * 5, ca.width - (rearX - ca.x) - GAP - 2 * PAD);
         int lcell = Math.max(5, Math.min(trunkH0 / rows, availW / cols));
         int trunkH = lcell * rows;
         int usedW = lcell * cols;
         int usedH = lcell * rows;
         int lgx0 = rearX + GAP + PAD;
         int lgy0 = ccy - usedH / 2;
-        cell = lcell;
-        gx0 = lgx0;
-        gy0 = lgy0;
+        if (liveLayout) {
+            cell = lcell;
+            gx0 = lgx0;
+            gy0 = lgy0;
+        }
 
         int bx = lgx0 - PAD;
         int by = lgy0 - PAD;
@@ -336,8 +760,15 @@ public class RearGridCanvas extends Canvas {
             for (int c = 0; c < cols; c++) {
                 int cx = lgx0 + c * lcell + lcell / 2;
                 int cy = lgy0 + r * lcell + lcell / 2;
-                if (grid.isSelected(c, r)) {
-                    gc.setBackground(selDotColor());
+                if (g.isSelected(c, r)) {
+                    Color fill = selDotColor();
+                    if (vs != null && c < vs.length && r < vs[c].length) {
+                        Color vc = verdictColor(vs[c][r]);
+                        if (vc != null) {
+                            fill = vc;
+                        }
+                    }
+                    gc.setBackground(fill);
                     gc.fillOval(cx - selRad, cy - selRad, selRad * 2, selRad * 2);
                     gc.setForeground(cSelEdge);
                     gc.drawOval(cx - selRad, cy - selRad, selRad * 2, selRad * 2);
@@ -351,7 +782,6 @@ public class RearGridCanvas extends Canvas {
         }
 
         if (showLegend) {
-            // 격자(판) 오른쪽 남는 폭만 사용 — 침범 금지
             int remainW = (ca.x + ca.width) - (bx + bw) - 4;
             drawLegend(gc, ca, bx + bw, remainW);
         }
