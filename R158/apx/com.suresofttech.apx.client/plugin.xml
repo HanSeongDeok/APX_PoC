@@ -18,11 +18,36 @@
       <perspective
             class="com.suresofttech.apx.client.ClientPerspective"
             id="com.suresofttech.apx.client.perspective"
-            name="이솝 (설정)">
+            name="이솝 (측정)">
       </perspective>
    </extension>
    <extension point="org.eclipse.ui.views">
       <category id="com.suresofttech.apx.client.category" name="이솝"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.KickoffView"
+            id="com.suresofttech.apx.client.view.kickoff"
+            name="측정 Kickoff"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.AudioMonitorView"
+            id="com.suresofttech.apx.client.view.audioMonitor"
+            name="음향 모니터"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.VisionMonitorView"
+            id="com.suresofttech.apx.client.view.visionMonitor"
+            name="비전 모니터"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.RearMonitorView"
+            id="com.suresofttech.apx.client.view.rearMonitor"
+            name="후방 모니터"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.ResultView"
+            id="com.suresofttech.apx.client.view.result"
+            name="결과"/>
       <view
             category="com.suresofttech.apx.client.category"
             class="com.suresofttech.apx.client.view.SettingsClientView"
