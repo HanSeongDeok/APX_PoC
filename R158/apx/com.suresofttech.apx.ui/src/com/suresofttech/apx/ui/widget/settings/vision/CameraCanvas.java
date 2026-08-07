@@ -34,13 +34,28 @@ public class CameraCanvas extends Canvas {
     private String placeholder = "(카메라 없음)";
     private Overlay overlay;
     private FrameListener frameListener;
+    /** 추가 구독자 — 매칭(RoiNcc) 외에 녹화 등이 같은 프레임을 받아간다. */
+    private final java.util.List<FrameListener> extraListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<FrameListener>();
 
     public void setOverlay(Overlay o) {
         this.overlay = o;
     }
 
+    /** 주 구독자(매칭). 하나만 유지된다 — 추가 구독은 {@link #addFrameListener}. */
     public void setFrameListener(FrameListener l) {
         this.frameListener = l;
+    }
+
+    /** 프레임 추가 구독 — 주 구독자를 밀어내지 않는다(녹화 tap 등). */
+    public void addFrameListener(FrameListener l) {
+        if (l != null && !extraListeners.contains(l)) {
+            extraListeners.add(l);
+        }
+    }
+
+    public void removeFrameListener(FrameListener l) {
+        extraListeners.remove(l);
     }
 
     public CameraCanvas(Composite parent) {
@@ -62,8 +77,18 @@ public class CameraCanvas extends Canvas {
         if (!isDisposed()) {
             redraw();
         }
-        if (f != null && frameListener != null) {
+        if (f == null) {
+            return;
+        }
+        if (frameListener != null) {
             frameListener.onFrame(f);
+        }
+        for (FrameListener l : extraListeners) {
+            try {
+                l.onFrame(f);
+            } catch (Exception ignored) {
+                // 구독자 하나가 죽어도 표시·매칭은 계속
+            }
         }
     }
 

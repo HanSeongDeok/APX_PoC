@@ -105,12 +105,17 @@ public class AudioScope extends Canvas {
     private int passOpen = -1;   // 현재 열린(자라는) 밴드 index. -1=없음
     private Color passColor;   // 초록(반투명 밴드용)
 
+    // 결과 스크럽(정적 구간 렌더) — 라이브 스트리밍 대신 wav 구간을 한 번에 그린다.
+    private double cursorMs = -1;   // <0 이면 커서 없음
+    private Color cursorColor;
+
     private Image composite;
 
     public AudioScope(Composite parent, double fmax) {
         super(parent, SWT.DOUBLE_BUFFERED | SWT.NO_BACKGROUND);
         this.fmax = fmax;
         this.passColor = new Color(parent.getDisplay(), 46, 190, 90);   // PASS 밴드(초록)
+        this.cursorColor = new Color(parent.getDisplay(), 220, 40, 40); // 스크럽 커서(빨강)
         addPaintListener(new PaintListener() {
             public void paintControl(PaintEvent e) {
                 if (composite == null || composite.isDisposed()) {
@@ -130,6 +135,9 @@ public class AudioScope extends Canvas {
             }
             if (passColor != null && !passColor.isDisposed()) {
                 passColor.dispose();
+            }
+            if (cursorColor != null && !cursorColor.isDisposed()) {
+                cursorColor.dispose();
             }
         });
         addListener(SWT.Resize, e -> rebuildAndRedraw());
@@ -344,6 +352,73 @@ public class AudioScope extends Canvas {
         rebuildAndRedraw();
     }
 
+    /**
+     * <b>결과 스크럽용 정적 렌더</b> — 저장된 wav의 한 구간을 통째로 그린다.
+     * 라이브 스트리밍({@link #setData})과 달리 링에 누적하지 않고 매번 새로 채우므로,
+     * 슬라이더를 아무 방향으로 움직여도 그 시점 파형이 바로 나온다.
+     *
+     * <p>DB 없이 wav만 다시 읽어 그리는 경로다 — 파형 이미지를 따로 저장하지 않는다.
+     *
+     * @param samples wav 전체 샘플([-1,1))
+     * @param sr 샘플레이트
+     * @param startMs 창 시작(측정 시작 기준 ms)
+     * @param endMs 창 끝
+     * @param cursorMs 커서 위치(창 밖이면 안 그림). 음수면 커서 없음
+     */
+    public void showWindow(double[] samples, int sr, double startMs, double endMs, double cursorMs) {
+        if (samples == null || sr <= 0 || endMs <= startMs) {
+            return;
+        }
+        eHead = 0;
+        eCount = 0;
+        eLast = -1;
+        pHead = 0;
+        pCount = 0;
+        mHead = 0;
+        mCount = 0;
+
+        double span = endMs - startMs;
+        // 창이 길면 열 폭을 늘려 링 용량(ENV_CAP) 안에 들어오게 — 해상도보다 전 구간 표시 우선
+        double colMs = Math.max(ENV_COL_MS, span / (ENV_CAP - 8));
+        int cols = (int) Math.ceil(span / colMs);
+        for (int c = 0; c < cols && eCount < ENV_CAP; c++) {
+            double t0 = startMs + c * colMs;
+            int s0 = (int) Math.round(t0 / 1000.0 * sr);
+            int s1 = (int) Math.round((t0 + colMs) / 1000.0 * sr);
+            s0 = Math.max(0, Math.min(samples.length, s0));
+            s1 = Math.max(s0, Math.min(samples.length, s1));
+            double hi = 0;
+            double lo = 0;
+            for (int i = s0; i < s1; i++) {
+                if (samples[i] > hi) {
+                    hi = samples[i];
+                }
+                if (samples[i] < lo) {
+                    lo = samples[i];
+                }
+            }
+            int tail = (eHead + eCount) % ENV_CAP;
+            eT[tail] = t0 + colMs * 0.5;
+            eHi[tail] = hi;
+            eLo[tail] = lo;
+            eCount++;
+        }
+        winMin = startMs;
+        winMax = endMs;
+        this.cursorMs = cursorMs;
+        rebuildAndRedraw();
+    }
+
+    /** 스크럽 커서만 이동(파형 창은 그대로). 음수면 커서 제거. */
+    public void setCursorMs(double ms) {
+        this.cursorMs = ms;
+        rebuildAndRedraw();
+    }
+
+    public double getCursorMs() {
+        return cursorMs;
+    }
+
     /** 그래프 초기화(측정 리셋) — 링 비움. 기대(목표 주파수)는 유지. */
     public void clear() {
         eHead = 0;
@@ -431,11 +506,13 @@ public class AudioScope extends Canvas {
             int halfW = w / 2;
             drawPng(gc, wavePng(halfW, topH), 0, 0);
             drawPassBand(gc, 0, 0, halfW, topH);
+            drawCursor(gc, 0, 0, halfW, topH);
             drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
         } else {
             // 파형 전폭
             drawPng(gc, wavePng(w, topH), 0, 0);
             drawPassBand(gc, 0, 0, w, topH);
+            drawCursor(gc, 0, 0, w, topH);
         }
         if (showTrend) {
             drawPng(gc, trendPng(w, botH), 0, topH);
@@ -455,6 +532,28 @@ public class AudioScope extends Canvas {
         Image img = new Image(getDisplay(), new ByteArrayInputStream(png));
         gc.drawImage(img, x, y);
         img.dispose();
+    }
+
+    /**
+     * 스크럽 커서(세로선)를 파형 패널에 덧그림. 플롯 기하는 {@link #drawPassBand}와 동일.
+     * 창 밖이거나 커서가 없으면 아무것도 안 그린다.
+     */
+    private void drawCursor(GC gc, int px, int py, int pw, int ph) {
+        if (cursorMs < 0 || cursorColor == null) {
+            return;
+        }
+        double span = axHi - axLo;
+        if (span <= 0 || cursorMs < axLo || cursorMs > axHi) {
+            return;
+        }
+        int plotL = px + PLOT_L;
+        int plotT = py + PLOT_T;
+        int plotW = Math.max(1, pw - PLOT_L - PLOT_R_PLAIN);
+        int plotH = Math.max(1, ph - PLOT_V_CHROME);
+        int x = plotL + (int) ((cursorMs - axLo) / span * plotW);
+        gc.setForeground(cursorColor);
+        gc.setLineWidth(2);
+        gc.drawLine(x, plotT, x, plotT + plotH);
     }
 
     /**
@@ -517,6 +616,84 @@ public class AudioScope extends Canvas {
     }
 
     /** ① 파형 크기 포락선 — 채움. Y축은 진폭 ±1 → ±100%. 범례 없음. */
+    /**
+     * <b>임의 구간 파형 PNG</b> — 라이브 스코프 상태와 무관하게 샘플에서 직접 렌더한다.
+     * 클라가 {@code full.wav} 샘플의 {@code [startMs, endMs)} 구간만 잘라
+     * 보고서에 넣을 때 사용. 스타일(검정 채움·±100%·ms축)은 라이브 파형과 동일.
+     *
+     * @param samples    전체 샘플 [-1,1]
+     * @param sampleRate 샘플레이트(Hz)
+     * @param title      차트 제목(null이면 기본)
+     * @return PNG 바이트, 구간이 비었거나 샘플이 없으면 null
+     */
+    public static byte[] renderRangePng(double[] samples, int sampleRate,
+            double startMs, double endMs, int width, int height, String title) {
+        if (samples == null || samples.length == 0 || sampleRate <= 0) {
+            return null;
+        }
+        double a = Math.min(startMs, endMs);
+        double b = Math.max(startMs, endMs);
+        if (b - a < 1e-6) {
+            return null;
+        }
+        int w = Math.max(160, width);
+        int h = Math.max(90, height);
+
+        XYChart c = new XYChart(w, h, BG);
+        int plotW = Math.max(1, w - PLOT_L - PLOT_R_PLAIN);
+        c.setPlotArea(PLOT_L, PLOT_T, plotW, Math.max(1, h - PLOT_V_CHROME),
+                BG, -1, 0xdddddd, 0xf0f0f0, -1);
+        c.addTitle(title == null ? "파형 구간" : title, FONT, 9);
+        double tick = msTick(b - a, DEFAULT_TICK_APPROX);
+        double lo = Math.floor(a / tick) * tick;
+        double hi = Math.ceil(b / tick) * tick;
+        if (hi - lo < tick) {
+            hi = lo + tick;
+        }
+        c.xAxis().setLinearScale(lo, hi, tick);
+        c.xAxis().setLabelFormat("{value|0}ms");
+        c.yAxis().setLinearScale(-100, 100, 50);
+        c.yAxis().setLabelFormat("{value}%");
+
+        int i0 = (int) Math.max(0, Math.floor(a / 1000.0 * sampleRate));
+        int i1 = (int) Math.min(samples.length, Math.ceil(b / 1000.0 * sampleRate));
+        if (i1 - i0 < 2) {
+            return null;
+        }
+        // 열(column)당 max/min 포락선 — 열 수는 플롯 폭을 넘지 않게
+        int cols = Math.max(2, Math.min(plotW, (int) Math.round((b - a) / ENV_COL_MS)));
+        double[] tx = new double[cols];
+        double[] hiV = new double[cols];
+        double[] loV = new double[cols];
+        long span = i1 - i0;
+        for (int k = 0; k < cols; k++) {
+            int s0 = i0 + (int) (span * k / cols);
+            int s1 = i0 + (int) (span * (k + 1) / cols);
+            if (s1 <= s0) {
+                s1 = Math.min(i1, s0 + 1);
+            }
+            double mx = 0;
+            double mn = 0;
+            for (int s = s0; s < s1; s++) {
+                double v = samples[s];
+                if (v > mx) {
+                    mx = v;
+                }
+                if (v < mn) {
+                    mn = v;
+                }
+            }
+            tx[k] = a + (b - a) * (k + 0.5) / cols;
+            hiV[k] = mx * 100.0;
+            loV[k] = mn * 100.0;
+        }
+        AreaLayer ah = c.addAreaLayer(hiV, C_FILL);
+        ah.setXData(tx);
+        AreaLayer al = c.addAreaLayer(loV, C_FILL);
+        al.setXData(tx);
+        return c.makeChart2(Chart.PNG);
+    }
+
     private byte[] wavePng(int w, int h) {
         XYChart c = baseChart(w, h, waveTitle, tickApprox, false);
         c.yAxis().setLinearScale(-100, 100, 50);   // 100% / 50% / 0% / -50% / -100%

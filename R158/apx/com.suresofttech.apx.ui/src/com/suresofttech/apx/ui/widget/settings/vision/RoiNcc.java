@@ -196,7 +196,7 @@ public final class RoiNcc {
         }
     }
 
-    /** ±3프레임 증거 ({@code evidence_pre_-3f} 등). flush 후 호출. */
+    /** ±1프레임 증거 ({@code evidence_pre_-1f} 등). flush 후 호출. */
     public EvidenceCapture.Evidence getEvidence() {
         return det == null ? null : det.getEvidence();
     }

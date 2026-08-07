@@ -31,6 +31,7 @@ public class CameraSelectBar extends Composite {
     private CameraCanvas canvas;
     private boolean polling;
     private BufferedImage lastBi;
+    private final CameraService.DeviceListener deviceListener;
 
     public CameraSelectBar(Composite parent) {
         super(parent, SWT.NONE);
@@ -56,11 +57,47 @@ public class CameraSelectBar extends Composite {
             }
         });
 
+        // USB 연결/분리 자동 반영 — 현장에서 케이블이 바뀌어도 수동 새로고침이 필요 없게.
+        // 드라이버 스레드에서 오므로 UI 스레드로 넘긴다.
+        deviceListener = new CameraService.DeviceListener() {
+            public void onDevicesChanged(final boolean currentLost) {
+                if (isDisposed()) {
+                    return;
+                }
+                display.asyncExec(new Runnable() {
+                    public void run() {
+                        if (!isDisposed()) {
+                            onDeviceHotplug(currentLost);
+                        }
+                    }
+                });
+            }
+        };
+        CameraService.get().addDeviceListener(deviceListener);
+
         addDisposeListener(new DisposeListener() {
             public void widgetDisposed(DisposeEvent e) {
                 polling = false;
+                CameraService.get().removeDeviceListener(deviceListener);
             }
         });
+    }
+
+    /**
+     * 장치 목록 변경 반영.
+     * 쓰던 카메라가 빠졌으면 목록만 갱신해 알리고, 같은 이름으로 다시 꽂히면 그 장치로 재연결한다
+     * (인덱스는 재연결 때 바뀌므로 이름으로 찾는다).
+     */
+    private void onDeviceHotplug(boolean currentLost) {
+        String wanted = CameraService.get().currentName();
+        refreshCameras();
+        if (currentLost && canvas != null && !canvas.isDisposed()) {
+            canvas.setPlaceholder("웹캠 연결이 끊어졌습니다");
+            lastBi = null;
+            canvas.setFrame(null);
+        } else if (wanted != null && !CameraService.get().isOpen()) {
+            CameraService.get().reopenByName(wanted);
+        }
     }
 
     /** 웹캠 화면({@link CameraCanvas}) — 장치 열기 후 여기로 프레임을 넣는다. */

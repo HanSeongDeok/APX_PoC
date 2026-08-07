@@ -440,7 +440,13 @@ public class RearGridCanvas extends Canvas {
 
     /**
      * 여러 TC 스냅샷 파일명에서 Point·Verdict·격자크기를 읽어 한 판에 합친 통합 이미지.
+     *
+     * <p><b>동일 격자 규격만 통합된다.</b> 서로 다른 {@code <cols>x<rows>}가 섞이면
+     * 부분 통합본을 조용히 돌려주지 않고 {@link IllegalArgumentException}을 던진다
+     * (섞인 걸 모르고 증거로 제출하는 사고 방지).
+     *
      * @return {@code combined_<tcId>_....png} (해당 파일 없으면 null)
+     * @throws IllegalArgumentException 격자 크기가 다른 스냅샷이 섞인 경우
      */
     public File getCombinedSnapshot(List<String> tcIds) {
         if (tcIds == null || tcIds.isEmpty()) {
@@ -450,6 +456,7 @@ public class RearGridCanvas extends Canvas {
         StringBuilder key = new StringBuilder("combined");
         int cols = -1;
         int rows = -1;
+        String specOwner = null;
         for (String id : tcIds) {
             File snap = getSnapshot(id);
             if (snap == null) {
@@ -462,8 +469,12 @@ public class RearGridCanvas extends Canvas {
             if (cols < 0) {
                 cols = meta.cols;
                 rows = meta.rows;
+                specOwner = id;
             } else if (cols != meta.cols || rows != meta.rows) {
-                continue; // 동일 규격만 합침
+                throw new IllegalArgumentException(String.format(
+                        "격자 크기가 다릅니다 — 동일 규격만 통합할 수 있습니다: %s=%dx%d, %s=%dx%d",
+                        specOwner, Integer.valueOf(cols), Integer.valueOf(rows),
+                        id, Integer.valueOf(meta.cols), Integer.valueOf(meta.rows)));
             }
             merged.add(new VerdictResult(meta.col, meta.row, meta.verdict));
             key.append('_').append(safe(id));
