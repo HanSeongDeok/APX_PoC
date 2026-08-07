@@ -1,6 +1,7 @@
 package com.suresofttech.apx.ui.widget.settings.audio;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -11,6 +12,8 @@ import org.eclipse.swt.events.PaintListener;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.ImageData;
+import org.eclipse.swt.graphics.ImageLoader;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Composite;
@@ -224,6 +227,19 @@ public class AudioScope extends Canvas {
         rebuildAndRedraw();
     }
 
+    /**
+     * 초록 PASS 밴드 구간 목록(복사). 각 원소 {@code {startMs, endMs}}.
+     * 증거 clip.wav = 밴드 시작~끝.
+     */
+    public List<double[]> getPassSpans() {
+        List<double[]> out = new ArrayList<double[]>();
+        for (int i = 0; i < passSpans.size(); i++) {
+            double[] sp = passSpans.get(i);
+            out.add(new double[] { sp[0], sp[1] });
+        }
+        return out;
+    }
+
     /** 기대 beep 등록 — 목표 주파수만 음정 패널 수평 점선으로. (파형은 라이브 포락선만 표시) */
     public void setExpected(double[] tmpl, int sr) {
         if (tmpl == null || tmpl.length < 2) {
@@ -233,7 +249,9 @@ public class AudioScope extends Canvas {
         rebuildAndRedraw();
     }
 
-    /** 매 틱: 라이브 파형 포락선 + 음정(지배 주파수)을 시간축(ms)에 누적. (렌더는 setMatchTrend에서 커밋) */
+    /** 매 틱: 라이브 파형 포락선(+옵션 음정)을 시간축(ms)에 누적.
+     * 추이 패널 on이면 렌더는 {@link #setMatchTrend}에서 커밋.
+     * 파형만 모드({@code showTrend=false})면 여기서 바로 커밋. */
     public void setData(double[] w, int sr, double targetFreq, double elapsedSec) {
         if (w == null || w.length == 0) {
             return;
@@ -280,20 +298,27 @@ public class AudioScope extends Canvas {
         }
         eLast = elapsedMs;
 
-        // ── 음정 추적: 라이브 지배 주파수 1점 push ──
-        if (elapsedMs < pLast - 1e-6) {
-            pHead = 0;
-            pCount = 0;
+        // ── 음정 추적: 라이브 지배 주파수 1점 push (패널 on일 때만) ──
+        if (showPitch) {
+            if (elapsedMs < pLast - 1e-6) {
+                pHead = 0;
+                pCount = 0;
+            }
+            int ptail = (pHead + pCount) % CAP_M;
+            pT[ptail] = elapsedMs;
+            pHz[ptail] = dominantHz(w, sr);
+            if (pCount < CAP_M) {
+                pCount++;
+            } else {
+                pHead = (pHead + 1) % CAP_M;
+            }
+            pLast = elapsedMs;
         }
-        int ptail = (pHead + pCount) % CAP_M;
-        pT[ptail] = elapsedMs;
-        pHz[ptail] = dominantHz(w, sr);
-        if (pCount < CAP_M) {
-            pCount++;
-        } else {
-            pHead = (pHead + 1) % CAP_M;
+
+        // 추이 없으면 여기서 커밋 (있으면 setMatchTrend가 커밋)
+        if (!showTrend) {
+            rebuildAndRedraw();
         }
-        pLast = elapsedMs;
     }
 
     /** 매 틱: 주파수·파형 일치도 추이 누적 + 화면 커밋(리빌드·리드로우). */
@@ -335,6 +360,27 @@ public class AudioScope extends Canvas {
         passSpans.clear();
         passOpen = -1;
         rebuildAndRedraw();
+    }
+
+    /**
+     * 현재 스코프 PNG (증거·Result용).
+     * ChartDirector 오프스크린 {@code composite}를 직접 인코딩한다.
+     * (SWT {@code copyArea}는 redraw 전이면 빈 축만 찍히는 문제 있음)
+     */
+    public byte[] capturePng() {
+        rebuild();
+        if (composite == null || composite.isDisposed()) {
+            return null;
+        }
+        try {
+            ImageLoader loader = new ImageLoader();
+            loader.data = new ImageData[] { composite.getImageData() };
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            loader.save(bos, SWT.IMAGE_PNG);
+            return bos.toByteArray();
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     // ── 내부 ────────────────────────────────────────────────────────────────────
