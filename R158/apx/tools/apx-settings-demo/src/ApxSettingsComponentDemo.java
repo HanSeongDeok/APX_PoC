@@ -1,4 +1,5 @@
 import java.awt.image.BufferedImage;
+import java.util.List;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.SashForm;
@@ -44,8 +45,12 @@ import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 /**
  * APX Settings 컴포넌트 가이드 데모 — 설정 화면을 이루는 최소 단위 위젯을 하나씩 보여 준다.
  *
- * <p><b>사용법</b>: 왼쪽 트리에서 컴포넌트를 고르면, 오른쪽에 그 컴포넌트의
- * ① 역할 설명  ② 소스 파일 위치  ③ 코드 예시(기본/커스텀)  ④ 실제 미리보기가 나온다.
+ * <p><b>사용법</b>: 왼쪽 트리에서 항목을 고르면, 오른쪽에
+ * ① 역할 설명  ② 소스 파일 위치  ③ 예시 코드 경로
+ * ④ 코드 예시(기본/커스텀)  ⑤ 실제 미리보기가 나온다.
+ *
+ * <p><b>검측 뷰 (조립)</b>: 클라이언트 {@code *MonitorView} 와 같은 모니터 조립만 미리보기.
+ * Vision/Audio/Rear 아래는 개별 설정·모니터 컴포넌트 가이드.
  *
  * <p><b>처음이면 이 용어부터</b>:
  * <ul>
@@ -229,6 +234,12 @@ public final class ApxSettingsComponentDemo {
     }
 
     private void populateTree(Tree tree) {
+        TreeItem assembled = category(tree, "검측 뷰 (조립)");
+        add(assembled, rearAssembledItem());
+        add(assembled, audioAssembledItem());
+        add(assembled, visionAssembledItem());
+        assembled.setExpanded(true);
+
         TreeItem vision = category(tree, "Vision");
         add(vision, cameraSelectItem());
         add(vision, cameraCanvasItem());
@@ -285,9 +296,20 @@ public final class ApxSettingsComponentDemo {
      * customEx 가 null 이면 커스텀 섹션 생략.
      */
     private static String doc(String role, String pathFromSrc, String defaultEx, String customEx) {
+        return doc(role, pathFromSrc, null, defaultEx, customEx);
+    }
+
+    /**
+     * @param exampleJavaPath 증거/조립 예시 Java 경로(없으면 null)
+     */
+    private static String doc(String role, String pathFromSrc, String exampleJavaPath,
+            String defaultEx, String customEx) {
         StringBuilder sb = new StringBuilder();
         sb.append("역할:\n").append(role);
         sb.append("\n\n파일:\n  ").append(pathFromSrc);
+        if (exampleJavaPath != null && exampleJavaPath.length() > 0) {
+            sb.append("\n\n예시 코드:\n  ").append(exampleJavaPath);
+        }
         sb.append("\n\n예시 (기본):  ※ parent 등은 SWT Composite(부모 컨테이너)\n").append(defaultEx);
         if (customEx != null && customEx.length() > 0) {
             sb.append("\n\n예시 (커스텀):\n").append(customEx);
@@ -297,6 +319,143 @@ public final class ApxSettingsComponentDemo {
 
     private static final String SRC_UI =
             "src/com/suresofttech/apx/ui/widget/";
+
+    /** 예시 코드 폴더 (apx-settings-demo 하위부터). */
+    private static final String EXAMPLES =
+            "apx-settings-demo/examples/";
+    /** 컴포넌트별 예시. */
+    private static final String EX_COMP = EXAMPLES + "components/";
+
+    // ── 검측 뷰 조립 (클라이언트 *MonitorView 와 동일) ─────
+
+    private Item rearAssembledItem() {
+        return new Item(
+                "후방 검측",
+                "RearMonitorView 조립",
+                doc("  클라이언트 RearMonitorView 와 같은 모니터 조립 미리보기.\n"
+                                + "  · RearLegendBar (상태 범례, settings 동기)\n"
+                                + "  · RearGridCanvas — setInteractive(false), 색으로 PASS/FAIL\n"
+                                + "\n"
+                                + "  ※ 판독값(집계·좌표별 판정 글) UI 미제공.\n"
+                                + "  ※ SizeBar 등 설정 위젯은 포함하지 않음 (Vision/Audio/Rear 개별 항목 참고).\n"
+                                + "\n"
+                                + "  증거 규약 (<증거루트>/rear/):\n"
+                                + "    <tcId>_c<col>_r<row>_<PASS|FAIL>_<cols>x<rows>.png",
+                        SRC_UI + "settings/rear/",
+                        EXAMPLES + "RearEvidenceExample.java\n"
+                                + "  " + EX_COMP + "RearLegendBarExample.java\n"
+                                + "  " + EX_COMP + "RearGridCanvasExample.java",
+                        "RearLegendBar legend = new RearLegendBar(parent, cfg);\n"
+                                + "RearGridCanvas canvas = new RearGridCanvas(parent, grid);\n"
+                                + "canvas.setInteractive(false);\n"
+                                + "canvas.loadDefaultCarImage();\n"
+                                + "canvas.applyDefaultLegend();\n"
+                                + "legend.setCanvas(canvas);",
+                        null),
+                new DemoEntry() {
+                    public void create(Composite parent) {
+                        RearLegendBar.Cfg legendCfg = new RearLegendBar.Cfg();
+                        legendCfg.legendText = "상태 범례";
+                        legendCfg.bindToSettings = true;
+                        RearLegendBar legendBar = new RearLegendBar(parent, legendCfg);
+
+                        ApxSettings s = ApxSettings.get();
+                        RearGrid grid = new RearGrid(s.getRearCols(), s.getRearRows());
+                        List<int[]> pts = s.getRearSelectedPoints();
+                        if (pts != null && !pts.isEmpty()) {
+                            grid.selectPoints(pts);
+                        }
+                        RearGridCanvas canvas = new RearGridCanvas(parent, grid);
+                        GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
+                        gd.minimumHeight = 200;
+                        gd.heightHint = 260;
+                        canvas.setLayoutData(gd);
+                        canvas.setInteractive(false);
+                        canvas.loadDefaultCarImage();
+                        canvas.applyDefaultLegend();
+                        canvas.setShowLegend(s.isRearShowLegend());
+                        legendBar.setCanvas(canvas);
+                    }
+                });
+    }
+
+    private Item audioAssembledItem() {
+        return new Item(
+                "음향 검측",
+                "AudioMonitorView 조립",
+                doc("  클라이언트 AudioMonitorView 와 같은 모니터 조립 미리보기.\n"
+                                + "  · AudioScope — 파형·초록 PASS 밴드만\n"
+                                + "\n"
+                                + "  ※ 음정 추적·일치도 추이·판독값 UI 미제공.\n"
+                                + "  ※ MicSelect·ExpectedWav·Threshold 등 설정 위젯 없음.\n"
+                                + "\n"
+                                + "  증거 규약 (<증거루트>/audio/):\n"
+                                + "    full.wav · clip.wav · wave_pass.png · wave_full.png",
+                        SRC_UI + "settings/audio/AudioScope.java",
+                        EXAMPLES + "AudioEvidenceExample.java\n"
+                                + "  " + EX_COMP + "AudioScopeExample.java",
+                        "AudioScope scope = new AudioScope(parent, 5000.0);\n"
+                                + "scope.setShowPitch(false);\n"
+                                + "scope.setShowTrend(false);",
+                        null),
+                new DemoEntry() {
+                    public void create(Composite parent) {
+                        AudioScope scope = new AudioScope(parent, 5000.0);
+                        GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
+                        gd.minimumHeight = 180;
+                        gd.heightHint = 220;
+                        scope.setLayoutData(gd);
+                        scope.setShowPitch(false);
+                        scope.setShowTrend(false);
+                    }
+                });
+    }
+
+    private Item visionAssembledItem() {
+        return new Item(
+                "비전 검측",
+                "VisionMonitorView 조립",
+                doc("  클라이언트 VisionMonitorView 와 같은 모니터 조립 미리보기.\n"
+                                + "  · CameraCanvas + RoiNcc(setInteractive false) — 웹캠·ROI만\n"
+                                + "\n"
+                                + "  ※ CameraSelectBar는 설정 전용(모니터에 없음).\n"
+                                + "  ※ 판독값(유사도·ROI·자체 판단 글) UI 미제공.\n"
+                                + "  ※ ReferenceImageBar·VisionThresholdBar 등 설정 위젯 없음.\n"
+                                + "\n"
+                                + "  증거 규약 (<증거루트>/vision/):\n"
+                                + "    evidence_pre_-1f.png · evidence_decide.png · evidence_post_+1f.png",
+                        SRC_UI + "settings/vision/",
+                        EXAMPLES + "VisionEvidenceExample.java\n"
+                                + "  " + EX_COMP + "CameraCanvasExample.java\n"
+                                + "  " + EX_COMP + "RoiNccExample.java",
+                        "CameraCanvas canvas = new CameraCanvas(parent);\n"
+                                + "RoiNcc roi = new RoiNcc(canvas);\n"
+                                + "roi.setInteractive(false);\n"
+                                + "// 프레임은 CameraService.latest() 폴링(설정에서 장치 open)",
+                        null),
+                new DemoEntry() {
+                    public void create(Composite parent) {
+                        CameraCanvas canvas = newCanvas(parent);
+                        canvas.setPlaceholder("설정에서 웹캠을 연결하세요");
+                        attachLiveFromService(canvas);
+
+                        RoiNcc roiNcc = new RoiNcc(canvas);
+                        roiNcc.setInteractive(false);
+
+                        // 미리보기용: 이미 열려 있지 않으면 첫 장치만 연다(선택 UI 없음)
+                        CameraService svc = CameraService.get();
+                        if (!svc.isOpen()) {
+                            List<CameraService.Cam> cams = svc.list();
+                            if (!cams.isEmpty()) {
+                                svc.open(cams.get(0).index);
+                            }
+                        }
+                        if (svc.isOpen()) {
+                            canvas.setPlaceholder("(신호 대기…)");
+                        }
+                    }
+                });
+    }
 
     // ── Vision ─────────────────────────────────────────────
 
@@ -309,6 +468,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ 웹캠 장치 자체는 ApxSettings가 아니라 CameraService가 보관.\n"
                                 + "  (이 바는 '영상 공급'만 담당 — 설정 저장은 다른 바 몫)",
                         SRC_UI + "settings/vision/CameraSelectBar.java",
+                        EX_COMP + "CameraSelectBarExample.java",
                         "CameraSelectBar cam = new CameraSelectBar(parent);\n"
                                 + "CameraCanvas canvas = new CameraCanvas(parent);\n"
                                 + "canvas.setPlaceholder(\"웹캠을 선택하세요\");\n"
@@ -332,6 +492,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ROI(비교할 사각형 영역) 지정 기능은 이 화면 위에 겹쳐 붙음(RoiNcc).\n"
                                 + "  ※ 설정값 저장 없음 — 표시 전용.",
                         SRC_UI + "settings/vision/CameraCanvas.java",
+                        EX_COMP + "CameraCanvasExample.java",
                         "CameraCanvas canvas = new CameraCanvas(parent);\n"
                                 + "canvas.setPlaceholder(\"웹캠을 선택하세요\");\n"
                                 + "cam.setCanvas(canvas);",
@@ -358,6 +519,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  자체 버튼 없이 CameraCanvas 위에 겹쳐 붙음.\n"
                                 + "  ※ ApxSettings: 그린 사각형 좌표(ROI) 저장. 합격은 simThr(기준선) 이상.",
                         SRC_UI + "settings/vision/RoiNcc.java",
+                        EX_COMP + "RoiNccExample.java",
                         "CameraCanvas canvas = new CameraCanvas(parent);\n"
                                 + "cam.setCanvas(canvas);\n"
                                 + "\n"
@@ -392,6 +554,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: 사용 여부(useReferenceImage)·파일 경로(visionRefPath) 저장.\n"
                                 + "  비전 비교가 이 값을 보고 '사진 기준 모드'로 동작.",
                         SRC_UI + "settings/vision/ReferenceImageBar.java",
+                        EX_COMP + "ReferenceImageBarExample.java",
                         "ReferenceImageBar ref = new ReferenceImageBar(parent);",
                         null),
                 new DemoEntry() {
@@ -409,6 +572,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  setRoiNcc(roi)로 연결해야 실시간 점수가 라벨에 표시.\n"
                                 + "  ※ ApxSettings: simThr 저장. 비전 판정은 '점수 ≥ simThr'이면 합격.",
                         SRC_UI + "settings/vision/VisionThresholdBar.java",
+                        EX_COMP + "VisionThresholdBarExample.java",
                         "VisionThresholdBar thr = new VisionThresholdBar(parent);\n"
                                 + "thr.setRoiNcc(roi); // 매칭 점수 소스",
                         "VisionThresholdBar.Cfg cfg = new VisionThresholdBar.Cfg();\n"
@@ -425,6 +589,7 @@ public final class ApxSettingsComponentDemo {
                 });
     }
 
+
     // ── Audio ──────────────────────────────────────────────
 
     private Item micSelectItem() {
@@ -437,6 +602,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  (AudioCapture.findInputDevice).\n"
                                 + "  → '고르는 바'와 '쓰는 바'는 설정값(micName)으로만 연결.",
                         SRC_UI + "settings/audio/MicSelectBar.java",
+                        EX_COMP + "MicSelectBarExample.java",
                         "MicSelectBar micBar = new MicSelectBar(parent);\n"
                                 + "micBar.refreshMics();",
                         null),
@@ -456,6 +622,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  테스트 ON 시 소리 크기에 따라 막대가 움직여, 마이크 입력 여부를 눈으로 확인.\n"
                                 + "  ※ ApxSettings: micName을 읽어 마이크를 엶(MicSelectBar가 저장해 둔 값).",
                         SRC_UI + "settings/audio/MicTestBar.java",
+                        EX_COMP + "MicTestBarExample.java",
                         "new MicTestBar(parent); // 장치는 ApxSettings.micName으로 해석",
                         null),
                 new DemoEntry() {
@@ -474,6 +641,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: 파일 경로를 expectedWavPath로 저장.\n"
                                 + "  측정 바(비교)와 재생 바(듣기)가 이 경로를 공유.",
                         SRC_UI + "settings/audio/ExpectedWavBar.java",
+                        EX_COMP + "ExpectedWavBarExample.java",
                         "new ExpectedWavBar(parent); // 기본 라벨",
                         "ExpectedWavBar.Cfg cfg = new ExpectedWavBar.Cfg();\n"
                                 + "cfg.titleText = \"기대 경고음 파일 (.wav)\";\n"
@@ -495,6 +663,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  (setScope 없으면 버튼만 표시, 그래프 없음.)\n"
                                 + "  ※ ApxSettings에서 기대음·마이크·합격 기준선을 읽어 사용.",
                         SRC_UI + "settings/audio/AudioMeasureBar.java",
+                        EX_COMP + "AudioMeasureBarExample.java",
                         "AudioMeasureBar measure = new AudioMeasureBar(parent);\n"
                                 + "new ExpectedTonePlayBar(measure.getActionRow()); // 3번째 칸\n"
                                 + "AudioScope scope = new AudioScope(parent, 5000.0);\n"
@@ -521,6 +690,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ 설정값 저장 없음 — 측정 바가 넘겨준 파형을 그리기만 함.\n"
                                 + "  생성 인자 5000.0 = 주파수 그래프 Y축 최대(Hz). 파형만 써도 필요.",
                         SRC_UI + "settings/audio/AudioScope.java",
+                        EX_COMP + "AudioScopeExample.java",
                         "AudioScope scope = new AudioScope(parent, 5000.0);\n"
                                 + "scope.setShowPitch(false); // 음정 패널 off\n"
                                 + "scope.setShowTrend(false); // 일치도 추이 off\n"
@@ -549,6 +719,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: expectedWavPath를 읽어 재생.\n"
                                 + "  (ExpectedWavBar로 파일을 먼저 선택해야 소리 재생.)",
                         SRC_UI + "settings/audio/ExpectedTonePlayBar.java",
+                        EX_COMP + "ExpectedTonePlayBarExample.java",
                         "// parent = measure.getActionRow() 권장 (3번째 칸)\n"
                                 + "ExpectedTonePlayBar play = new ExpectedTonePlayBar(parent);\n"
                                 + "play.setLayoutData(\n"
@@ -573,6 +744,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: audioFreqThr·audioWaveThr를 같은 값으로 저장.\n"
                                 + "  측정 바가 '일치도 ≥ 임계'이면 합격 판정할 때 사용.",
                         SRC_UI + "settings/audio/AudioThresholdBar.java",
+                        EX_COMP + "AudioThresholdBarExample.java",
                         "new AudioThresholdBar(parent); // 기본 0.90 / step 0.05",
                         "AudioThresholdBar.Cfg cfg = new AudioThresholdBar.Cfg();\n"
                                 + "cfg.defaultThr = 0.90;                 // 초기 임계 0~1\n"
@@ -588,6 +760,7 @@ public final class ApxSettingsComponentDemo {
                 });
     }
 
+
     // ── Rear ───────────────────────────────────────────────
 
     private Item rearGridSizeItem() {
@@ -602,6 +775,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: rearCols / rearRows / rearSizeMode\n"
                                 + "    크기가 바뀌면 Select 포인트는 초기화된다.",
                         SRC_UI + "settings/rear/RearGridSizeBar.java",
+                        EX_COMP + "RearGridSizeBarExample.java",
                         "RearGridSizeBar size = new RearGridSizeBar(parent);\n"
                                 + "size.setCanvas(canvas);",
                         "RearGridSizeBar.Cfg cfg = new RearGridSizeBar.Cfg();\n"
@@ -635,6 +809,7 @@ public final class ApxSettingsComponentDemo {
                                 + "  ※ ApxSettings: rearShowLegend 저장.\n"
                                 + "  ※ 범례 그림 자체는 RearGridCanvas가 담당한다.",
                         SRC_UI + "settings/rear/RearLegendBar.java",
+                        EX_COMP + "RearLegendBarExample.java",
                         "RearLegendBar legend = new RearLegendBar(parent);\n"
                                 + "legend.setCanvas(canvas);",
                         "RearLegendBar.Cfg cfg = new RearLegendBar.Cfg();\n"
@@ -680,6 +855,7 @@ public final class ApxSettingsComponentDemo {
                                 + "\n"
                                 + "  ※ 조립은 Client에서 SizeBar·LegendBar와 따로 연결한다.",
                         SRC_UI + "settings/rear/RearGridCanvas.java",
+                        EX_COMP + "RearGridCanvasExample.java",
                         "RearGrid g = new RearGrid(4, 6);          // 열×행\n"
                                 + "RearGridCanvas canvas = new RearGridCanvas(parent, g);\n"
                                 + "canvas.loadDefaultCarImage();         // ui/ref/…_Default.png\n"
@@ -721,6 +897,7 @@ public final class ApxSettingsComponentDemo {
                     }
                 });
     }
+
 
     private static CameraCanvas newCanvas(Composite parent) {
         CameraCanvas canvas = new CameraCanvas(parent);

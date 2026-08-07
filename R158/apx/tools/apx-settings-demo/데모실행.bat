@@ -8,6 +8,7 @@ set "ROOT=%~dp0..\.."
 for %%I in ("%ROOT%") do set "ROOT=%%~fI"
 set "UI=%ROOT%\com.suresofttech.apx.ui"
 set "CORE=%ROOT%\com.suresofttech.apx.core"
+set "CLIENT=%ROOT%\com.suresofttech.apx.client"
 
 set "JAVA_HOME64=C:\Program Files\Java\jdk1.8.0_351"
 if not exist "%JAVA_HOME64%\bin\java.exe" set "JAVA_HOME64=C:\Program Files\Java\jdk1.8.0_231"
@@ -38,6 +39,7 @@ if not exist "lib\org.eclipse.swt.win32.win32.x86_64.jar" (
 
 set "CP=%UI%\bin"
 set "CP=!CP!;%CORE%\bin"
+set "CP=!CP!;%CLIENT%\bin"
 set "CP=!CP!;lib\org.eclipse.swt.win32.win32.x86_64.jar"
 set "CP=!CP!;%UI%\lib\ChartDirector_s.jar"
 set "CP=!CP!;%CORE%\lib\webcam-capture-0.3.12.jar"
@@ -49,6 +51,7 @@ set "CP=!CP!;%CORE%\lib\JLargeArrays-1.6.jar"
 set "CP=!CP!;%CORE%\lib\commons-math3-3.6.1.jar"
 
 if not exist "%UI%\bin" mkdir "%UI%\bin"
+if not exist "%CLIENT%\bin" mkdir "%CLIENT%\bin"
 if not exist bin mkdir bin
 
 echo [1/3] Compiling UI settings widgets into UI\bin ...
@@ -63,9 +66,10 @@ del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\rear\RearSettingsPanel*
 "%JAVAC_EXE%" -encoding UTF-8 -cp "!CP!" -d "%CORE%\bin" ^
   "%CORE%\src\com\suresofttech\apx\core\audio\AudioCapture.java" ^
   "%CORE%\src\com\suresofttech\apx\core\config\ApxSettings.java" ^
-  "%CORE%\src\com\suresofttech\apx\core\rear\RearGrid.java"
+  "%CORE%\src\com\suresofttech\apx\core\rear\RearGrid.java" ^
+  "%CORE%\src\com\suresofttech\apx\core\vision\CameraService.java"
 if errorlevel 1 (
-  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid
+  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid CameraService
   pause
   exit /b 1
 )
