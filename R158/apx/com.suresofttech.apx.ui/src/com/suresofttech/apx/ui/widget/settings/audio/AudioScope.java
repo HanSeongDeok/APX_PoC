@@ -759,13 +759,18 @@ public class AudioScope extends Canvas {
     }
 
     /**
-     * 파형 채움 레이어 — <b>테두리 없이</b> 채운다.
-     * AreaLayer 기본 테두리(윤곽선)가 열마다 그려지면 얇은 파형이 굵은 덩어리로 보인다.
+     * 파형 채움 레이어 — 테두리를 <b>채움과 같은 색 1px</b>로 둔다.
+     * <ul>
+     *   <li>기본 테두리(다른 색·굵기)를 그대로 두면 열마다 윤곽선이 겹쳐 굵은 덩어리로 보인다.</li>
+     *   <li>반대로 테두리를 아예 없애면(Transparent) 1픽셀 폭의 짧은 스파이크가
+     *       안티에일리어싱에 묻혀 <b>잘려 보인다</b>. 같은 색 1px이면 최소 1픽셀은 찍힌다.</li>
+     * </ul>
      */
     private static void addWaveArea(XYChart c, double[] tX, double[] data) {
         AreaLayer a = c.addAreaLayer(data, C_FILL);
         a.setXData(tX);
-        a.setBorderColor(Chart.Transparent);
+        a.setBorderColor(C_FILL);
+        a.setLineWidth(1);
     }
 
     private byte[] wavePng(int w, int h) {
