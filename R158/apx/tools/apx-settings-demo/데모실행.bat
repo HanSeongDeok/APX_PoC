@@ -54,7 +54,7 @@ if not exist "%UI%\bin" mkdir "%UI%\bin"
 if not exist "%CLIENT%\bin" mkdir "%CLIENT%\bin"
 if not exist bin mkdir bin
 
-echo [1/3] Compiling UI settings widgets into UI\bin ...
+echo [1/4] Compiling UI settings widgets into UI\bin ...
 del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\audio\MicLevelBar*.class" 2>nul
 del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\audio\MicExclusive*.class" 2>nul
 del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\audio\MicDevices*.class" 2>nul
@@ -100,7 +100,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [2/3] Compiling demo ...
+echo [2/4] Compiling client SettingsForm into CLIENT\bin ...
+"%JAVAC_EXE%" -encoding UTF-8 -cp "!CP!" -d "%CLIENT%\bin" ^
+  "%CLIENT%\src\com\suresofttech\apx\client\view\SettingsForm.java"
+if errorlevel 1 (
+  echo [ERROR] Client SettingsForm compile failed
+  pause
+  exit /b 1
+)
+
+echo [3/4] Compiling demo ...
 set "CP=bin;!CP!"
 "%JAVAC_EXE%" -encoding UTF-8 -cp "!CP!" -d bin src\ApxSettingsComponentDemo.java
 if errorlevel 1 (
@@ -109,7 +118,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [3/3] Starting APX Settings Component Demo...
+echo [4/4] Starting APX Settings Component Demo...
 "%JAVA_EXE%" -cp "!CP!" ApxSettingsComponentDemo
 set ERR=!ERRORLEVEL!
 if not "!ERR!"=="0" (

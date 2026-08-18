@@ -14,6 +14,7 @@ import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Group;
@@ -23,6 +24,7 @@ import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
 
+import com.suresofttech.apx.client.view.SettingsForm;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.RearGrid;
 import com.suresofttech.apx.core.vision.CameraService;
@@ -50,6 +52,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
  * ④ 코드 예시(기본/커스텀)  ⑤ 실제 미리보기가 나온다.
  *
  * <p><b>검측 뷰 (조립)</b>: 클라이언트 {@code *MonitorView} 와 같은 모니터 조립만 미리보기.
+ * <p><b>설정 UI (조합)</b>: 클라 {@code SettingsForm} 전체 조립 + Kickoff {@code SettingsDialog} 예시.
  * Vision/Audio/Rear 아래는 개별 설정·모니터 컴포넌트 가이드.
  *
  * <p><b>처음이면 이 용어부터</b>:
@@ -240,6 +243,11 @@ public final class ApxSettingsComponentDemo {
         add(assembled, visionAssembledItem());
         assembled.setExpanded(true);
 
+        TreeItem settingsCombo = category(tree, "설정 UI (조합)");
+        add(settingsCombo, settingsFormItem());
+        add(settingsCombo, settingsDialogItem());
+        settingsCombo.setExpanded(true);
+
         TreeItem vision = category(tree, "Vision");
         add(vision, cameraSelectItem());
         add(vision, cameraCanvasItem());
@@ -325,6 +333,130 @@ public final class ApxSettingsComponentDemo {
             "apx-settings-demo/examples/";
     /** 컴포넌트별 예시. */
     private static final String EX_COMP = EXAMPLES + "components/";
+
+    // ── 설정 UI 조합 (클라이언트 SettingsForm / SettingsDialog) ─
+
+    private static final String SRC_CLIENT =
+            "src/com/suresofttech/apx/client/view/";
+
+    private Item settingsFormItem() {
+        return new Item(
+                "SettingsForm 조합",
+                "SettingsForm",
+                doc("  클라 설정 화면 전체 조립 — 비전·음향·후방 3열.\n"
+                                + "  SettingsClientView / SettingsDialog 가 이 Composite를 그대로 붙인다.\n"
+                                + "  값은 ApxSettings에 즉시 반영(확인 버튼은 Dialog 쪽 책임).\n"
+                                + "\n"
+                                + "  · Vision: CameraSelect + CameraCanvas + RoiNcc + VisionThreshold\n"
+                                + "  · Audio: MicSelect/Test + ExpectedWav + Measure + Scope + Threshold\n"
+                                + "  · Rear: SizeBar + Legend + GridCanvas",
+                        SRC_CLIENT + "SettingsForm.java",
+                        EXAMPLES + "SettingsFormExample.java",
+                        "SettingsForm form = new SettingsForm(parent);\n"
+                                + "form.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));",
+                        null),
+                new DemoEntry() {
+                    public void create(Composite parent) {
+                        SettingsForm form = new SettingsForm(parent);
+                        GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
+                        gd.minimumHeight = 480;
+                        gd.heightHint = 520;
+                        form.setLayoutData(gd);
+                    }
+                });
+    }
+
+    private Item settingsDialogItem() {
+        return new Item(
+                "SettingsDialog",
+                "SettingsDialog",
+                doc("  '설정' 버튼이 띄우는 측정 설정 Dialog.\n"
+                                + "  내부는 SettingsForm. 확인(OK) 시 모니터 applyFromSettings().\n"
+                                + "\n"
+                                + "  클라(JFace):\n"
+                                + "    SettingsDialog dlg = new SettingsDialog(shell);\n"
+                                + "    if (dlg.open() == Window.OK) { … }\n"
+                                + "\n"
+                                + "  데모는 JFace 없이 같은 폼을 Shell로 연다(아래 버튼).",
+                        SRC_CLIENT + "SettingsDialog.java",
+                        EXAMPLES + "SettingsDialogExample.java\n"
+                                + "  " + EXAMPLES + "SettingsFormExample.java\n"
+                                + "  " + SRC_CLIENT + "KickoffView.java  (openSettings)",
+                        "SettingsDialog dlg = new SettingsDialog(getSite().getShell());\n"
+                                + "if (dlg.open() == Window.OK) {\n"
+                                + "    vision.applyFromSettings();\n"
+                                + "    rear.applyFromSettings();\n"
+                                + "}",
+                        "// 데모(JFace 없음):\n"
+                                + "SettingsDialogExample.openAsShell(shell);"),
+                new DemoEntry() {
+                    public void create(Composite parent) {
+                        Label tip = new Label(parent, SWT.WRAP);
+                        tip.setText("설정 Dialog를 엽니다.");
+                        tip.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+                        Button openBtn = new Button(parent, SWT.PUSH);
+                        openBtn.setText("측정 설정 Dialog 열기…");
+                        openBtn.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+                        openBtn.addSelectionListener(new SelectionAdapter() {
+                            public void widgetSelected(SelectionEvent e) {
+                                openSettingsDialogShell(parent.getShell());
+                            }
+                        });
+
+                        Label code = new Label(parent, SWT.WRAP);
+                        code.setText("클라 코드: KickoffView.openSettings() → SettingsDialog → SettingsForm");
+                        code.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+                    }
+                });
+    }
+
+    /**
+     * SettingsDialogExample.openAsShell 과 동일 — 데모 classpath에 examples 가 없어
+     * 여기에 인라인(JFace 없이 SettingsForm modal Shell).
+     */
+    private void openSettingsDialogShell(Shell parent) {
+        final Shell dlg = new Shell(parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.APPLICATION_MODAL);
+        dlg.setText("측정 설정");
+        dlg.setSize(1100, 720);
+        dlg.setLayout(new GridLayout(1, false));
+
+        SettingsForm form = new SettingsForm(dlg);
+        form.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        Label hint = new Label(dlg, SWT.WRAP);
+        hint.setText("확인 시 ApxSettings 값이 유지됩니다. "
+                + "클라 Kickoff는 OK 후 모니터 applyFromSettings()를 호출합니다.");
+        hint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Composite bar = new Composite(dlg, SWT.NONE);
+        bar.setLayout(new GridLayout(2, true));
+        bar.setLayoutData(new GridData(SWT.END, SWT.CENTER, true, false));
+
+        Button ok = new Button(bar, SWT.PUSH);
+        ok.setText("확인");
+        ok.setLayoutData(new GridData(100, SWT.DEFAULT));
+        ok.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                dlg.close();
+            }
+        });
+        Button cancel = new Button(bar, SWT.PUSH);
+        cancel.setText("취소");
+        cancel.setLayoutData(new GridData(100, SWT.DEFAULT));
+        cancel.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                dlg.close();
+            }
+        });
+
+        dlg.open();
+        while (!dlg.isDisposed()) {
+            if (!display.readAndDispatch()) {
+                display.sleep();
+            }
+        }
+    }
 
     // ── 검측 뷰 조립 (클라이언트 *MonitorView 와 동일) ─────
 
