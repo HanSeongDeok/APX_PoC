@@ -28,6 +28,19 @@ public class EvidenceScrubber extends Composite {
 
     /** 재생 중 위치 폴링 주기(ms) — 30fps 화면 갱신에 맞춘다. */
     private static final int TICK_MS = 33;
+    /**
+     * 드래그 스크럽 최소 처리 간격(ms).
+     *
+     * <p>스크럽 한 번은 <b>영상 프레임 시크·JPEG 디코딩</b>(VisionPlayer)과
+     * <b>파형 구간 재계산</b>(AudioScope)을 동시에 부른다. 슬라이더는 픽셀마다
+     * 이벤트를 쏟아내므로 그대로 처리하면 5초를 끌 때 100회가 넘는 시크가 걸려 렉이 된다.
+     * 여기서 합쳐 초당 최대 {@code 1000/SEEK_COALESCE_MS} 회로 제한한다.
+     */
+    private static final int SEEK_COALESCE_MS = 60;
+
+    private double pendingSeekMs;
+    private boolean seekScheduled;
+    private long lastSeekAt;
 
     private final Display display;
     private final Label headerLbl;
@@ -61,8 +74,13 @@ public class EvidenceScrubber extends Composite {
 
         timeline.setSeekListener(new TimelineBar.SeekListener() {
             public void onSeek(double tMs, boolean fromPlayback) {
-                vision.showAt(tMs);
-                audio.showAt(tMs);
+                if (fromPlayback) {
+                    // 재생 중 — 다음 프레임을 순서대로 읽으므로 영상 시크 비용이 없다.
+                    applySeek(tMs);
+                } else {
+                    // 드래그 — 이벤트가 픽셀마다 쏟아진다. 합쳐서 처리한다.
+                    requestSeek(tMs);
+                }
                 if (!fromPlayback && audio.isPlaying()) {
                     audio.play(tMs);   // 재생 중 스크럽 — 그 지점부터 이어 듣게
                 }
@@ -192,6 +210,37 @@ public class EvidenceScrubber extends Composite {
      * 재생 중 음향 위치를 따라 슬라이더·비전 프레임을 끈다.
      * 음향이 없으면 타이머로 시간을 흘려보낸다(무음 재생).
      */
+    /** 드래그 스크럽 — 첫 이벤트는 즉시, 이어지는 것은 합쳐서 처리한다. */
+    private void requestSeek(double tMs) {
+        pendingSeekMs = tMs;
+        if (seekScheduled) {
+            return;                     // 예약된 한 번이 가장 최신 위치를 그린다
+        }
+        long now = System.currentTimeMillis();
+        long due = lastSeekAt + SEEK_COALESCE_MS;
+        if (now >= due) {
+            lastSeekAt = now;
+            applySeek(tMs);
+            return;
+        }
+        seekScheduled = true;
+        display.timerExec((int) (due - now), new Runnable() {
+            public void run() {
+                seekScheduled = false;
+                if (isDisposed()) {
+                    return;
+                }
+                lastSeekAt = System.currentTimeMillis();
+                applySeek(pendingSeekMs);
+            }
+        });
+    }
+
+    private void applySeek(double tMs) {
+        vision.showAt(tMs);
+        audio.showAt(tMs);
+    }
+
     private void startTick() {
         if (ticking) {
             return;
