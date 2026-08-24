@@ -32,6 +32,35 @@ public class AudioMonitorView extends ViewPart {
     /** 직전 블록의 isPass — falling edge 스냅샷용. */
     private boolean prevBlockPass;
 
+    /**
+     * 파형 갱신 주기(ms) — 설정 화면({@code AudioMeasureBar.WAVE_POLL_MS})과 같은 방식.
+     *
+     * <p>예전에는 캡처 스레드의 블록 틱마다 {@code asyncExec} 로 파형을 밀어 넣었다.
+     * UI 스레드가 바쁘면(비전 NCC·캔버스 리페인트 등) 그 런너블이 큐에 쌓이고,
+     * 나중에 실행될 때 <b>오래된 elapsedSec</b> 으로 <b>현재 버퍼</b>를 그리게 된다
+     * — 타임스탬프와 데이터가 어긋나 파형이 끊기고 멈춘 것처럼 보였다.
+     * 설정 화면이 멀쩡했던 이유가 여기에 있다(그쪽은 UI 스레드가 스스로 폴링한다).
+     *
+     * <p>이제 UI 스레드가 직접 주기적으로 버퍼와 경과시간을 <b>같은 시점에</b> 읽는다.
+     * PASS 밴드는 정확도가 중요하므로 블록 틱을 그대로 쓴다(리빌드가 없어 가볍다).
+     */
+    private static final int WAVE_POLL_MS = 50;
+    private boolean wavePolling;
+    /** 리빌드 중첩 방지 — 설정 화면 {@code waveBusy} 와 동일. */
+    private boolean waveBusy;
+
+    /** 캡처 스레드가 남기는 최신 판정 — UI는 <b>낡은 값이 아니라 이것</b>을 읽는다. */
+    private volatile MatchResult latestMatch;
+    private volatile double latestElapsedSec;
+    /** PASS 오버레이 UI 갱신 합침 — 블록마다 asyncExec 를 새로 만들지 않는다. */
+    private volatile boolean passUiScheduled;
+    /**
+     * PASS 블록 구간 큐 — 합치기로 짧은 PASS가 사라지지 않게 한다.
+     * (PASS 블록만 쌓이므로 큐가 커지지 않는다.)
+     */
+    private final java.util.List<double[]> pendingPassSpans =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<double[]>());
+
     @Override
     public void createPartControl(Composite parent) {
         display = parent.getDisplay();
@@ -51,6 +80,9 @@ public class AudioMonitorView extends ViewPart {
         }
         stopTickListener();
         prevBlockPass = false;
+        latestMatch = null;
+        latestElapsedSec = 0;
+        pendingPassSpans.clear();
         scope.clear();
         double[] tmpl = session.getAudioTemplate();
         int sr = session.getAudioSampleRate();
@@ -58,9 +90,11 @@ public class AudioMonitorView extends ViewPart {
             scope.setExpected(tmpl, sr);
         }
         startTickListener();
+        startWavePoll();
     }
 
     public void onMeasureStopped() {
+        wavePolling = false;
         stopTickListener();
     }
 
@@ -102,11 +136,15 @@ public class AudioMonitorView extends ViewPart {
                 if (display == null || display.isDisposed()) {
                     return;
                 }
-                display.asyncExec(new Runnable() {
-                    public void run() {
-                        applyAudioTick(match, waveBuf, elapsedSec);
-                    }
-                });
+                latestMatch = match;
+                latestElapsedSec = elapsedSec;
+                if (match != null && match.isPass) {
+                    // PASS 블록은 구간을 큐에 남긴다 — UI 갱신을 합쳐도 누락되지 않는다
+                    double nowMs = elapsedSec * 1000.0;
+                    double gap = match.blockGapMs > 0 ? match.blockGapMs : 0;
+                    pendingPassSpans.add(new double[] { Math.max(0, nowMs - gap), nowMs });
+                }
+                schedulePassUi();
             }
 
             public void onVisionMatch(RoiMatchResult result) {
@@ -125,44 +163,79 @@ public class AudioMonitorView extends ViewPart {
         }
     }
 
+    /** PASS 오버레이만 UI에 예약(합침). 파형 리빌드는 하지 않는다 — 설정 화면과 동일. */
+    private void schedulePassUi() {
+        if (passUiScheduled || display == null || display.isDisposed()) {
+            return;
+        }
+        passUiScheduled = true;
+        display.asyncExec(new Runnable() {
+            public void run() {
+                passUiScheduled = false;
+                applyPassBand(latestMatch, latestElapsedSec);
+            }
+        });
+    }
+
     /**
-     * 캡처 스레드가 넘긴 블록 결과 — isPass면 그 블록 구간 전체를 초록 밴드로 덮는다.
-     * (폴링보다 촘촘해서 짧은 PASS 누락 없음. 세션 latch로 밴드를 붙들어 두지 않음.)
+     * 초록 PASS 밴드 반영. 큐에 쌓인 PASS 블록을 먼저 적용해 짧은 PASS도 남긴다.
+     * {@code updatePass} 는 리빌드를 하지 않으므로 {@code redraw()} 로 즉시 화면에 올린다
+     * (밴드는 paintOverlays 가 캐시 이미지 위에 덧그린다).
      */
-    private void applyAudioTick(MatchResult match, double[] waveBuf, double elapsedSec) {
+    private void applyPassBand(MatchResult mr, double elapsedSec) {
         if (scope == null || scope.isDisposed()) {
             return;
         }
-        MeasureSession s = MeasureSession.get();
-        if (!s.isRunning()) {
+        if (!MeasureSession.get().isRunning()) {
             return;
         }
-        boolean passBand = match != null && match.isPass;
-        double nowMs = elapsedSec * 1000.0;
-        if (passBand) {
-            // 블록 시작~끝까지 밴드 — 한 블록짜리 PASS도 폭이 있게 남는다
-            double gap = match.blockGapMs > 0 ? match.blockGapMs : 0;
-            if (gap > 0) {
-                scope.updatePass(Math.max(0, nowMs - gap), true);
-            }
-            scope.updatePass(nowMs, true);
-        } else {
-            scope.updatePass(nowMs, false);
+        double[][] spans;
+        synchronized (pendingPassSpans) {
+            spans = pendingPassSpans.toArray(new double[pendingPassSpans.size()][]);
+            pendingPassSpans.clear();
+        }
+        for (int i = 0; i < spans.length; i++) {
+            scope.updatePass(spans[i][0], true);
+            scope.updatePass(spans[i][1], true);
         }
 
-        int sr = s.getAudioSampleRate();
-        if (sr > 0) {
-            // 캡처 스레드 버퍼와 경합 방지 — 폴링 때와 같이 복사본 사용
-            double[] wave = s.getWaveBuffer();
-            if (wave != null) {
-                scope.setData(wave, sr, s.getTargetFreq(), elapsedSec);
-            }
+        boolean pass = mr != null && mr.isPass;
+        if (!pass) {
+            scope.updatePass(elapsedSec * 1000.0, false);   // 밴드 닫기
         }
-
-        if (prevBlockPass && !passBand) {
+        if (prevBlockPass && !pass) {
             capturePassSpanToEvidence();
         }
-        prevBlockPass = passBand;
+        prevBlockPass = pass;
+        scope.redraw();
+    }
+
+    /** UI 스레드 자체 폴링 — 설정 화면과 동일 방식. 재예약을 작업 앞에 둬 예외에도 루프가 죽지 않는다. */
+    private void startWavePoll() {
+        if (wavePolling) {
+            return;
+        }
+        wavePolling = true;
+        display.timerExec(WAVE_POLL_MS, new Runnable() {
+            public void run() {
+                if (!wavePolling || scope == null || scope.isDisposed()) {
+                    wavePolling = false;
+                    return;
+                }
+                display.timerExec(WAVE_POLL_MS, this);
+                MeasureSession s = MeasureSession.get();
+                if (!waveBusy && s.isRunning()) {
+                    waveBusy = true;
+                    try {
+                        // 파형 프레임과 PASS를 같이 맞춘다(설정 화면과 동일)
+                        applyPassBand(latestMatch, latestElapsedSec);
+                        pushWave(s, s.getElapsedSec());
+                    } finally {
+                        waveBusy = false;
+                    }
+                }
+            }
+        });
     }
 
     private void pushWave(MeasureSession s, double elapsedSec) {
