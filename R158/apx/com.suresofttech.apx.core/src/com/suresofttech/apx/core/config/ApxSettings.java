@@ -5,12 +5,13 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
+import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.VisionJudges;
 import com.suresofttech.apx.core.vision.YoloVisionJudge;
 
 /**
- * R158 공유 설정 — 설정 탭에서 측정 전 세팅하고, 비전/음향/후방 탭이 재사용한다.
- * (웹캠은 {@link com.suresofttech.apx.core.vision.CameraService} 싱글턴으로 이미 공유)
+ * R158 공유 설정 - 설정 탭에서 측정 전 세팅하고, 비전/음향/후방 탭이 재사용한다.
+ * (웹캠은 {@link com.suresofttech.apx.core.vision.CameraService} - 클러스터/기어봉 2채널)
  *
  * <p>ROI는 <b>정규화 좌표</b>(프레임 대비 비율)로 저장한다. 웹캠 해상도가 바뀌어도
  * {@link #getRoi(int, int)}로 해당 픽셀 ROI를 얻는다.
@@ -25,7 +26,7 @@ public final class ApxSettings {
     public static final String REAR_MODE_PRESET = "preset";
     public static final String REAR_MODE_CUSTOM = "custom";
 
-    /** 비전 판정 방식 — 기준영상 대조(NCC) / 학습모델(YOLO). */
+    /** 비전 판정 방식 - 기준영상 대조(NCC) / 학습모델(YOLO). */
     public static final String JUDGE_NCC = "NCC";
     public static final String JUDGE_YOLO = "YOLO";
 
@@ -41,7 +42,7 @@ public final class ApxSettings {
     private String micName;
     /** 기대 경고음 WAV 경로 (없으면 null). */
     private String expectedWavPath;
-    /** 기준 이미지 사용 ON/OFF. 기본 OFF — 옵션 컴포넌트(ReferenceImageBar) 없이도 ROI 지정이 디폴트. */
+    /** 기준 이미지 사용 ON/OFF. 기본 OFF - 옵션 컴포넌트(ReferenceImageBar) 없이도 ROI 지정이 디폴트. */
     private boolean useReferenceImage = false;
     /** 비전 기준 이미지 경로. */
     private String visionRefPath;
@@ -61,18 +62,35 @@ public final class ApxSettings {
     private int yoloInputSize = 128;
     /** PASS 로 볼 클래스 인덱스. 모델의 names 순서를 확인해 넣는다. */
     private int yoloHitClassId = 0;
+
+    /** 기어봉 채널 - 클러스터와 같은 기본값, 설정에서 따로 둔다. */
+    private boolean gearUseReferenceImage = false;
+    private String gearVisionRefPath;
+    private double[] gearRoiNorm = { 0.40625, 0.59375, 0.40625, 0.59375 };
+    private double gearSimThr = RoiMatchDetector.DEFAULT_SIM;
+    private String gearVisionJudge = JUDGE_NCC;
+    private String gearYoloModelPath;
+    private int gearYoloInputSize = 128;
+    private int gearYoloHitClassId = 0;
+    /**
+     * 비전 최초 PASS 때 기대음을 스피커로 1회 재생한다.
+     * 시뮬레이터 데모: 화면을 R로 바꾸면(비전 PASS) 경고음이 나와 마이크 채널이 따라간다.
+     * 끄면 설정 탭 {@code ExpectedTonePlayBar}로 수동 재생한다.
+     */
+    private boolean autoPlayExpectedOnVisionPass = true;
+
     /** 음향 주파수/파형 일치 임계. */
     private double audioFreqThr = 0.90;
     private double audioWaveThr = 0.90;
 
-    /** 후방 격자 열·행 (기본 4×6 프리셋). */
+    /** 후방 격자 열 / 행 (기본 4×6 프리셋). */
     private int rearCols = 4;
     private int rearRows = 6;
     /** {@link #REAR_MODE_PRESET} 또는 {@link #REAR_MODE_CUSTOM}. */
     private String rearSizeMode = REAR_MODE_PRESET;
     /** 후방 격자 범례 표시. */
     private boolean rearShowLegend = true;
-    /** 후방 Select 포인트 — 각 원소 {col, row}. */
+    /** 후방 Select 포인트 - 각 원소 {col, row}. */
     private List<int[]> rearSelectedPoints = new ArrayList<int[]>();
 
     private ApxSettings() {
@@ -119,26 +137,56 @@ public final class ApxSettings {
     }
 
     public boolean isUseReferenceImage() {
-        return useReferenceImage;
+        return isUseReferenceImage(VisionChannel.CLUSTER);
+    }
+
+    public boolean isUseReferenceImage(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearUseReferenceImage : useReferenceImage;
     }
 
     public void setUseReferenceImage(boolean on) {
+        setUseReferenceImage(VisionChannel.CLUSTER, on);
+    }
+
+    public void setUseReferenceImage(VisionChannel ch, boolean on) {
+        if (ch == VisionChannel.GEAR) {
+            if (this.gearUseReferenceImage == on) {
+                return;
+            }
+            this.gearUseReferenceImage = on;
+        } else {
         if (this.useReferenceImage == on) {
             return;
         }
         this.useReferenceImage = on;
+        }
         fire();
     }
 
     public String getVisionRefPath() {
-        return visionRefPath;
+        return getVisionRefPath(VisionChannel.CLUSTER);
+    }
+
+    public String getVisionRefPath(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearVisionRefPath : visionRefPath;
     }
 
     public void setVisionRefPath(String path) {
+        setVisionRefPath(VisionChannel.CLUSTER, path);
+    }
+
+    public void setVisionRefPath(VisionChannel ch, String path) {
+        if (ch == VisionChannel.GEAR) {
+            if (eq(this.gearVisionRefPath, path)) {
+                return;
+            }
+            this.gearVisionRefPath = path;
+        } else {
         if (eq(this.visionRefPath, path)) {
             return;
         }
         this.visionRefPath = path;
+        }
         fire();
     }
 
@@ -147,14 +195,19 @@ public final class ApxSettings {
      * 웹캠/기준 해상도가 바뀌면 호출 측이 현재 w×h를 넘긴다.
      */
     public int[] getRoi(int frameW, int frameH) {
-        if (roiNorm == null || frameW <= 0 || frameH <= 0) {
+        return getRoi(VisionChannel.CLUSTER, frameW, frameH);
+    }
+
+    public int[] getRoi(VisionChannel ch, int frameW, int frameH) {
+        double[] n = roiNormOf(ch);
+        if (n == null || frameW <= 0 || frameH <= 0) {
             return null;
         }
-        return normToPixels(roiNorm, frameW, frameH);
+        return normToPixels(n, frameW, frameH);
     }
 
     /**
-     * @deprecated 해상도 없는 호출은 부정확 — {@link #getRoi(int, int)} 사용.
+     * @deprecated 해상도 없는 호출은 부정확 - {@link #getRoi(int, int)} 사용.
      * 호환용으로 정규화→가상 640×640 픽셀을 반환한다.
      */
     public int[] getRoi() {
@@ -163,14 +216,25 @@ public final class ApxSettings {
 
     /** 현재 프레임 픽셀 ROI를 정규화해 저장. */
     public void setRoi(int[] roi, int frameW, int frameH) {
+        setRoi(VisionChannel.CLUSTER, roi, frameW, frameH);
+    }
+
+    public void setRoi(VisionChannel ch, int[] roi, int frameW, int frameH) {
         if (roi == null || frameW <= 0 || frameH <= 0) {
             return;
         }
         double[] next = pixelsToNorm(roi, frameW, frameH);
+        if (ch == VisionChannel.GEAR) {
+            if (normEq(this.gearRoiNorm, next)) {
+                return;
+            }
+            this.gearRoiNorm = next;
+        } else {
         if (normEq(this.roiNorm, next)) {
             return;
         }
         this.roiNorm = next;
+        }
         fire();
     }
 
@@ -181,59 +245,104 @@ public final class ApxSettings {
         setRoi(roi, 640, 640);
     }
 
-    /** 정규화 ROI 복사(디버그·핑거프린트). */
+    /** 정규화 ROI 복사(디버그 / 핑거프린트). */
     public double[] getRoiNorm() {
-        return roiNorm == null ? null : roiNorm.clone();
+        return getRoiNorm(VisionChannel.CLUSTER);
+    }
+
+    public double[] getRoiNorm(VisionChannel ch) {
+        double[] n = roiNormOf(ch);
+        return n == null ? null : n.clone();
     }
 
     public double getSimThr() {
-        return simThr;
+        return getSimThr(VisionChannel.CLUSTER);
+    }
+
+    public double getSimThr(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearSimThr : simThr;
     }
 
     public void setSimThr(double simThr) {
+        setSimThr(VisionChannel.CLUSTER, simThr);
+    }
+
+    public void setSimThr(VisionChannel ch, double simThr) {
         double v = clamp01(simThr);
+        if (ch == VisionChannel.GEAR) {
+            if (Math.abs(this.gearSimThr - v) < 1e-9) {
+                return;
+            }
+            this.gearSimThr = v;
+        } else {
         if (Math.abs(this.simThr - v) < 1e-9) {
             return;
         }
         this.simThr = v;
+        }
         fire();
     }
 
     // ── 비전 판정 방식 ────────────────────────────────────────────────
 
     public String getVisionJudge() {
-        return visionJudge;
+        return getVisionJudge(VisionChannel.CLUSTER);
+    }
+
+    public String getVisionJudge(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearVisionJudge : visionJudge;
     }
 
     public boolean isYoloJudge() {
-        return JUDGE_YOLO.equals(visionJudge);
+        return isYoloJudge(VisionChannel.CLUSTER);
+    }
+
+    public boolean isYoloJudge(VisionChannel ch) {
+        return JUDGE_YOLO.equals(getVisionJudge(ch));
     }
 
     public String getYoloModelPath() {
-        return yoloModelPath;
+        return getYoloModelPath(VisionChannel.CLUSTER);
+    }
+
+    public String getYoloModelPath(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearYoloModelPath : yoloModelPath;
     }
 
     public int getYoloInputSize() {
-        return yoloInputSize;
+        return getYoloInputSize(VisionChannel.CLUSTER);
+    }
+
+    public int getYoloInputSize(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearYoloInputSize : yoloInputSize;
     }
 
     public int getYoloHitClassId() {
-        return yoloHitClassId;
+        return getYoloHitClassId(VisionChannel.CLUSTER);
     }
 
-    /**
-     * 비전 판정 방식을 바꾸고 {@link VisionJudges} 팩토리에 즉시 반영한다.
-     * 이후 새로 만들어지는 판정기(설정 프리뷰·측정 세션)가 이 방식을 따른다.
-     *
-     * @param judge     {@link #JUDGE_NCC} / {@link #JUDGE_YOLO}
-     * @param modelPath YOLO 일 때 .onnx 경로 (NCC 면 무시)
-     * @param inputSize 학습 imgsz 와 동일해야 한다
-     * @param hitClassId PASS 로 볼 클래스 인덱스
-     */
+    public int getYoloHitClassId(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearYoloHitClassId : yoloHitClassId;
+    }
+
     public void setVisionJudge(String judge, String modelPath, int inputSize, int hitClassId) {
+        setVisionJudge(VisionChannel.CLUSTER, judge, modelPath, inputSize, hitClassId);
+    }
+
+    public void setVisionJudge(VisionChannel ch, String judge, String modelPath, int inputSize, int hitClassId) {
         String j = JUDGE_YOLO.equals(judge) ? JUDGE_YOLO : JUDGE_NCC;
-        int size = (inputSize > 0) ? inputSize : this.yoloInputSize;
+        int size = (inputSize > 0) ? inputSize : getYoloInputSize(ch);
         int cls = (hitClassId >= 0) ? hitClassId : 0;
+        if (ch == VisionChannel.GEAR) {
+            if (j.equals(this.gearVisionJudge) && eq(this.gearYoloModelPath, modelPath)
+                && this.gearYoloInputSize == size && this.gearYoloHitClassId == cls) {
+                return;
+            }
+            this.gearVisionJudge = j;
+            this.gearYoloModelPath = modelPath;
+            this.gearYoloInputSize = size;
+            this.gearYoloHitClassId = cls;
+        } else {
         if (j.equals(this.visionJudge) && eq(this.yoloModelPath, modelPath)
                 && this.yoloInputSize == size && this.yoloHitClassId == cls) {
             return;
@@ -243,6 +352,7 @@ public final class ApxSettings {
         this.yoloInputSize = size;
         this.yoloHitClassId = cls;
         applyVisionJudge();
+        }
         fire();
     }
 
@@ -258,6 +368,18 @@ public final class ApxSettings {
         } else {
             VisionJudges.useNcc();
         }
+    }
+
+    public boolean isAutoPlayExpectedOnVisionPass() {
+        return autoPlayExpectedOnVisionPass;
+    }
+
+    public void setAutoPlayExpectedOnVisionPass(boolean on) {
+        if (this.autoPlayExpectedOnVisionPass == on) {
+            return;
+        }
+        this.autoPlayExpectedOnVisionPass = on;
+        fire();
     }
 
     public double getAudioFreqThr() {
@@ -292,7 +414,7 @@ public final class ApxSettings {
     }
 
     /**
-     * 후방 격자 크기·모드. 크기가 바뀌면 Select 포인트는 비운다.
+     * 후방 격자 크기 / 모드. 크기가 바뀌면 Select 포인트는 비운다.
      * @param mode {@link #REAR_MODE_PRESET} 또는 {@link #REAR_MODE_CUSTOM}
      */
     public void setRearGridSize(int cols, int rows, String mode) {
@@ -337,7 +459,7 @@ public final class ApxSettings {
         return out;
     }
 
-    /** Select 포인트 교체 (범위는 호출 측·격자 모델이 보장). */
+    /** Select 포인트 교체 (범위는 호출 측 / 격자 모델이 보장). */
     public void setRearSelectedPoints(List<int[]> points) {
         List<int[]> next = new ArrayList<int[]>();
         if (points != null) {
@@ -425,6 +547,10 @@ public final class ApxSettings {
             return 0.99;
         }
         return v;
+    }
+
+    private double[] roiNormOf(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearRoiNorm : roiNorm;
     }
 
     private static boolean eq(String a, String b) {

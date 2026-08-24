@@ -18,7 +18,7 @@ import org.eclipse.swt.widgets.Display;
 import com.suresofttech.apx.core.vision.CameraService;
 
 /**
- * 웹캠 콤보 + 새로고침 — {@link CameraService} 사용.
+ * 웹캠 콤보 + 새로고침 - {@link CameraService} 사용.
  * 화면은 공용 {@link CameraCanvas}에 {@link #setCanvas}로 연결한다 (라이브 폴링 포함).
  */
 public class CameraSelectBar extends Composite {
@@ -27,6 +27,7 @@ public class CameraSelectBar extends Composite {
 
     private final Combo camCombo;
     private final Display display;
+    private final CameraService cameras;
     private List<CameraService.Cam> cams;
     private CameraCanvas canvas;
     private boolean polling;
@@ -34,7 +35,12 @@ public class CameraSelectBar extends Composite {
     private final CameraService.DeviceListener deviceListener;
 
     public CameraSelectBar(Composite parent) {
+        this(parent, CameraService.get());
+    }
+
+    public CameraSelectBar(Composite parent, CameraService cameras) {
         super(parent, SWT.NONE);
+        this.cameras = cameras == null ? CameraService.get() : cameras;
         display = getDisplay();
         GridLayout gl = new GridLayout(2, false);
         gl.marginWidth = 0;
@@ -44,6 +50,7 @@ public class CameraSelectBar extends Composite {
 
         camCombo = new Combo(this, SWT.READ_ONLY | SWT.DROP_DOWN);
         camCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        camCombo.setToolTipText("클러스터와 기어봉은 서로 다른 웹캠을 고르세요 (USB / OBS/Iriun 시뮬 / 내장)");
         camCombo.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 openSelectedCamera();
@@ -57,7 +64,7 @@ public class CameraSelectBar extends Composite {
             }
         });
 
-        // USB 연결/분리 자동 반영 — 현장에서 케이블이 바뀌어도 수동 새로고침이 필요 없게.
+        // USB 연결/분리 자동 반영 - 현장에서 케이블이 바뀌어도 수동 새로고침이 필요 없게.
         // 드라이버 스레드에서 오므로 UI 스레드로 넘긴다.
         deviceListener = new CameraService.DeviceListener() {
             public void onDevicesChanged(final boolean currentLost) {
@@ -73,12 +80,12 @@ public class CameraSelectBar extends Composite {
                 });
             }
         };
-        CameraService.get().addDeviceListener(deviceListener);
+        cameras.addDeviceListener(deviceListener);
 
         addDisposeListener(new DisposeListener() {
             public void widgetDisposed(DisposeEvent e) {
                 polling = false;
-                CameraService.get().removeDeviceListener(deviceListener);
+                    cameras.removeDeviceListener(deviceListener);
             }
         });
     }
@@ -89,18 +96,18 @@ public class CameraSelectBar extends Composite {
      * (인덱스는 재연결 때 바뀌므로 이름으로 찾는다).
      */
     private void onDeviceHotplug(boolean currentLost) {
-        String wanted = CameraService.get().currentName();
+        String wanted = cameras.currentName();
         refreshCameras();
         if (currentLost && canvas != null && !canvas.isDisposed()) {
             canvas.setPlaceholder("웹캠 연결이 끊어졌습니다");
             lastBi = null;
             canvas.setFrame(null);
-        } else if (wanted != null && !CameraService.get().isOpen()) {
-            CameraService.get().reopenByName(wanted);
+        } else if (wanted != null && !cameras.isOpen()) {
+            cameras.reopenByName(wanted);
         }
     }
 
-    /** 웹캠 화면({@link CameraCanvas}) — 장치 열기 후 여기로 프레임을 넣는다. */
+    /** 웹캠 화면({@link CameraCanvas}) - 장치 열기 후 여기로 프레임을 넣는다. */
     public void setCanvas(CameraCanvas canvas) {
         this.canvas = canvas;
         lastBi = null;
@@ -108,13 +115,13 @@ public class CameraSelectBar extends Composite {
     }
 
     public void refreshCameras() {
-        cams = CameraService.get().list();
+        cams = cameras.list();
         camCombo.removeAll();
         for (CameraService.Cam c : cams) {
             camCombo.add(c.name);
         }
         if (!cams.isEmpty()) {
-            int cur = CameraService.get().currentIndex();
+            int cur = cameras.currentIndex();
             int sel = 0;
             for (int i = 0; i < cams.size(); i++) {
                 if (cams.get(i).index == cur) {
@@ -123,7 +130,11 @@ public class CameraSelectBar extends Composite {
                 }
             }
             camCombo.select(sel);
-            openSelectedCamera();
+            if (cameras.isOpen()) {
+                startPoll();
+            } else {
+                openFirstAvailable(sel);
+            }
         } else if (canvas != null && !canvas.isDisposed()) {
             canvas.setPlaceholder("연결된 웹캠 없음");
             lastBi = null;
@@ -135,17 +146,50 @@ public class CameraSelectBar extends Composite {
         if (cams == null || cams.isEmpty()) {
             return;
         }
-        int idx = cams.get(Math.max(0, camCombo.getSelectionIndex())).index;
-        boolean ok = CameraService.get().open(idx);
-        lastBi = null;
-        // 캔버스 없어도 장치를 열어 두고 latest() keepalive로 프레임을 돌린다
-        // (RoiNcc 등 다른 화면이 CameraService 피드를 이어 받을 수 있게)
-        startPoll();
-        if (canvas != null && !canvas.isDisposed()) {
-            canvas.setPlaceholder(ok ? "(신호 대기…)" : "웹캠 열기 실패");
-            if (!ok) {
-                canvas.setFrame(null);
+        int sel = Math.max(0, camCombo.getSelectionIndex());
+        int idx = cams.get(sel).index;
+        applyOpenResult(cameras.open(idx), idx);
+    }
+
+    /**
+     * 목록을 새로 채운 뒤 - 이미 연 장치가 없으면 비어 있는 웹캠부터 고른다.
+     * 클러스터가 첫 장치를 가져가면 기어봉이 같은 장치를 다시 열지 않고 다음 것으로 붙는다.
+     */
+    private void openFirstAvailable(int preferredSel) {
+        int preferred = cams.get(Math.max(0, preferredSel)).index;
+        if (cameras.open(preferred)) {
+            applyOpenResult(true, preferred);
+            return;
+        }
+        for (int i = 0; i < cams.size(); i++) {
+            int idx = cams.get(i).index;
+            if (idx == preferred) {
+                continue;
             }
+            if (cameras.open(idx)) {
+                camCombo.select(i);
+                applyOpenResult(true, idx);
+                return;
+            }
+        }
+        applyOpenResult(false, preferred);
+    }
+
+    private void applyOpenResult(boolean ok, int idx) {
+        lastBi = null;
+        startPoll();
+        if (canvas == null || canvas.isDisposed()) {
+            return;
+        }
+        if (ok) {
+            canvas.setPlaceholder("(신호 대기…)");
+            return;
+        }
+                canvas.setFrame(null);
+        if (cameras.isHeldByOther(idx)) {
+            canvas.setPlaceholder("다른 채널에서 사용 중 - 다른 웹캠을 선택하세요");
+        } else {
+            canvas.setPlaceholder("웹캠 열기 실패");
         }
     }
 
@@ -159,7 +203,7 @@ public class CameraSelectBar extends Composite {
     /**
      * CameraService 프레임 폴링.
      * 캔버스가 있으면 표시, 없어도 {@link CameraService#latest()}를 호출해
-     * 캡처 스레드/캐시를 유지한다 (다른 View·데모 탭이 이어 받기 위함).
+     * 캡처 스레드/캐시를 유지한다 (다른 View / 데모 탭이 이어 받기 위함).
      */
     private void startPoll() {
         if (polling) {
@@ -173,7 +217,7 @@ public class CameraSelectBar extends Composite {
                     return;
                 }
                 display.timerExec(POLL_MS, this);
-                BufferedImage bi = CameraService.get().latest();
+                    BufferedImage bi = cameras.latest();
                 if (canvas == null || canvas.isDisposed()) {
                     return;
                 }

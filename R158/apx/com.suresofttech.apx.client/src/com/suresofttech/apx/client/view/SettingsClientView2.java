@@ -10,6 +10,8 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.RearGrid;
+import com.suresofttech.apx.core.vision.CameraService;
+import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
@@ -23,10 +25,11 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
+import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * 이솝 RCP 설정 View (커스텀판) — Cfg/Style 파라미터 주입 조립 예시.
+ * 이솝 RCP 설정 View (커스텀판) - Cfg/Style 파라미터 주입 조립 예시.
  */
 public class SettingsClientView2 extends ViewPart {
 
@@ -34,7 +37,7 @@ public class SettingsClientView2 extends ViewPart {
 
     @Override
     public void createPartControl(Composite parent) {
-        parent.setLayout(new GridLayout(3, true));
+        parent.setLayout(new GridLayout(4, true));
         buildVisionColumn(parent);
         buildAudioColumn(parent);
         buildRearColumn(parent);
@@ -42,24 +45,8 @@ public class SettingsClientView2 extends ViewPart {
 
     private void buildVisionColumn(Composite parent) {
         Composite col = new Composite(parent, SWT.NONE);
-        col.setLayout(new GridLayout(1, false));
-        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        Group webcam = new Group(col, SWT.NONE);
-        webcam.setText("웹캠 (커스텀)");
-        webcam.setLayout(new GridLayout(1, false));
-        webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        cameraSelect = new CameraSelectBar(webcam);
-        cameraSelect.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        CameraCanvas canvas = new CameraCanvas(webcam);
-        canvas.setPlaceholder("웹캠을 선택하세요");
-        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 320;
-        canvasGd.minimumHeight = 240;
-        canvas.setLayoutData(canvasGd);
-        cameraSelect.setCanvas(canvas);
+        col.setLayout(new GridLayout(2, true));
+        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
 
         RoiNcc.Style roiStyle = new RoiNcc.Style();
         roiStyle.hit = new RGB(0, 200, 0);
@@ -67,21 +54,42 @@ public class SettingsClientView2 extends ViewPart {
         roiStyle.drag = new RGB(0, 160, 255);
         roiStyle.roiLineWidth = 3;
         roiStyle.dragThickness = 2;
-        RoiNcc roiNcc = new RoiNcc(canvas, roiStyle);
 
-        Composite refBlock = new Composite(col, SWT.NONE);
-        refBlock.setLayout(new GridLayout(1, false));
-        refBlock.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        cameraSelect = addVisionGroup(col, "클러스터 설정", VisionChannel.CLUSTER, roiStyle);
+        addVisionGroup(col, "기어봉 설정", VisionChannel.GEAR, roiStyle);
+    }
+
+    private CameraSelectBar addVisionGroup(Composite col, String title,
+        VisionChannel ch, RoiNcc.Style roiStyle) {
+        Group webcam = new Group(col, SWT.NONE);
+        webcam.setText(title);
+        webcam.setLayout(new GridLayout(1, false));
+        webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        CameraSelectBar bar = new CameraSelectBar(webcam, CameraService.of(ch));
+        bar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        CameraCanvas canvas = new CameraCanvas(webcam);
+        canvas.setPlaceholder(title + " 웹캠을 선택하세요");
+        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+        canvasGd.heightHint = 160;
+        canvasGd.minimumHeight = 120;
+        canvas.setLayoutData(canvasGd);
+        bar.setCanvas(canvas);
+
+        RoiNcc roiNcc = new RoiNcc(canvas, roiStyle, ch);
 
         VisionThresholdBar.Cfg vThr = new VisionThresholdBar.Cfg();
         vThr.defaultThr = 0.75;
         vThr.step = 0.05;
         vThr.minusText = "− 정밀도";
         vThr.plusText = "+ 정밀도";
-        VisionThresholdBar visionThr = new VisionThresholdBar(refBlock, vThr);
+        VisionThresholdBar visionThr = new VisionThresholdBar(webcam, vThr, ch);
         visionThr.setRoiNcc(roiNcc);
 
-        cameraSelect.refreshCameras();
+        new VisionJudgeBar(webcam, ch);
+        bar.refreshCameras();
+        return bar;
     }
 
     private void buildAudioColumn(Composite parent) {

@@ -25,7 +25,7 @@ if not defined JAVA_EXE for /f "delims=" %%P in ('where javac 2^>nul') do (
 )
 if not defined JAVA_EXE (
   echo [ERROR] 64-bit JDK 8 not found. Install a 64-bit JDK 1.8 ^(not Program Files x86^)
-  echo         or set APX_JAVA_HOME to that JDK folder.
+  echo or set APX_JAVA_HOME to that JDK folder.
   pause
   exit /b 1
 )
@@ -33,7 +33,7 @@ echo Using JDK: !JAVA_EXE!
 
 if not exist "%UI%\src\com\suresofttech\apx\ui\widget\settings" (
   echo [ERROR] Missing UI settings sources:
-  echo   !UI!\src\com\suresofttech\apx\ui\widget\settings
+  echo !UI!\src\com\suresofttech\apx\ui\widget\settings
   pause
   exit /b 1
 )
@@ -78,9 +78,11 @@ del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\rear\RearSettingsPanel*
   "%CORE%\src\com\suresofttech\apx\core\audio\AudioCapture.java" ^
   "%CORE%\src\com\suresofttech\apx\core\config\ApxSettings.java" ^
   "%CORE%\src\com\suresofttech\apx\core\rear\RearGrid.java" ^
-  "%CORE%\src\com\suresofttech\apx\core\vision\CameraService.java"
+  "%CORE%\src\com\suresofttech\apx\core\vision\VisionChannel.java" ^
+  "%CORE%\src\com\suresofttech\apx\core\vision\CameraService.java" ^
+  "%CORE%\src\com\suresofttech\apx\core\vision\VisionJudges.java"
 if errorlevel 1 (
-  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid CameraService
+  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid VisionChannel CameraService VisionJudges
   pause
   exit /b 1
 )

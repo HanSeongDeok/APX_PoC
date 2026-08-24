@@ -14,6 +14,7 @@ import org.eclipse.swt.widgets.Label;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
+import com.suresofttech.apx.core.vision.VisionChannel;
 
 /**
  * NCC 임계 + 매칭도 라벨 - {@link ApxSettings#setSimThr}.
@@ -29,6 +30,7 @@ public class VisionThresholdBar extends Composite {
     }
 
     private final ApxSettings settings = ApxSettings.get();
+    private final VisionChannel channel;
     private final Cfg cfg;
     private final Label matchLabel;
     private final ApxSettings.Listener settingsListener;
@@ -36,13 +38,18 @@ public class VisionThresholdBar extends Composite {
     private RoiMatchResult last;
 
     public VisionThresholdBar(Composite parent) {
-        this(parent, new Cfg());
+        this(parent, new Cfg(), VisionChannel.CLUSTER);
     }
 
     public VisionThresholdBar(Composite parent, Cfg cfg) {
+        this(parent, cfg, VisionChannel.CLUSTER);
+    }
+
+    public VisionThresholdBar(Composite parent, Cfg cfg, VisionChannel channel) {
         super(parent, SWT.NONE);
         this.cfg = (cfg != null) ? cfg : new Cfg();
-        settings.setSimThr(this.cfg.defaultThr);
+        this.channel = channel == null ? VisionChannel.CLUSTER : channel;
+        settings.setSimThr(this.channel, this.cfg.defaultThr);
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;
@@ -60,7 +67,7 @@ public class VisionThresholdBar extends Composite {
         thrMinus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrMinus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() - cfg.step);
+                    settings.setSimThr(channel, settings.getSimThr(channel) - cfg.step);
                 if (roiNcc != null) {
                     roiNcc.applySimThrFromSettings();
                 }
@@ -72,7 +79,7 @@ public class VisionThresholdBar extends Composite {
         thrPlus.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         thrPlus.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                settings.setSimThr(settings.getSimThr() + cfg.step);
+                    settings.setSimThr(channel, settings.getSimThr(channel) + cfg.step);
                 if (roiNcc != null) {
                     roiNcc.applySimThrFromSettings();
                 }
@@ -121,7 +128,7 @@ public class VisionThresholdBar extends Composite {
         if (matchLabel == null || matchLabel.isDisposed()) {
             return;
         }
-        double thr = settings.getSimThr();
+        double thr = settings.getSimThr(channel);
         if (r == null || !"ok".equals(r.state)) {
             matchLabel.setText(String.format("매칭도 (NCC) --  /  임계치 %.0f%%", thr * 100));
             return;

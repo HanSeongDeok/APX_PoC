@@ -9,6 +9,8 @@ import org.eclipse.swt.widgets.Group;
 
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.RearGrid;
+import com.suresofttech.apx.core.vision.CameraService;
+import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioThresholdBar;
@@ -26,7 +28,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * 설정 UI 조립(비전·음향·후방). View / Dialog 공용.
+ * 설정 UI 조립(비전 / 음향 / 후방). View / Dialog 공용.
  * 커스텀 파라미터(Style/Cfg/스코프/범례/프리셋)는 {@link SettingsClientView2}와 동일하게 주입한다.
  * 값은 {@link ApxSettings}에 바로 반영된다.
  */
@@ -36,7 +38,7 @@ public class SettingsForm extends Composite {
 
     public SettingsForm(Composite parent) {
         super(parent, SWT.NONE);
-        setLayout(new GridLayout(3, true));
+        setLayout(new GridLayout(4, true));
         cameraSelect = buildVisionColumn(this);
         buildAudioColumn(this);
         buildRearColumn(this);
@@ -44,50 +46,51 @@ public class SettingsForm extends Composite {
 
     private static CameraSelectBar buildVisionColumn(Composite parent) {
         Composite col = new Composite(parent, SWT.NONE);
-        col.setLayout(new GridLayout(1, false));
-        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        col.setLayout(new GridLayout(2, true));
+        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
 
-        Group webcam = new Group(col, SWT.NONE);
-        webcam.setText("웹캠 (커스텀)");
-        webcam.setLayout(new GridLayout(1, false));
-        webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-
-        CameraSelectBar cameraSelect = new CameraSelectBar(webcam);
-        cameraSelect.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        CameraCanvas canvas = new CameraCanvas(webcam);
-        canvas.setPlaceholder("웹캠을 선택하세요");
-        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 280;
-        canvasGd.minimumHeight = 200;
-        canvas.setLayoutData(canvasGd);
-        cameraSelect.setCanvas(canvas);
-
-        // ROI 오버레이 색·두께 커스텀
         RoiNcc.Style roiStyle = new RoiNcc.Style();
         roiStyle.hit = new RGB(0, 200, 0);
         roiStyle.miss = new RGB(220, 60, 60);
         roiStyle.drag = new RGB(0, 160, 255);
         roiStyle.roiLineWidth = 3;
         roiStyle.dragThickness = 2;
-        RoiNcc roiNcc = new RoiNcc(canvas, roiStyle);
 
-        Composite refBlock = new Composite(col, SWT.NONE);
-        refBlock.setLayout(new GridLayout(1, false));
-        refBlock.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        CameraSelectBar clusterSelect = addVisionGroup(col, "클러스터 설정",
+            VisionChannel.CLUSTER, roiStyle, 160);
+        addVisionGroup(col, "기어봉 설정", VisionChannel.GEAR, roiStyle, 160);
+        return clusterSelect;
+    }
 
-        // 비전 NCC 임계 기본값·step·버튼명 커스텀
+    private static CameraSelectBar addVisionGroup(Composite col, String title,
+        VisionChannel ch, RoiNcc.Style roiStyle, int canvasH) {
+        Group webcam = new Group(col, SWT.NONE);
+        webcam.setText(title);
+        webcam.setLayout(new GridLayout(1, false));
+        webcam.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        CameraSelectBar cameraSelect = new CameraSelectBar(webcam, CameraService.of(ch));
+        cameraSelect.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        CameraCanvas canvas = new CameraCanvas(webcam);
+        canvas.setPlaceholder(title + " 웹캠을 선택하세요");
+        GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+        canvasGd.heightHint = canvasH;
+        canvasGd.minimumHeight = 120;
+        canvas.setLayoutData(canvasGd);
+        cameraSelect.setCanvas(canvas);
+
+        RoiNcc roiNcc = new RoiNcc(canvas, roiStyle, ch);
+
         VisionThresholdBar.Cfg vThr = new VisionThresholdBar.Cfg();
         vThr.defaultThr = 0.75;
         vThr.step = 0.05;
         vThr.minusText = "− 정밀도";
         vThr.plusText = "+ 정밀도";
-        VisionThresholdBar visionThr = new VisionThresholdBar(refBlock, vThr);
+        VisionThresholdBar visionThr = new VisionThresholdBar(webcam, vThr, ch);
         visionThr.setRoiNcc(roiNcc);
 
-        // 판정 방식 전환(NCC / YOLO) — 고르는 즉시 프리뷰·측정이 그 방식으로 바뀐다.
-        new VisionJudgeBar(refBlock);
-
+        new VisionJudgeBar(webcam, ch);
         cameraSelect.refreshCameras();
         return cameraSelect;
     }
@@ -131,7 +134,7 @@ public class SettingsForm extends Composite {
         ExpectedTonePlayBar playBar = new ExpectedTonePlayBar(measureBar.getActionRow(), toneCfg);
         playBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        // 파형 스코프 표출 스타일 커스텀 (X축 틱 · PASS 색/투명도 · 제목)
+        // 파형 스코프 표출 스타일 커스텀 (X축 틱 / PASS 색/투명도 / 제목)
         AudioScope scope = new AudioScope(expected, 5000.0);
         scope.setShowPitch(false);
         scope.setShowTrend(false);
@@ -144,7 +147,7 @@ public class SettingsForm extends Composite {
         scope.setLayoutData(scopeGd);
         measureBar.setScope(scope);
 
-        // 음향 임계 기본값·step·라벨 커스텀
+        // 음향 임계 기본값 / step / 라벨 커스텀
         AudioThresholdBar.Cfg aThr = new AudioThresholdBar.Cfg();
         aThr.defaultThr = 0.90;
         aThr.step = 0.05;
@@ -167,7 +170,7 @@ public class SettingsForm extends Composite {
         rear.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         ApxSettings s = ApxSettings.get();
-        // 고정크기(프리셋) 목록·라벨 커스텀
+        // 고정크기(프리셋) 목록 / 라벨 커스텀
         RearGridSizeBar.Cfg sizeCfg = new RearGridSizeBar.Cfg();
         sizeCfg.presetText = "고정 크기";
         sizeCfg.customText = "직접 입력";

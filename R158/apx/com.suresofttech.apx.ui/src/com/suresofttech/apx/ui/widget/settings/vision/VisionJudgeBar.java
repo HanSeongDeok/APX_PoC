@@ -19,25 +19,27 @@ import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.swt.widgets.Text;
 
 import com.suresofttech.apx.core.config.ApxSettings;
+import com.suresofttech.apx.core.vision.VisionChannel;
 
 /**
- * 비전 판정 방식 선택 — 기준영상 대조(NCC) / 학습모델(YOLO). {@link ApxSettings} 연동.
+ * 비전 판정 방식 선택 - 기준영상 대조(NCC) / 학습모델(YOLO). {@link ApxSettings} 연동.
  *
  * <p>고르는 즉시 {@code VisionJudges} 팩토리가 바뀌고, 설정 프리뷰와 측정 세션이
  * 새로 만드는 판정기부터 그 방식을 쓴다. 임계 바는 두 방식에서 그대로 쓰인다
- * (NCC 는 유사도, YOLO 는 확률 — 둘 다 0~1).
+ * (NCC 는 유사도, YOLO 는 확률 - 둘 다 0~1).
  *
  * <p>YOLO 를 고르면 아래 세 값이 필요하다. 학습 결과와 반드시 맞춰야 한다.
  * <ul>
- *   <li><b>모델</b> — {@code best.onnx}</li>
- *   <li><b>입력 크기</b> — 학습 시 {@code imgsz} 와 동일. 다르면 결과가 엉뚱해진다</li>
- *   <li><b>PASS 클래스</b> — 모델의 {@code names} 순서에서 R 의 번호</li>
+ *   <li><b>모델</b> - {@code best.onnx}</li>
+ *   <li><b>입력 크기</b> - 학습 시 {@code imgsz} 와 동일. 다르면 결과가 엉뚱해진다</li>
+ *   <li><b>PASS 클래스</b> - 모델의 {@code names} 순서에서 R 의 번호</li>
  * </ul>
  * 값은 {@code tools/yolo-cls/inspect_onnx.py} 로 모델에서 직접 확인할 수 있다.
  */
 public class VisionJudgeBar extends Composite {
 
     private final ApxSettings settings = ApxSettings.get();
+    private final VisionChannel channel;
 
     private final Button nccRadio;
     private final Button yoloRadio;
@@ -51,7 +53,12 @@ public class VisionJudgeBar extends Composite {
     private boolean updating;
 
     public VisionJudgeBar(Composite parent) {
+        this(parent, VisionChannel.CLUSTER);
+    }
+
+    public VisionJudgeBar(Composite parent, VisionChannel channel) {
         super(parent, SWT.NONE);
+        this.channel = channel == null ? VisionChannel.CLUSTER : channel;
         GridLayout gl = new GridLayout(3, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;
@@ -59,7 +66,7 @@ public class VisionJudgeBar extends Composite {
         setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
         Label title = new Label(this, SWT.NONE);
-        title.setText("판정 방식");
+        title.setText("판정 방식 (" + this.channel.label + ")");
         title.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1));
 
         Composite radios = new Composite(this, SWT.NONE);
@@ -121,7 +128,7 @@ public class VisionJudgeBar extends Composite {
         Label sizeLabel = new Label(this, SWT.NONE);
         sizeLabel.setText("입력 크기");
         inputSizeSpin = new Spinner(this, SWT.BORDER);
-        inputSizeSpin.setValues(settings.getYoloInputSize(), 32, 1024, 0, 32, 32);
+        inputSizeSpin.setValues(settings.getYoloInputSize(this.channel), 32, 1024, 0, 32, 32);
         inputSizeSpin.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         inputSizeSpin.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -137,7 +144,7 @@ public class VisionJudgeBar extends Composite {
         Label clsLabel = new Label(this, SWT.NONE);
         clsLabel.setText("PASS 클래스");
         hitClassSpin = new Spinner(this, SWT.BORDER);
-        hitClassSpin.setValues(settings.getYoloHitClassId(), 0, 99, 0, 1, 1);
+        hitClassSpin.setValues(settings.getYoloHitClassId(this.channel), 0, 99, 0, 1, 1);
         hitClassSpin.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         hitClassSpin.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -182,7 +189,7 @@ public class VisionJudgeBar extends Composite {
     private void apply() {
         String judge = yoloRadio.getSelection() ? ApxSettings.JUDGE_YOLO : ApxSettings.JUDGE_NCC;
         String path = modelText.getText().trim();
-        settings.setVisionJudge(judge, path.length() == 0 ? null : path,
+        settings.setVisionJudge(channel, judge, path.length() == 0 ? null : path,
                 inputSizeSpin.getSelection(), hitClassSpin.getSelection());
         refreshEnabled();
     }
@@ -191,16 +198,16 @@ public class VisionJudgeBar extends Composite {
     private void reload() {
         updating = true;
         try {
-            boolean yolo = settings.isYoloJudge();
+            boolean yolo = settings.isYoloJudge(channel);
             nccRadio.setSelection(!yolo);
             yoloRadio.setSelection(yolo);
-            String path = settings.getYoloModelPath();
+            String path = settings.getYoloModelPath(channel);
             String cur = (path == null) ? "" : path;
             if (!cur.equals(modelText.getText())) {
                 modelText.setText(cur);
             }
-            inputSizeSpin.setSelection(settings.getYoloInputSize());
-            hitClassSpin.setSelection(settings.getYoloHitClassId());
+            inputSizeSpin.setSelection(settings.getYoloInputSize(channel));
+            hitClassSpin.setSelection(settings.getYoloHitClassId(channel));
         } finally {
             updating = false;
         }

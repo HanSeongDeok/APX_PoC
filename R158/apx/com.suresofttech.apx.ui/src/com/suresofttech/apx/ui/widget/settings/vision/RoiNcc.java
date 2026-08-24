@@ -19,13 +19,14 @@ import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
+import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.VisionJudge;
 import com.suresofttech.apx.core.vision.VisionJudges;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
- * ROI 드래그 + NCC 오버레이 — 공용 {@link CameraCanvas}에 붙인다.
- * (웹캠 화면 표시·폴링은 View/{@link CameraSelectBar} 쪽 책임.)
+ * ROI 드래그 + NCC 오버레이 - 공용 {@link CameraCanvas}에 붙인다.
+ * (웹캠 화면 표시 / 폴링은 View/{@link CameraSelectBar} 쪽 책임.)
  * 모니터용: {@link #setInteractive(false)}, {@link #setFixedConfig}.
  */
 public final class RoiNcc {
@@ -60,6 +61,7 @@ public final class RoiNcc {
 
     private final CameraCanvas canvas;
     private final Display display;
+    private final VisionChannel channel;
     private final ApxSettings settings = ApxSettings.get();
     private final ApxSettings.Listener settingsListener;
 
@@ -78,14 +80,19 @@ public final class RoiNcc {
     private FixedVisionConfig fixedConfig;
 
     public RoiNcc(CameraCanvas canvas) {
-        this(canvas, new Style());
+        this(canvas, new Style(), VisionChannel.CLUSTER);
     }
 
     public RoiNcc(CameraCanvas canvas, Style style) {
+        this(canvas, style, VisionChannel.CLUSTER);
+    }
+
+    public RoiNcc(CameraCanvas canvas, Style style, VisionChannel channel) {
         if (canvas == null) {
             throw new IllegalArgumentException("canvas");
         }
         this.canvas = canvas;
+        this.channel = channel == null ? VisionChannel.CLUSTER : channel;
         this.display = canvas.getDisplay();
         applyStyle(style);
 
@@ -134,7 +141,7 @@ public final class RoiNcc {
                 if (fixedConfig != null || canvas.isDisposed()) {
                     return;
                 }
-                final String fp = visionFingerprintOf(s);
+                final String fp = visionFingerprintOf(s, channel);
                 display.asyncExec(new Runnable() {
                     public void run() {
                         if (canvas.isDisposed() || fixedConfig != null) {
@@ -142,7 +149,7 @@ public final class RoiNcc {
                         }
                         if (fp.equals(visionFingerprint)) {
                             if (det != null) {
-                                det.setSimThr(settings.getSimThr());
+                                    det.setSimThr(settings.getSimThr(channel));
                             }
                             return;
                         }
@@ -166,7 +173,7 @@ public final class RoiNcc {
         this.matchListener = l;
     }
 
-    /** false면 ROI 드래그 금지(표시·매칭만). */
+    /** false면 ROI 드래그 금지(표시 / 매칭만). */
     public void setInteractive(boolean on) {
         this.interactive = on;
         if (!on) {
@@ -176,6 +183,10 @@ public final class RoiNcc {
 
     public boolean isInteractive() {
         return interactive;
+    }
+
+    public VisionChannel channel() {
+        return channel;
     }
 
     /**
@@ -191,7 +202,7 @@ public final class RoiNcc {
         return fixedConfig;
     }
 
-    /** 측정 중단 시 — post 미완이어도 pre/decide 확정. */
+    /** 측정 중단 시 - post 미완이어도 pre/decide 확정. */
     public void flushEvidence() {
         if (det != null) {
             det.flushEvidence();
@@ -211,7 +222,7 @@ public final class RoiNcc {
     }
 
     public void applySimThrFromSettings() {
-        double thr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
+        double thr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr(channel);
         if (det != null) {
             det.setSimThr(thr);
         }
@@ -223,9 +234,9 @@ public final class RoiNcc {
             rebuildFromFixed(fixedConfig);
             return;
         }
-        visionFingerprint = visionFingerprintOf(settings);
-        if (settings.isUseReferenceImage()) {
-            String path = settings.getVisionRefPath();
+        visionFingerprint = visionFingerprintOf(settings, channel);
+        if (settings.isUseReferenceImage(channel)) {
+            String path = settings.getVisionRefPath(channel);
             if (path == null || !new File(path).isFile()) {
                 det = null;
                 last = null;
@@ -233,9 +244,10 @@ public final class RoiNcc {
                 return;
             }
             try {
-                det = VisionJudges.create(null, path, null, settings.getSimThr());
-                det.setRoi(settings.getRoi(det.canonWidth(), det.canonHeight()));
-                det.setSimThr(settings.getSimThr());
+                det = VisionJudges.createFor(settings, channel, null, path, null,
+                    settings.getSimThr(channel));
+                det.setRoi(settings.getRoi(channel, det.canonWidth(), det.canonHeight()));
+                det.setSimThr(settings.getSimThr(channel));
             } catch (Exception ex) {
                 det = null;
             }
@@ -256,7 +268,7 @@ public final class RoiNcc {
                 return;
             }
             try {
-                det = VisionJudges.create(null, path, null, cfg.simThr);
+                det = VisionJudges.createFor(settings, channel, null, path, null, cfg.simThr);
                 int[] roi = normToRoi(cfg.roiNorm, det.canonWidth(), det.canonHeight());
                 if (roi != null) {
                     det.setRoi(roi);
@@ -296,7 +308,7 @@ public final class RoiNcc {
     }
 
     private void ensureLiveReferenceDetector() {
-        BufferedImage bi = CameraService.get().latest();
+        BufferedImage bi = CameraService.of(channel).latest();
         if (bi == null) {
             det = null;
             last = null;
@@ -304,10 +316,10 @@ public final class RoiNcc {
             return;
         }
         try {
-            int[] roi = settings.getRoi(bi.getWidth(), bi.getHeight());
-            det = VisionJudges.create(bi, null, roi, settings.getSimThr());
+            int[] roi = settings.getRoi(channel, bi.getWidth(), bi.getHeight());
+            det = VisionJudges.createFor(settings, channel, bi, null, roi, settings.getSimThr(channel));
             det.setAlignEnabled(false);
-            det.setSimThr(settings.getSimThr());
+            det.setSimThr(settings.getSimThr(channel));
             RoiMatchResult r = det.process(bi);
             last = r;
             fireMatch(r);
@@ -320,7 +332,7 @@ public final class RoiNcc {
     }
 
     private void ensureLiveReferenceDetectorFixed(FixedVisionConfig cfg) {
-        BufferedImage bi = CameraService.get().latest();
+        BufferedImage bi = CameraService.of(channel).latest();
         if (bi == null) {
             det = null;
             last = null;
@@ -329,7 +341,7 @@ public final class RoiNcc {
         }
         try {
             int[] roi = normToRoi(cfg.roiNorm, bi.getWidth(), bi.getHeight());
-            det = VisionJudges.create(bi, null, roi, cfg.simThr);
+            det = VisionJudges.createFor(settings, channel, bi, null, roi, cfg.simThr);
             det.setAlignEnabled(false);
             det.setSimThr(cfg.simThr);
             RoiMatchResult r = det.process(bi);
@@ -344,8 +356,9 @@ public final class RoiNcc {
     }
 
     private void onNewFrame(BufferedImage bi) {
-        boolean useRef = fixedConfig != null ? fixedConfig.useReferenceImage : settings.isUseReferenceImage();
-        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
+        boolean useRef = fixedConfig != null ? fixedConfig.useReferenceImage
+                : settings.isUseReferenceImage(channel);
+        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr(channel);
         if (!useRef && det == null && bi != null) {
             if (fixedConfig != null) {
                 ensureLiveReferenceDetectorFixed(fixedConfig);
@@ -403,15 +416,15 @@ public final class RoiNcc {
         y2 = Math.min(disp.getHeight(), Math.max(y1 + 1, y2));
         x2 = Math.min(disp.getWidth(), Math.max(x1 + 1, x2));
         int[] roi = new int[] { y1, y2, x1, x2 };
-        settings.setRoi(roi, disp.getWidth(), disp.getHeight());
+        settings.setRoi(channel, roi, disp.getWidth(), disp.getHeight());
 
-        if (!settings.isUseReferenceImage()) {
+        if (!settings.isUseReferenceImage(channel)) {
             ensureLiveReferenceDetector();
             if (det != null) {
                 det.setRoi(roi);
             }
         } else if (det != null) {
-            det.setRoi(settings.getRoi(det.canonWidth(), det.canonHeight()));
+            det.setRoi(settings.getRoi(channel, det.canonWidth(), det.canonHeight()));
         }
         canvas.redraw();
         fireMatch(last);
@@ -421,7 +434,7 @@ public final class RoiNcc {
         RoiMatchResult r = last;
         BufferedImage disp = canvas.getFrame();
         boolean roiInCanon = (r != null && r.roi != null);
-        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr();
+        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr(channel);
         int[] roi = roiInCanon ? r.roi : resolveDisplayRoi(disp);
         if (roi != null && disp != null) {
             double sx = 1.0;
@@ -447,8 +460,9 @@ public final class RoiNcc {
                     Math.abs(dragX1 - dragX0), Math.abs(dragY1 - dragY0));
         }
         Point sz = canvas.getSize();
+        String kind = (det != null) ? det.name() : "NCC";
         String ncc = (r != null && "ok".equals(r.state))
-                ? String.format("NCC %.2f", r.ncc) : "NCC --";
+                ? String.format("%s %.2f", kind, Double.valueOf(r.ncc)) : kind + " --";
         String hud = ncc + "   ROI " + roiText(roi)
                 + (interactive ? "   드래그로 ROI 지정" : "   (모니터)");
         gc.setForeground(display.getSystemColor(SWT.COLOR_WHITE));
@@ -462,7 +476,7 @@ public final class RoiNcc {
         if (fixedConfig != null) {
             return normToRoi(fixedConfig.roiNorm, disp.getWidth(), disp.getHeight());
         }
-        return settings.getRoi(disp.getWidth(), disp.getHeight());
+        return settings.getRoi(channel, disp.getWidth(), disp.getHeight());
     }
 
     private static int[] normToRoi(double[] n, int w, int h) {
@@ -486,16 +500,15 @@ public final class RoiNcc {
         }
     }
 
-    private static String visionFingerprintOf(ApxSettings s) {
-        double[] n = s.getRoiNorm();
+    private static String visionFingerprintOf(ApxSettings s, VisionChannel ch) {
+        double[] n = s.getRoiNorm(ch);
         StringBuilder sb = new StringBuilder();
-        sb.append(s.isUseReferenceImage()).append('|');
-        sb.append(s.getVisionRefPath()).append('|');
-        // 판정 방식이 바뀌면 판정기를 다시 만들어야 한다(NCC <-> YOLO).
-        sb.append(s.getVisionJudge()).append('|');
-        sb.append(s.getYoloModelPath()).append('|');
-        sb.append(s.getYoloInputSize()).append('|');
-        sb.append(s.getYoloHitClassId()).append('|');
+        sb.append(s.isUseReferenceImage(ch)).append('|');
+        sb.append(s.getVisionRefPath(ch)).append('|');
+        sb.append(s.getVisionJudge(ch)).append('|');
+        sb.append(s.getYoloModelPath(ch)).append('|');
+        sb.append(s.getYoloInputSize(ch)).append('|');
+        sb.append(s.getYoloHitClassId(ch)).append('|');
         if (n == null) {
             sb.append("null");
         } else {
