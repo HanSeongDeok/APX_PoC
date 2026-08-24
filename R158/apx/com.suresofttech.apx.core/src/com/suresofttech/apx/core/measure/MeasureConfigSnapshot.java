@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import com.suresofttech.apx.core.config.ApxSettings;
+import com.suresofttech.apx.core.vision.VisionChannel;
 
 /**
  * 측정 시작 시점의 {@link ApxSettings} 고정 복사본.
@@ -21,6 +22,14 @@ public final class MeasureConfigSnapshot {
     public final String visionRefPath;
     public final double[] roiNorm;
     public final double simThr;
+    public final String visionJudge;
+    public final boolean autoPlayExpectedOnVisionPass;
+
+    public final boolean gearUseReferenceImage;
+    public final String gearVisionRefPath;
+    public final double[] gearRoiNorm;
+    public final double gearSimThr;
+    public final String gearVisionJudge;
 
     public final int rearCols;
     public final int rearRows;
@@ -30,6 +39,9 @@ public final class MeasureConfigSnapshot {
     public MeasureConfigSnapshot(String micName, String expectedWavPath,
             double audioFreqThr, double audioWaveThr,
             boolean useReferenceImage, String visionRefPath, double[] roiNorm, double simThr,
+        String visionJudge, boolean autoPlayExpectedOnVisionPass,
+        boolean gearUseReferenceImage, String gearVisionRefPath, double[] gearRoiNorm,
+        double gearSimThr, String gearVisionJudge,
             int rearCols, int rearRows, boolean rearShowLegend, List<int[]> rearSelectedPoints) {
         this.micName = micName;
         this.expectedWavPath = expectedWavPath;
@@ -39,6 +51,13 @@ public final class MeasureConfigSnapshot {
         this.visionRefPath = visionRefPath;
         this.roiNorm = roiNorm == null ? null : roiNorm.clone();
         this.simThr = simThr;
+        this.visionJudge = visionJudge;
+        this.autoPlayExpectedOnVisionPass = autoPlayExpectedOnVisionPass;
+        this.gearUseReferenceImage = gearUseReferenceImage;
+        this.gearVisionRefPath = gearVisionRefPath;
+        this.gearRoiNorm = gearRoiNorm == null ? null : gearRoiNorm.clone();
+        this.gearSimThr = gearSimThr;
+        this.gearVisionJudge = gearVisionJudge;
         this.rearCols = rearCols;
         this.rearRows = rearRows;
         this.rearShowLegend = rearShowLegend;
@@ -54,22 +73,53 @@ public final class MeasureConfigSnapshot {
                 s.getExpectedWavPath(),
                 s.getAudioFreqThr(),
                 s.getAudioWaveThr(),
-                s.isUseReferenceImage(),
-                s.getVisionRefPath(),
-                s.getRoiNorm(),
-                s.getSimThr(),
+            s.isUseReferenceImage(VisionChannel.CLUSTER),
+            s.getVisionRefPath(VisionChannel.CLUSTER),
+            s.getRoiNorm(VisionChannel.CLUSTER),
+            s.getSimThr(VisionChannel.CLUSTER),
+            s.getVisionJudge(VisionChannel.CLUSTER),
+            s.isAutoPlayExpectedOnVisionPass(),
+            s.isUseReferenceImage(VisionChannel.GEAR),
+            s.getVisionRefPath(VisionChannel.GEAR),
+            s.getRoiNorm(VisionChannel.GEAR),
+            s.getSimThr(VisionChannel.GEAR),
+            s.getVisionJudge(VisionChannel.GEAR),
                 s.getRearCols(),
                 s.getRearRows(),
                 s.isRearShowLegend(),
                 s.getRearSelectedPoints());
     }
 
-    /** 스냅샷 roiNorm 기준 픽셀 ROI {y1,y2,x1,x2}. */
+    public boolean useReferenceImage(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearUseReferenceImage : useReferenceImage;
+    }
+
+    public String visionRefPath(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearVisionRefPath : visionRefPath;
+    }
+
+    public double[] roiNorm(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearRoiNorm : roiNorm;
+    }
+
+    public double simThr(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearSimThr : simThr;
+    }
+
+    public String visionJudge(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? gearVisionJudge : visionJudge;
+    }
+
+    /** 스냅샷 roiNorm 기준 픽셀 ROI {y1,y2,x1,x2}. 클러스터. */
     public int[] toRoiPixels(int frameW, int frameH) {
-        if (roiNorm == null || frameW <= 0 || frameH <= 0) {
+        return toRoiPixels(VisionChannel.CLUSTER, frameW, frameH);
+    }
+
+    public int[] toRoiPixels(VisionChannel ch, int frameW, int frameH) {
+        double[] n = roiNorm(ch);
+        if (n == null || frameW <= 0 || frameH <= 0) {
             return null;
         }
-        double[] n = roiNorm;
         int y1 = (int) Math.round(n[0] * frameH);
         int y2 = (int) Math.round(n[1] * frameH);
         int x1 = (int) Math.round(n[2] * frameW);

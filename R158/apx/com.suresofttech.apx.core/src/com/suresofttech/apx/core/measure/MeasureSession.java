@@ -8,12 +8,14 @@ import com.suresofttech.apx.core.audio.AudioCapture;
 import com.suresofttech.apx.core.audio.AudioRecorder;
 import com.suresofttech.apx.core.audio.BeepMatcher;
 import com.suresofttech.apx.core.audio.MatchResult;
+import com.suresofttech.apx.core.audio.TonePlayer;
 import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.Verdict;
 import com.suresofttech.apx.core.sync.SyncBus;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.Cv;
+import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.VisionJudge;
@@ -24,11 +26,11 @@ import com.suresofttech.apx.core.vision.VisionMatchLog;
 import com.suresofttech.apx.core.vision.VisionRecorder;
 
 /**
- * 측정 세션 — 시작 시 설정 스냅샷 고정, 음향·비전 엔진·후방 판정 상태·증거 버퍼.
+ * 측정 세션 - 시작 시 설정 스냅샷 고정, 음향 / 비전 엔진 / 후방 판정 상태 / 증거 버퍼.
  *
  * <p>후방은 판정 <b>저장소</b>만 제공한다({@link #setRearVerdict}/{@link #getRearVerdict}).
  * "이번 측정 결과를 어느 격자 포인트에 넣을지"는 시험 계획(어느 포인트가 어느 TC인지)을
- * 아는 클라이언트가 정한다 — core는 그 매핑 규칙을 갖지 않는다.
+ * 아는 클라이언트가 정한다 - core는 그 매핑 규칙을 갖지 않는다.
  */
 public final class MeasureSession {
 
@@ -69,26 +71,47 @@ public final class MeasureSession {
 
     private VisionJudge visionDet;
     private volatile RoiMatchResult latestVision;
+    /** 비전 PASS = 클러스터 ∧ 기어봉. */
     private volatile boolean visionPass;
     private volatile Long visionPassAtMs;
     /** 자체 판단(ms) = frameGap + analysis. 미확정 null. */
     private Double visionJudgeMs;
     private Double visionGapMs;
     private Double visionAnalysisMs;
-    /** stop 시 detector에서 보존 — 전/중/후 프레임 증거. */
+    private volatile boolean clusterPass;
+    private volatile boolean gearPass;
+    private volatile Long clusterPassAtMs;
+    private volatile Long gearPassAtMs;
+    private Double clusterJudgeMs;
+    private Double clusterGapMs;
+    private Double clusterAnalysisMs;
+    private Double gearJudgeMs;
+    private Double gearGapMs;
+    private Double gearAnalysisMs;
+    /** stop 시 detector에서 보존 - 전/중/후 프레임 증거. */
     private EvidenceCapture.Evidence visionFrameEvidence;
-    /** 측정 전체 구간 비전 녹화(결과 탭 스크럽용). */
+    private EvidenceCapture.Evidence gearVisionFrameEvidence;
+    /** 측정 전체 구간 비전 녹화(결과 탭 스크럽용, 클러스터). */
     private final VisionRecorder visionRecorder = new VisionRecorder();
     private VisionRecorder.Recording visionRecording;
-    /** 녹화 임시 폴더 — 중단 후 증거 폴더로 옮긴다. */
+    /** 녹화 임시 폴더 - 중단 후 증거 폴더로 옮긴다. */
     private File visionRecordDir;
-    /** 프레임별 ROI hit/ncc — 결과 스크럽 PASS/FAIL 색 복원. */
+    private final VisionRecorder gearRecorder = new VisionRecorder();
+    private VisionRecorder.Recording gearRecording;
+    private File gearRecordDir;
+    /** 프레임별 ROI hit/ncc - 결과 스크럽 PASS/FAIL 색 복원. */
     private final VisionMatchLog visionMatchLog = new VisionMatchLog();
+
+    /** 비전 PASS 시 기대음 1회 재생(시뮬레이터 자동 트리거). */
+    private final TonePlayer expectedPlayer = new TonePlayer();
+    private double[] expectedSamples;
+    private int expectedSampleRate;
+    private boolean expectedAutoPlayed;
 
     private final Object rearLock = new Object();
     private Verdict[][] rearVerdicts; // [col][row], null = NONE
 
-    /** SyncBus 공통시계(초) — 측정 시작 시각. PASS ms = (stamp − startNanoSec)*1000. */
+    /** SyncBus 공통시계(초) - 측정 시작 시각. PASS ms = (stamp − startNanoSec)*1000. */
     private volatile double startNanoSec;
 
     private MeasureSession() {
@@ -117,7 +140,7 @@ public final class MeasureSession {
     }
 
     /**
-     * 비전 판정 전·중·후 프레임 증거 ({@code evidence_pre_-1f} 등).
+     * 비전 판정 전 / 중 / 후 프레임 증거 ({@code evidence_pre_-1f} 등).
      * {@link #stop()} 이후에도 유지.
      */
     public synchronized EvidenceCapture.Evidence getVisionFrameEvidence() {
@@ -134,21 +157,45 @@ public final class MeasureSession {
         }
     }
 
+    /** 기어봉 채널 ±1프레임 증거. */
+    public synchronized void acceptGearVisionFrameEvidence(EvidenceCapture.Evidence e) {
+        if (e != null) {
+            this.gearVisionFrameEvidence = e;
+        }
+    }
+
     /**
      * 클라 폴더에 비전 증거 PNG 저장 (OpenCV Mat은 core에서만 다룸).
      * {@code evidence_pre_-1f.png} / {@code evidence_decide.png} / {@code evidence_post_+1f.png}
      */
     public synchronized void saveVisionFrameEvidenceTo(File dir) {
-        if (dir == null || visionFrameEvidence == null) {
+        if (dir == null) {
+            return;
+        }
+        if (visionFrameEvidence == null && gearVisionFrameEvidence == null) {
             return;
         }
         if (!dir.exists()) {
             dir.mkdirs();
         }
-        // 파일명은 VisionEvidenceStore가 단일 출처 — 조회 API와 어긋나지 않게.
+        if (visionFrameEvidence != null) {
         writeVisionSnap(dir, VisionEvidenceStore.Frame.PRE.fileName(), visionFrameEvidence.pre);
-        writeVisionSnap(dir, VisionEvidenceStore.Frame.DECIDE.fileName(), visionFrameEvidence.decide);
+            writeVisionSnap(dir, VisionEvidenceStore.Frame.DECIDE.fileName(),
+                visionFrameEvidence.decide);
         writeVisionSnap(dir, VisionEvidenceStore.Frame.POST.fileName(), visionFrameEvidence.post);
+        }
+        if (gearVisionFrameEvidence != null) {
+            File gearDir = new File(dir, "gear");
+            if (!gearDir.exists()) {
+                gearDir.mkdirs();
+            }
+            writeVisionSnap(gearDir, VisionEvidenceStore.Frame.PRE.fileName(),
+                gearVisionFrameEvidence.pre);
+            writeVisionSnap(gearDir, VisionEvidenceStore.Frame.DECIDE.fileName(),
+                gearVisionFrameEvidence.decide);
+            writeVisionSnap(gearDir, VisionEvidenceStore.Frame.POST.fileName(),
+                gearVisionFrameEvidence.post);
+        }
     }
 
     private static void writeVisionSnap(File dir, String name, EvidenceCapture.Snap snap) {
@@ -163,20 +210,36 @@ public final class MeasureSession {
     }
 
     public boolean isVisionPass() {
-        return visionPass;
+        return clusterPass && gearPass;
+    }
+
+    public boolean isClusterPass() {
+        return clusterPass;
+    }
+
+    public boolean isGearPass() {
+        return gearPass;
     }
 
     public boolean isOverallPass() {
         return audioPass && visionPass;
     }
 
-    /** 측정 시작 기준 공통시계 PASS 시각(ms). 물리지연(D_mic/D_cap) 포함·미보정. 미검출 null. */
+    /** 측정 시작 기준 공통시계 PASS 시각(ms). 물리지연(D_mic/D_cap) 포함 / 미보정. 미검출 null. */
     public Long getAudioPassMs() {
         return audioPassAtMs;
     }
 
     public Long getVisionPassMs() {
         return visionPassAtMs;
+    }
+
+    public Long getClusterPassMs() {
+        return clusterPassAtMs;
+    }
+
+    public Long getGearPassMs() {
+        return gearPassAtMs;
     }
 
     /** 음향 자체 판단(ms) = blockGap + analysis. 미확정 null. */
@@ -205,6 +268,51 @@ public final class MeasureSession {
         return visionAnalysisMs;
     }
 
+    public Double getClusterJudgeMs() {
+        return clusterJudgeMs;
+    }
+
+    public Double getClusterGapMs() {
+        return clusterGapMs;
+    }
+
+    public Double getClusterAnalysisMs() {
+        return clusterAnalysisMs;
+    }
+
+    public Double getGearJudgeMs() {
+        return gearJudgeMs;
+    }
+
+    public Double getGearGapMs() {
+        return gearGapMs;
+    }
+
+    public Double getGearAnalysisMs() {
+        return gearAnalysisMs;
+    }
+
+    /**
+     * PASS 한 줄: 물리지연 포함 검출시각 + 자체 판단(간격+분석).
+     * 예) {@code 음향: PASS @ 1030 ms (자체판단 20.1 = 간격 14.0 + 분석 6.1)}
+     */
+    public static String formatPassLine(String channel, Long passAtMs,
+        Double judgeMs, Double gapMs, Double analysisMs) {
+        if (passAtMs == null) {
+            return channel + ": FAIL (미검출)";
+        }
+        if (judgeMs != null && gapMs != null && analysisMs != null) {
+            return String.format("%s: PASS @ %d ms (자체판단 %.1f = 간격 %.1f + 분석 %.1f)",
+                channel, passAtMs.longValue(),
+                judgeMs.doubleValue(), gapMs.doubleValue(), analysisMs.doubleValue());
+        }
+        if (judgeMs != null) {
+            return String.format("%s: PASS @ %d ms (자체판단 %.1f ms)",
+                channel, passAtMs.longValue(), judgeMs.doubleValue());
+        }
+        return String.format("%s: PASS @ %d ms", channel, passAtMs.longValue());
+    }
+
     /**
      * 중단 시 최종 판정. CAN은 아직 미연동({@code requireCan=false}).
      * 규칙: 음향∧비전 PASS 이고 (max−min) ≤ {@link MeasureSyncResult#SYNC_TOL_MS}.
@@ -230,13 +338,13 @@ public final class MeasureSession {
 
     /**
      * 비전 녹화 중 해상도가 달라 레터박스로 맞춘 프레임 수.
-     * 0보다 크면 측정 도중 카메라·해상도가 바뀌었다는 뜻.
+     * 0보다 크면 측정 도중 카메라 / 해상도가 바뀌었다는 뜻.
      */
     public int getVisionResizedFrames() {
         return visionRecorder.getResizedFrames();
     }
 
-    /** 녹화 컨테이너의 프레임 크기 — 아직 안 열렸으면 0. */
+    /** 녹화 컨테이너의 프레임 크기 - 아직 안 열렸으면 0. */
     public int getVisionRecordWidth() {
         return visionRecorder.getWidth();
     }
@@ -257,6 +365,7 @@ public final class MeasureSession {
         if (running) {
             throw new IllegalStateException("이미 측정 중입니다");
         }
+        expectedPlayer.stop();
         MeasureConfigSnapshot snap = MeasureConfigSnapshot.from(ApxSettings.get());
         if (snap.expectedWavPath == null || snap.expectedWavPath.isEmpty()
                 || !new File(snap.expectedWavPath).isFile()) {
@@ -268,6 +377,9 @@ public final class MeasureSession {
         }
 
         WavIo.Wav wav = WavIo.load(snap.expectedWavPath);
+        this.expectedSamples = wav.samples;
+        this.expectedSampleRate = wav.sampleRate;
+        this.expectedAutoPlayed = false;
         BeepMatcher bm = new BeepMatcher(wav.samples, wav.sampleRate, 150.0, 4.0,
                 snap.audioFreqThr, snap.audioWaveThr, 0.015);
         bm.arm();
@@ -295,8 +407,20 @@ public final class MeasureSession {
         this.visionJudgeMs = null;
         this.visionGapMs = null;
         this.visionAnalysisMs = null;
+        this.clusterPass = false;
+        this.gearPass = false;
+        this.clusterPassAtMs = null;
+        this.gearPassAtMs = null;
+        this.clusterJudgeMs = null;
+        this.clusterGapMs = null;
+        this.clusterAnalysisMs = null;
+        this.gearJudgeMs = null;
+        this.gearGapMs = null;
+        this.gearAnalysisMs = null;
         this.visionFrameEvidence = null;
+        this.gearVisionFrameEvidence = null;
         this.visionRecording = null;
+        this.gearRecording = null;
         this.visionMatchLog.clear();
         SyncBus.get().reset();
         this.startNanoSec = SyncBus.now();
@@ -307,7 +431,7 @@ public final class MeasureSession {
         final AudioRecorder feedRec = rec;
         final double t0 = this.startNanoSec;
         this.audioError = null;
-        // 측정 도중 마이크가 빠지면 무음이 조용히 녹음된다 — 사유를 세션 상태로 올린다.
+        // 측정 도중 마이크가 빠지면 무음이 조용히 녹음된다 - 사유를 세션 상태로 올린다.
         cap.setErrorListener(new AudioCapture.ErrorListener() {
             public void onCaptureError(String reason) {
                 audioError = reason;
@@ -324,7 +448,7 @@ public final class MeasureSession {
                 latestMatch = mr;
                 if (mr != null && mr.isPass && !audioPass) {
                     audioPass = true;
-                    // 공통시계(캡처 콜백 now = nanoTime 초) — 샘플경과와 별개로 동기 비교용
+                    // 공통시계(캡처 콜백 now = nanoTime 초) - 샘플경과와 별개로 동기 비교용
                     // L2 캘리브 없이 검출 시각 그대로(물리지연 D_mic 포함)
                     double tSec = now;
                     double judge = mr.passMs != null ? mr.passMs.doubleValue() : Double.NaN;
@@ -349,7 +473,7 @@ public final class MeasureSession {
         fireState();
     }
 
-    /** 측정 중단 — 캡처 중지, 증거 finalize. */
+    /** 측정 중단 - 캡처 중지, 증거 finalize. */
     public synchronized void stop() {
         if (!running) {
             return;
@@ -370,6 +494,9 @@ public final class MeasureSession {
         }
         visionDet = null;
         visionRecording = visionRecorder.stop();
+        gearRecording = gearRecorder.stop();
+        expectedPlayer.stop();
+        expectedSamples = null;
         fireState();
     }
 
@@ -381,36 +508,47 @@ public final class MeasureSession {
      * {@link #moveVisionRecordingTo}가 최종 폴더로 옮긴다.
      */
     private void startVisionRecording() {
+        visionRecordDir = startRecorder(visionRecorder, CameraService.of(VisionChannel.CLUSTER));
+        gearRecordDir = startRecorder(gearRecorder, CameraService.of(VisionChannel.GEAR));
+    }
+
+    private static File startRecorder(VisionRecorder rec, CameraService cam) {
         try {
             File tmp = File.createTempFile("apx-rec-", "");
             if (!tmp.delete() || !tmp.mkdirs()) {
-                return;
+                return null;
             }
             tmp.deleteOnExit();
-            visionRecordDir = tmp;
-            // 열려 있는 카메라 해상도를 미리 넘겨 writer를 사전 오픈 —
-            // 첫 프레임에 열면 오픈에 걸리는 수백 ms 동안 측정 앞부분이 유실된다.
-            BufferedImage probe = CameraService.get().latest();
+            BufferedImage probe = cam == null ? null : cam.latest();
             if (probe != null) {
-                visionRecorder.start(tmp, probe.getWidth(), probe.getHeight());
+                rec.start(tmp, probe.getWidth(), probe.getHeight());
             } else {
-                visionRecorder.start(tmp);
+                rec.start(tmp);
             }
+            return tmp;
         } catch (Exception ex) {
-            visionRecordDir = null;
+            return null;
         }
     }
 
     /**
-     * 비전 프레임 투입 — UI가 새 카메라 프레임을 받을 때마다 호출.
+     * 비전 프레임 투입 - UI가 새 카메라 프레임을 받을 때마다 호출.
      * 시각은 PASS 시각과 같은 공통시계 기준(측정 시작=0)이라 결과 스크럽이 정렬된다.
      */
     public void recordVisionFrame(BufferedImage bi) {
-        if (!running || bi == null || !visionRecorder.isRunning()) {
+        recordVisionFrame(VisionChannel.CLUSTER, bi);
+    }
+
+    public void recordVisionFrame(VisionChannel ch, BufferedImage bi) {
+        if (!running || bi == null) {
+            return;
+        }
+        VisionRecorder rec = ch == VisionChannel.GEAR ? gearRecorder : visionRecorder;
+        if (!rec.isRunning()) {
             return;
         }
         double tMs = (SyncBus.now() - startNanoSec) * 1000.0;
-        visionRecorder.feed(bi, tMs);
+        rec.feed(bi, tMs);
     }
 
     /** 중단 후 남은 녹화 산출물({@code full.avi} + {@code frames.csv}). 없으면 null. */
@@ -419,7 +557,7 @@ public final class MeasureSession {
     }
 
     /**
-     * 녹화본을 증거 폴더로 옮긴다 — {@code <visionDir>/full.avi}, {@code frames.csv}.
+     * 녹화본을 증거 폴더로 옮긴다 - {@code <visionDir>/full.avi}, {@code frames.csv}.
      * @return 옮겨진 영상 파일(없으면 null)
      */
     public synchronized File moveVisionRecordingTo(File visionDir) {
@@ -435,6 +573,7 @@ public final class MeasureSession {
         } catch (Exception ignored) {
             // 매칭 로그 실패해도 아래 녹화 이동은 계속
         }
+        moveGearRecordingTo(new File(visionDir, "gear"));
         VisionRecorder.Recording rec = visionRecording;
         if (rec == null) {
             return null;
@@ -450,6 +589,26 @@ public final class MeasureSession {
                     rec.frameCount, rec.lastMs);
         }
         return video;
+    }
+
+    private void moveGearRecordingTo(File gearDir) {
+        VisionRecorder.Recording rec = gearRecording;
+        if (rec == null || gearDir == null) {
+            return;
+        }
+        if (!gearDir.exists() && !gearDir.mkdirs()) {
+            return;
+        }
+        File video = moveInto(rec.video, new File(gearDir, VisionRecorder.VIDEO_NAME));
+        moveInto(rec.index, new File(gearDir, VisionRecorder.INDEX_NAME));
+        if (gearRecordDir != null) {
+            gearRecordDir.delete();
+        }
+        if (video != null) {
+            gearRecording = new VisionRecorder.Recording(
+                video, new File(gearDir, VisionRecorder.INDEX_NAME),
+                rec.frameCount, rec.lastMs);
+        }
     }
 
     /** rename 실패(다른 볼륨 등) 시 복사로 폴백. */
@@ -497,24 +656,27 @@ public final class MeasureSession {
         }
         RoiMatchResult r = det.process(bi);
         latestVision = r;
-        latchVisionPass(r);
+        latchVisionPass(VisionChannel.CLUSTER, r);
         fireVision(r);
         return r;
     }
 
-    /** UI(RoiNcc)가 이미 낸 결과를 세션에 보고. */
+    /** UI(RoiNcc)가 이미 낸 결과를 세션에 보고. 무인자는 클러스터. */
     public void reportVisionMatch(RoiMatchResult r) {
+        reportVisionMatch(VisionChannel.CLUSTER, r);
+    }
+
+    public void reportVisionMatch(VisionChannel ch, RoiMatchResult r) {
         if (!running) {
             return;
         }
         latestVision = r;
-        // 스크럽용 시계열 — PASS latch와 무관하게 매 프레임 hit/ncc 기록
-        if (r != null) {
+        if (ch != VisionChannel.GEAR && r != null) {
             double tMs = (SyncBus.now() - startNanoSec) * 1000.0;
             boolean hit = r.hit || ("ok".equals(r.state) && r.ncc >= r.simThr);
             visionMatchLog.add(tMs, hit, r.ncc);
         }
-        latchVisionPass(r);
+        latchVisionPass(ch, r);
         fireVision(r);
     }
 
@@ -524,34 +686,73 @@ public final class MeasureSession {
     }
 
     /**
-     * 비전 최초 hit → PASS. 검출 시각은 L2 보정 없이 공통시계 그대로(물리지연 D_cap 포함).
-     * 자체 판단 = RoiMatchResult.passMs (frameGap + analysis).
+     * 채널별 최초 hit → PASS. 비전 전체 PASS는 클러스터∧기어봉.
+     * 기대음 자동재생은 둘 중 먼저 PASS일 때 1회.
      */
-    private void latchVisionPass(RoiMatchResult r) {
-        if (r == null || !r.hit || visionPass) {
+    private void latchVisionPass(VisionChannel ch, RoiMatchResult r) {
+        if (r == null || !r.hit) {
             return;
         }
-        visionPass = true;
+        boolean gear = ch == VisionChannel.GEAR;
+        if (gear ? gearPass : clusterPass) {
+            return;
+        }
         double tSec = SyncBus.now();
         double judge = r.passMs != null ? r.passMs.doubleValue() : Double.NaN;
-        SyncBus.get().mark(SyncBus.Event.CLUSTER_POPUP, tSec, judge);
+        SyncBus.get().mark(gear ? SyncBus.Event.GEAR_R : SyncBus.Event.CLUSTER_POPUP, tSec, judge);
         long ms = Math.round((tSec - startNanoSec) * 1000.0);
-        visionPassAtMs = Long.valueOf(ms);
-        if (evidence != null) {
-            evidence.setVisionPassMs(ms);
+        if (gear) {
+            gearPass = true;
+            gearPassAtMs = Long.valueOf(ms);
             if (r.passMs != null) {
-                visionJudgeMs = r.passMs;
-                visionGapMs = Double.valueOf(r.frameGapMs);
-                visionAnalysisMs = r.analysisMs;
-                evidence.setVisionJudgeMs(r.passMs.doubleValue());
+                gearJudgeMs = r.passMs;
+                gearGapMs = Double.valueOf(r.frameGapMs);
+                gearAnalysisMs = r.analysisMs;
             }
-        } else if (r.passMs != null) {
-            visionJudgeMs = r.passMs;
-            visionGapMs = Double.valueOf(r.frameGapMs);
-            visionAnalysisMs = r.analysisMs;
+        } else {
+            clusterPass = true;
+            clusterPassAtMs = Long.valueOf(ms);
+            if (r.passMs != null) {
+                clusterJudgeMs = r.passMs;
+                clusterGapMs = Double.valueOf(r.frameGapMs);
+                clusterAnalysisMs = r.analysisMs;
+            }
+        }
+        maybeAutoPlayExpected();
+        if (clusterPass && gearPass && !visionPass) {
+        visionPass = true;
+            long both = Math.max(clusterPassAtMs.longValue(), gearPassAtMs.longValue());
+            visionPassAtMs = Long.valueOf(both);
+            visionJudgeMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
+            ? gearJudgeMs : clusterJudgeMs;
+            visionGapMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
+            ? gearGapMs : clusterGapMs;
+            visionAnalysisMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
+            ? gearAnalysisMs : clusterAnalysisMs;
+        if (evidence != null) {
+                evidence.setVisionPassMs(both);
+                if (visionJudgeMs != null) {
+                    evidence.setVisionJudgeMs(visionJudgeMs.doubleValue());
+            }
         }
         recordOverallPassIfComplete();
+        }
         fireState();
+    }
+
+    /**
+     * 시뮬레이터 자동 트리거 - 비전(R단) 최초 PASS 때 기대음을 한 번 재생한다.
+     * 수동 모드({@link MeasureConfigSnapshot#autoPlayExpectedOnVisionPass}=false)면 건너뛴다.
+     */
+    private void maybeAutoPlayExpected() {
+        if (snapshot == null || !snapshot.autoPlayExpectedOnVisionPass) {
+            return;
+        }
+        if (expectedAutoPlayed || expectedSamples == null || expectedSampleRate <= 0) {
+            return;
+        }
+        expectedAutoPlayed = true;
+        expectedPlayer.play(expectedSamples, expectedSampleRate);
     }
 
     /**
@@ -633,7 +834,7 @@ public final class MeasureSession {
     }
 
     /**
-     * 두 채널이 모두 PASS가 된 시각(늦은 쪽)을 증거에 기록 — 한쪽이 latch될 때마다 호출.
+     * 두 채널이 모두 PASS가 된 시각(늦은 쪽)을 증거에 기록 - 한쪽이 latch될 때마다 호출.
      *
      * <p>예전에는 클라가 중단을 누른 시각을 넣었는데, 그건 "조건이 충족된 시각"이 아니라
      * "운영자가 버튼을 누른 시각"이라 증거로 의미가 없었다. 두 시각 모두 측정 시작 기준
@@ -698,7 +899,7 @@ public final class MeasureSession {
 
     private void fireState() {
         boolean a = audioPass;
-        boolean v = visionPass;
+        boolean v = clusterPass && gearPass;
         boolean o = a && v;
         for (Listener l : listeners) {
             try {
