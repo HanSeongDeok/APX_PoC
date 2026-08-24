@@ -15,7 +15,7 @@ import com.suresofttech.apx.core.audio.AudioCapture;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 마이크 콤보 + 새로고침 (장치 선택 전용). 입력 레벨·테스트는 {@link MicTestBar}.
+ * 마이크 콤보 + 새로고침 (장치 선택 전용). 입력 레벨 / 테스트는 {@link MicTestBar}.
  */
 public class MicSelectBar extends Composite {
 

@@ -14,7 +14,7 @@ import com.suresofttech.apx.core.rear.VerdictResult;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
- * RearGridCanvas 조립 예시 — 격자·범례·판정 스냅샷 API.
+ * RearGridCanvas 조립 예시 - 격자 / 범례 / 판정 스냅샷 API.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/RearGridCanvasExample.java}
  */
@@ -54,7 +54,7 @@ public final class RearGridCanvasExample {
         return canvas;
     }
 
-    /** PASS/FAIL 스냅샷 저장·조회 (증거 폴더 rear/). */
+    /** PASS/FAIL 스냅샷 저장 / 조회 (증거 폴더 rear/). */
     public static void snapshotDemo(RearGridCanvas canvas, File evidenceRoot) {
         canvas.setSnapshotDir(new File(evidenceRoot, "rear"));
         File saved = canvas.saveVerdictSnapshot(

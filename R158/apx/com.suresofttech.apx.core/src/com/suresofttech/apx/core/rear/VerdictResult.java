@@ -3,7 +3,7 @@ package com.suresofttech.apx.core.rear;
 import java.awt.Point;
 
 /**
- * 후방 검증 포인트 판정 결과 — 위치 + 판정. SWT無(core).
+ * 후방 검증 포인트 판정 결과 - 위치 + 판정. SWT無(core).
  * TC/DB 개념은 클라 영역. 위치는 {@link #getPoint()} ({@code x=col}, {@code y=row}).
  */
 public final class VerdictResult {

@@ -15,7 +15,7 @@ import org.eclipse.swt.widgets.Composite;
 
 /**
  * 웹캠/처리 프레임(AWT {@link BufferedImage})을 SWT로 그리는 캔버스.
- * 비율 유지·중앙 정렬. 프레임마다 임시 SWT Image를 만들고 즉시 dispose(리소스 누수 방지).
+ * 비율 유지 / 중앙 정렬. 프레임마다 임시 SWT Image를 만들고 즉시 dispose(리소스 누수 방지).
  */
 public class CameraCanvas extends Canvas {
 
@@ -34,7 +34,7 @@ public class CameraCanvas extends Canvas {
     private String placeholder = "(카메라 없음)";
     private Overlay overlay;
     private FrameListener frameListener;
-    /** 추가 구독자 — 매칭(RoiNcc) 외에 녹화 등이 같은 프레임을 받아간다. */
+    /** 추가 구독자 - 매칭(RoiNcc) 외에 녹화 등이 같은 프레임을 받아간다. */
     private final java.util.List<FrameListener> extraListeners =
             new java.util.concurrent.CopyOnWriteArrayList<FrameListener>();
 
@@ -42,12 +42,12 @@ public class CameraCanvas extends Canvas {
         this.overlay = o;
     }
 
-    /** 주 구독자(매칭). 하나만 유지된다 — 추가 구독은 {@link #addFrameListener}. */
+    /** 주 구독자(매칭). 하나만 유지된다 - 추가 구독은 {@link #addFrameListener}. */
     public void setFrameListener(FrameListener l) {
         this.frameListener = l;
     }
 
-    /** 프레임 추가 구독 — 주 구독자를 밀어내지 않는다(녹화 tap 등). */
+    /** 프레임 추가 구독 - 주 구독자를 밀어내지 않는다(녹화 tap 등). */
     public void addFrameListener(FrameListener l) {
         if (l != null && !extraListeners.contains(l)) {
             extraListeners.add(l);
@@ -87,7 +87,7 @@ public class CameraCanvas extends Canvas {
             try {
                 l.onFrame(f);
             } catch (Exception ignored) {
-                // 구독자 하나가 죽어도 표시·매칭은 계속
+                // 구독자 하나가 죽어도 표시 / 매칭은 계속
             }
         }
     }
@@ -99,7 +99,7 @@ public class CameraCanvas extends Canvas {
 
     /**
      * 위젯 좌표 → 이미지 픽셀 좌표.
-     * {@link #paint} 와 동일하게 비율 유지·중앙 정렬 변환을 쓴다.
+     * {@link #paint} 와 동일하게 비율 유지 / 중앙 정렬 변환을 쓴다.
      * @return {x, y} 이미지 좌표 (이미지 없으면 null)
      */
     public int[] widgetToImage(int wx, int wy) {
@@ -150,7 +150,7 @@ public class CameraCanvas extends Canvas {
             gc.setInterpolation(SWT.HIGH);
             gc.drawImage(img, 0, 0, iw, ih, dx, dy, dw, dh);
             if (overlay != null) {
-                overlay.paint(gc, s, dx, dy);      // canon 좌표계로 박스·HUD
+                overlay.paint(gc, s, dx, dy);      // canon 좌표계로 박스 / HUD
             }
         } finally {
             img.dispose();
@@ -158,7 +158,7 @@ public class CameraCanvas extends Canvas {
     }
 
     /** AWT BufferedImage → SWT ImageData (24bit RGB). 팔레트는 R/G/B 추출.
-     *  <p>웹캠/처리 프레임은 TYPE_3BYTE_BGR — 래스터 바이트(B,G,R 순)를 직접 int로 디코드해
+     *  <p>웹캠/처리 프레임은 TYPE_3BYTE_BGR - 래스터 바이트(B,G,R 순)를 직접 int로 디코드해
      *  {@code getRGB()}의 픽셀당 ColorModel 변환(640²에서 20~40ms)을 제거한다. 그 외 타입은
      *  안전한 getRGB 폴백. 채움은 검증된 setPixels(팔레트) 경로 그대로 사용. */
     public static ImageData toImageData(BufferedImage bi) {

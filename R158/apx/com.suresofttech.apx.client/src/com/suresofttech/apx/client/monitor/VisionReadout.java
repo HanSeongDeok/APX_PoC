@@ -6,7 +6,7 @@ import org.eclipse.swt.widgets.Label;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
- * 비전 모니터 판독값 — 캔버스 HUD("NCC 0.00")보다 자세한 <b>판정 근거</b>.
+ * 비전 모니터 판독값 - 캔버스 HUD("NCC 0.00")보다 자세한 <b>판정 근거</b>.
  *
  * @deprecated 모니터 뷰에서 판독값 UI를 제공하지 않는다. {@link com.suresofttech.apx.client.view.VisionMonitorView} 참고.
  */
@@ -37,14 +37,14 @@ public class VisionReadout extends ReadoutBar {
         evidenceLbl = field("증거");
     }
 
-    /** 기준 소스 표기 — 설정 변경/측정 시작 양쪽에서 호출. */
+    /** 기준 소스 표기 - 설정 변경/측정 시작 양쪽에서 호출. */
     public void setReference(boolean useReferenceImage, String refPath, double simThr) {
         set(refLbl, (useReferenceImage ? "기준영상 " + baseName(refPath) : "라이브 첫 프레임")
-                + " · 임계 " + f2(simThr));
+                + " / 임계 " + f2(simThr));
         commit();
     }
 
-    /** 측정 시작 — 지표 초기화. */
+    /** 측정 시작 - 지표 초기화. */
     public void onStarted(boolean useReferenceImage, String refPath, double simThr) {
         running = true;
         passAtMs = null;
@@ -57,7 +57,7 @@ public class VisionReadout extends ReadoutBar {
     }
 
     /**
-     * 매 프레임 — 매칭 지표. 측정 전(설정·조준 중)에도 그대로 쓸 수 있다.
+     * 매 프레임 - 매칭 지표. 측정 전(설정 / 조준 중)에도 그대로 쓸 수 있다.
      * @param r 최신 결과(null이면 대기 표기)
      * @param fps 카메라 실측 fps (0 이하면 생략)
      */
@@ -73,12 +73,12 @@ public class VisionReadout extends ReadoutBar {
         if (aligning) {
             set(simLbl, "정렬 중", STATE_BUSY);
         } else {
-            set(simLbl, vsThr(r.psc, r.simThr) + "  (NCC " + f2(r.ncc) + " · SSIM " + f2(r.ssim) + ")",
+            set(simLbl, vsThr(r.psc, r.simThr) + "  (NCC " + f2(r.ncc) + " / SSIM " + f2(r.ssim) + ")",
                     thrState(r.psc, r.simThr));
         }
         set(roiLbl, roiText(r.roi));
-        set(frameLbl, (fps > 0 ? f1(fps) + " fps · " : "")
-                + "간격 " + f1(r.frameGapMs) + " ms · 처리 " + f1(r.procMs) + " ms");
+        set(frameLbl, (fps > 0 ? f1(fps) + " fps / " : "")
+                + "간격 " + f1(r.frameGapMs) + " ms / 처리 " + f1(r.procMs) + " ms");
         if (passAtMs == null) {
             set(judgeLbl, "간격 " + f1(r.frameGapMs) + " ms (전환 대기)");
         }
@@ -89,7 +89,7 @@ public class VisionReadout extends ReadoutBar {
     }
 
     /**
-     * PASS 확정 — 검출 시각과 자체 판단 분해.
+     * PASS 확정 - 검출 시각과 자체 판단 분해.
      * 검출 시각은 L2 캘리브 보정 없이 물리지연(D_cap)을 포함한 값이다.
      */
     public void setPass(Long passAtMs, Double judgeMs, Double gapMs, Double analysisMs) {
@@ -110,20 +110,20 @@ public class VisionReadout extends ReadoutBar {
     }
 
     /**
-     * 측정 중 카메라·해상도가 바뀌었을 때 — 녹화본이 레터박스로 이어 붙었음을 알린다.
+     * 측정 중 카메라 / 해상도가 바뀌었을 때 - 녹화본이 레터박스로 이어 붙었음을 알린다.
      * 프레임별 원본 해상도는 {@code frames.csv}에 남아 있다.
      */
     public void setResolutionChanged(int resizedFrames, int recW, int recH) {
         if (resizedFrames <= 0) {
             return;
         }
-        set(evidenceLbl, String.format("측정 중 해상도 변경 — %d프레임을 %d×%d로 맞춤(frames.csv에 원본 기록)",
+        set(evidenceLbl, String.format("측정 중 해상도 변경 - %d프레임을 %d×%d로 맞춤(frames.csv에 원본 기록)",
                 Integer.valueOf(resizedFrames), Integer.valueOf(recW), Integer.valueOf(recH)),
                 STATE_BUSY);
         commit();
     }
 
-    /** 측정 중단 — 헤더 고정 + ±3프레임 증거 확보 여부. */
+    /** 측정 중단 - 헤더 고정 + ±3프레임 증거 확보 여부. */
     public void onStopped(boolean pass, boolean hasFrameEvidence) {
         running = false;
         set(evidenceLbl, hasFrameEvidence ? "pre/decide/post 확보" : "없음",
@@ -139,12 +139,12 @@ public class VisionReadout extends ReadoutBar {
     }
 
     /**
-     * 입력 끊김 표시 — 프레임이 한동안 안 들어올 때(웹캠 분리·드라이버 정지).
+     * 입력 끊김 표시 - 프레임이 한동안 안 들어올 때(웹캠 분리 / 드라이버 정지).
      * 마지막 지표는 남겨두고 상태만 바꾼다(끊기기 직전 값이 진단에 필요하다).
      * @param stalledMs 마지막 프레임 이후 경과
      */
     public void setStalled(long stalledMs) {
-        set(frameLbl, "입력 끊김 — 마지막 프레임 " + (stalledMs / 1000) + "초 전", STATE_FAIL);
+        set(frameLbl, "입력 끊김 - 마지막 프레임 " + (stalledMs / 1000) + "초 전", STATE_FAIL);
         head(running ? "비전: 입력 끊김 (측정 중)" : "비전: 입력 끊김", STATE_FAIL);
         commit();
     }
@@ -171,7 +171,7 @@ public class VisionReadout extends ReadoutBar {
         if (aligning) {
             return "비전: 정렬 중";
         }
-        String sim = " · 유사도 " + f2(r.psc);
+        String sim = " / 유사도 " + f2(r.psc);
         if (!running) {
             return (r.hit ? "비전: 일치" : "비전: 감시 중") + sim;
         }
@@ -199,10 +199,10 @@ public class VisionReadout extends ReadoutBar {
         double[] a = r.lockAng;
         if (a != null && a.length >= 3) {
             if (sb.length() > 0) {
-                sb.append(" · ");
+                sb.append(" / ");
             }
-            sb.append("roll ").append(f1(a[0])).append("° · scale ").append(f2(a[1]))
-                    .append(" · persp ").append(f2(a[2]));
+            sb.append("roll ").append(f1(a[0])).append("° / scale ").append(f2(a[1]))
+                    .append(" / persp ").append(f2(a[2]));
         }
         return sb.length() == 0 ? DASH : sb.toString();
     }

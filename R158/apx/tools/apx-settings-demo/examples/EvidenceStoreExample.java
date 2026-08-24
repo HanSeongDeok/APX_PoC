@@ -8,7 +8,7 @@ import com.suresofttech.apx.core.measure.EvidenceStore;
 import com.suresofttech.apx.core.measure.MeasureEvidence;
 
 /**
- * TC별 파일 증거 Store API 예시 — DB 없이 {@code <루트>/<tcId>/} 가 row.
+ * TC별 파일 증거 Store API 예시 - DB 없이 {@code <루트>/<tcId>/} 가 row.
  *
  * <pre>
  * EvidenceStore store = EvidenceStore.at(root);
@@ -31,7 +31,7 @@ public final class EvidenceStoreExample {
      *
      * @param evidenceRoot 증거 루트 (아래에 TC 폴더가 생김)
      * @param tcId         Aesop 측정 TC id
-     * @param ev           측정 종료 후 세션 증거(wav·클립 구간 등)
+     * @param ev           측정 종료 후 세션 증거(wav / 클립 구간 등)
      */
     public static File saveAndReadPass(File evidenceRoot, String tcId, MeasureEvidence ev)
             throws Exception {
@@ -44,7 +44,7 @@ public final class EvidenceStoreExample {
         // 채널별 파일
         ev.saveTo(new File(dir, EvidenceBundle.AUDIO_DIR));
 
-        // PASS 시각·밴드 → meta.properties (파일이 곧 DB)
+        // PASS 시각 / 밴드 → meta.properties (파일이 곧 DB)
         List<double[]> spans = Collections.emptyList();
         Double start = ev.getAudioPassStartMs();
         Double end = ev.getAudioPassEndMs();

@@ -5,7 +5,7 @@ import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 import com.suresofttech.apx.ui.widget.settings.audio.ExpectedTonePlayBar;
 
 /**
- * AudioMeasureBar 조립 예시 — 측정/초기화 + Scope·Tone 연결.
+ * AudioMeasureBar 조립 예시 - 측정/초기화 + Scope / Tone 연결.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/AudioMeasureBarExample.java}
  */

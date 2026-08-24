@@ -4,7 +4,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 
 /**
- * RearLegendBar 조립 예시 — 범례 on/off 체크 + Canvas 연결.
+ * RearLegendBar 조립 예시 - 범례 on/off 체크 + Canvas 연결.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/RearLegendBarExample.java}
  */

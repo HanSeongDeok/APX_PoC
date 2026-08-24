@@ -59,7 +59,7 @@ com.suresofttech.apx.ui.widget.settings/
     └── RearGridSizeBar, RearLegendBar, RearGridCanvas
 ```
 
-독립 미리보기: `tools/apx-settings-demo/run-demo.bat` (권장) / `데모실행.bat`  
+독립 미리보기: `tools/apx-settings-demo/run-demo.bat` (권장) / `데모실행.bat`
 조립 예: `SettingsClientView` / `SettingsClientView2`
 
 ## 최소 단위
@@ -70,7 +70,7 @@ com.suresofttech.apx.ui.widget.settings/
 |--------|------|
 | `CameraSelectBar` | 웹캠 콤보 → `setCanvas(CameraCanvas)` |
 | `CameraCanvas` | 웹캠 화면 |
-| `RoiNcc` | ROI/NCC — 캔버스에 붙음 (`Style` 옵션) |
+| `RoiNcc` | ROI/NCC - 캔버스에 붙음 (`Style` 옵션) |
 | `ReferenceImageBar` | 기준 이미지 (옵션) |
 | `VisionThresholdBar` | NCC 임계 → `setRoiNcc` (`Cfg` 옵션) |
 
@@ -83,8 +83,8 @@ com.suresofttech.apx.ui.widget.settings/
 | `ExpectedWavBar` | 기대 wav 경로 (`Cfg` 옵션) |
 | `AudioMeasureBar` | 측정/초기화 → `setScope(AudioScope)` (`Cfg` 옵션) |
 | `AudioScope` | 파형 표시 |
-| `ExpectedTonePlayBar` | 기대음 재생 — 보통 `measure.getActionRow()`에 붙임 |
-| `AudioThresholdBar` | 주파수·파형 임계 (`Cfg` 옵션) |
+| `ExpectedTonePlayBar` | 기대음 재생 - 보통 `measure.getActionRow()`에 붙임 |
+| `AudioThresholdBar` | 주파수 / 파형 임계 (`Cfg` 옵션) |
 
 ### rear
 
@@ -118,7 +118,7 @@ AudioScope scope = new AudioScope(expected, 5000.0);
 measure.setScope(scope);
 new AudioThresholdBar(expected);
 
-// 후방 — Client에서 최소 단위 직접 조립
+// 후방 - Client에서 최소 단위 직접 조립
 RearGridSizeBar size = new RearGridSizeBar(rearGroup);
 RearLegendBar legend = new RearLegendBar(rearGroup);
 RearGrid g = new RearGrid(s.getRearCols(), s.getRearRows());
@@ -133,8 +133,8 @@ legend.setCanvas(rCanvas);
 
 | | 설정 View | 측정 모니터 View |
 |--|-----------|------------------|
-| 목적 | `ApxSettings` 편집 | Kickoff 세션의 **시작 스냅샷**으로 고정 표시·판정 |
+| 목적 | `ApxSettings` 편집 | Kickoff 세션의 **시작 스냅샷**으로 고정 표시 / 판정 |
 | 조립 | Mic/Wav/ROI/격자 등 최소 단위 + 편집 바 | `AudioScope` / `CameraCanvas`+`RoiNcc(interactive=false)` / `RearGridCanvas(interactive=false)` |
-| 엔진 | 설정 탭 단독 측정(AudioMeasureBar 등) | core `MeasureSession` + Client `KickoffView` (전체 PASS 시 후방 자동 PASS·증거 저장) |
+| 엔진 | 설정 탭 단독 측정(AudioMeasureBar 등) | core `MeasureSession` + Client `KickoffView` (전체 PASS 시 후방 자동 PASS / 증거 저장) |
 
 측정 레이아웃: `KickoffView` + `AudioMonitorView` / `VisionMonitorView` / `RearMonitorView` (`ClientPerspective`).

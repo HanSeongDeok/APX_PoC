@@ -18,12 +18,12 @@ import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 기대음 재생/정지 토글 — {@link TonePlayer}.
- * 버튼명은 {@link Cfg} 로 클라이언트가 주입한다.
+ * 기대음 수동 재생. 버튼명은 {@link Cfg} 로 클라이언트가 주입한다.
+ * 비전 PASS 시 자동 재생 여부는 설정 화면 밖의 측정 정책으로 관리한다.
  */
 public class ExpectedTonePlayBar extends Composite {
 
-    /** 클라이언트 주입 버튼명 — 기본값 유지, 필요한 것만 덮어쓴다. */
+    /** 클라이언트 주입 버튼명 - 기본값 유지, 필요한 것만 덮어쓴다. */
     public static final class Cfg {
         public String playText = "기대음 재생";
         public String playingText = "기대음 정지";

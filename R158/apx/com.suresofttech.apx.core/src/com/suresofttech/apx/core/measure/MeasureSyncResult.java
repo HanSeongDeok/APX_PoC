@@ -78,7 +78,7 @@ public final class MeasureSyncResult {
 
         boolean channelsOk = audioPass && visionPass && canOk
                 && (!requireCan || canPresent);
-        // CAN 연동 전: 음향·비전만. CAN 시각이 있으면 스프레드에만 반영하되 필수는 requireCan.
+        // CAN 연동 전: 음향 / 비전만. CAN 시각이 있으면 스프레드에만 반영하되 필수는 requireCan.
         if (!requireCan && canPresent) {
             // optional can in spread already handled
         }

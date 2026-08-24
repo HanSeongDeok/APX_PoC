@@ -18,12 +18,12 @@ import org.eclipse.swt.widgets.Text;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 기대 경고음 .wav 경로 + 파일 선택 — {@link ApxSettings}.
- * 라벨·버튼명은 {@link Cfg} 로 클라이언트가 주입한다.
+ * 기대 경고음 .wav 경로 + 파일 선택 - {@link ApxSettings}.
+ * 라벨 / 버튼명은 {@link Cfg} 로 클라이언트가 주입한다.
  */
 public class ExpectedWavBar extends Composite {
 
-    /** 클라이언트 주입 라벨 — 기본값 유지, 필요한 것만 덮어쓴다. */
+    /** 클라이언트 주입 라벨 - 기본값 유지, 필요한 것만 덮어쓴다. */
     public static final class Cfg {
         public String titleText = "기대 경고음 (.wav)";
         public String pickText = "파일...";

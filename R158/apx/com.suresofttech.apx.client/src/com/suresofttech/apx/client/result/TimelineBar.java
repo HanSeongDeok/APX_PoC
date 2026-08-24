@@ -20,10 +20,10 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Scale;
 
 /**
- * 결과 탭 타임라인 — 슬라이더 + PASS 지점 마커 + 재생.
+ * 결과 탭 타임라인 - 슬라이더 + PASS 지점 마커 + 재생.
  *
  * <p>Scale 위에는 눈금을 그릴 수 없어, 아래 {@link #markerStrip}에 음향/비전 PASS
- * 구간·시각을 색 막대/틱으로 표시한다. 이동 시 현재 시각이 PASS 안인지 라벨로 안내한다.
+ * 구간 / 시각을 색 막대/틱으로 표시한다. 이동 시 현재 시각이 PASS 안인지 라벨로 안내한다.
  */
 public class TimelineBar extends Composite {
 
@@ -158,7 +158,7 @@ public class TimelineBar extends Composite {
     }
 
     /**
-     * 타임라인 길이 설정 — 0 이하면 비활성(스크럽할 게 없음).
+     * 타임라인 길이 설정 - 0 이하면 비활성(스크럽할 게 없음).
      * 커서는 0으로 되돌린다.
      */
     public void setDuration(double durationMs) {
@@ -182,7 +182,7 @@ public class TimelineBar extends Composite {
     }
 
     /**
-     * PASS 시각·구간 마커.
+     * PASS 시각 / 구간 마커.
      * @param audioPassMs 음향 PASS latch 시각
      * @param visionPassMs 비전 PASS latch 시각
      * @param audioSpans 음향 초록 밴드 구간들
@@ -207,12 +207,12 @@ public class TimelineBar extends Composite {
         layout(true);
     }
 
-    /** 하위호환 — 구간 없이 시각만. */
+    /** 하위호환 - 구간 없이 시각만. */
     public void setMarkers(Long audioPassMs, Long visionPassMs) {
         setMarkers(audioPassMs, visionPassMs, null, null);
     }
 
-    /** 프로그램에서 시각 이동 — 재생 위치 반영 등. 리스너로 다시 알린다. */
+    /** 프로그램에서 시각 이동 - 재생 위치 반영 등. 리스너로 다시 알린다. */
     public void setCurrentMs(double tMs, boolean fromPlayback) {
         if (durationMs <= 0) {
             return;
@@ -341,7 +341,7 @@ public class TimelineBar extends Composite {
         }
         if (visionPassMs != null) {
             if (sb.length() > 0) {
-                sb.append("   ·   ");
+                sb.append(" / ");
             }
             sb.append("비전 PASS ").append(visionPassMs).append(" ms");
         }

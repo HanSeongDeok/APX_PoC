@@ -8,7 +8,7 @@ import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
 /**
- * 구조적 유사도(SSIM) — 파이썬 skimage structural_similarity 대체.
+ * 구조적 유사도(SSIM) - 파이썬 skimage structural_similarity 대체.
  * Wang et al. 표준 구현(11x11 gaussian, sigma 1.5)을 OpenCV 연산으로. 입력은 동일크기 그레이(8U).
  */
 public final class Ssim {

@@ -4,7 +4,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * VisionThresholdBar 조립 예시 — simThr ± 조절 + RoiNcc 점수 연결.
+ * VisionThresholdBar 조립 예시 - simThr ± 조절 + RoiNcc 점수 연결.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/VisionThresholdBarExample.java}
  */

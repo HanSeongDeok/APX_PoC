@@ -6,7 +6,7 @@ import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.client.monitor.VisionReadout;
 
 /**
- * VisionReadout 조립 예시 — 유사도·ROI·프레임·±1f 증거 판독값.
+ * VisionReadout 조립 예시 - 유사도 / ROI / 프레임 / ±1f 증거 판독값.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/VisionReadoutExample.java}
  */

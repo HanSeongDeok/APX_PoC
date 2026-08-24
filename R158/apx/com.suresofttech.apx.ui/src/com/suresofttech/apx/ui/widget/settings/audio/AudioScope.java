@@ -27,22 +27,22 @@ import ChartDirector.LineLayer;
 import ChartDirector.XYChart;
 
 /**
- * 음향 스코프 — <b>ChartDirector 렌더(→PNG→SWT Image)</b>. (구 XChart+SWT_AWT 구성을 라이브러리만 교체.)
- * 화면 구성·축(경과시간 ms)·범례·점선·채움은 이전 그대로 유지. 3패널:
+ * 음향 스코프 - <b>ChartDirector 렌더(→PNG→SWT Image)</b>. (구 XChart+SWT_AWT 구성을 라이브러리만 교체.)
+ * 화면 구성 / 축(경과시간 ms) / 범례 / 점선 / 채움은 이전 그대로 유지. 3패널:
  *  ① 파형 크기 포락선 (X=경과시간ms, Y=±1, 라이브 채움)
  *  ② 음정 추적 (X=경과시간ms, Y=주파수 Hz, 기대=수평 점선 @목표Hz, 라이브=검출 주 주파수 실선)
- *  ③ 일치도 추이 (주파수·파형 일치도 + 각 임계 점선, X=경과시간ms)
+ *  ③ 일치도 추이 (주파수 / 파형 일치도 + 각 임계 점선, X=경과시간ms)
  *
- * <p><b>기본은 파형만</b> 표시. 옵션으로 ② 주파수(음정){@link #setShowPitch}·③ 일치도 추이{@link #setShowTrend}
+ * <p><b>기본은 파형만</b> 표시. 옵션으로 ② 주파수(음정){@link #setShowPitch} / ③ 일치도 추이{@link #setShowTrend}
  * 를 각각 켜면, 상단: ① 파형(좌) | ② 음정(우), 하단 전폭: ③ 추이 로 확장된다.
  * 판정 결과 텍스트/막대는 AudioView가 담당. ChartDirector multiline 방식(범례 박스 + dashLineColor 점선).
  */
 public class AudioScope extends Canvas {
 
-    /** 라이브·스크럽 공통 흐르는 창 폭(ms). 설정/모니터와 결과 wav 재렌더가 동일. */
+    /** 라이브 / 스크럽 공통 흐르는 창 폭(ms). 설정/모니터와 결과 wav 재렌더가 동일. */
     public static final double MATCH_WIN_MS = 10000.0;
     private static final double ENV_COL_MS = 4.0;         // 파형 포락선 열 폭(ms)
-    private static final int CAP_M = 1200;                // 음정·추이 링 점 수
+    private static final int CAP_M = 1200;                // 음정 / 추이 링 점 수
     private static final int ENV_CAP = (int) (MATCH_WIN_MS / ENV_COL_MS) + 600;
 
     private static final int C_EXP = 0x828282;    // 기대/보조(회색)
@@ -54,10 +54,10 @@ public class AudioScope extends Canvas {
     private static final String FONT = "Malgun Gothic";
     private static final int LEGEND_W = 92;       // 범례 영역 폭(px)
     private static final int DEFAULT_TICK_APPROX = 10;
-    /** 설정·모니터·결과 스크럽 공통 기본 X축 눈금 간격(ms). */
+    /** 설정 / 모니터 / 결과 스크럽 공통 기본 X축 눈금 간격(ms). */
     public static final double DEFAULT_TICK_MS = 1000.0;
 
-    // 플롯영역 여백(px) — baseChart 의 setPlotArea 와 drawPassBand 오버레이가 반드시 공유해야
+    // 플롯영역 여백(px) - baseChart 의 setPlotArea 와 drawPassBand 오버레이가 반드시 공유해야
     // PASS 밴드가 스크롤되는 파형 데이터와 정확히 정렬된다(불일치 시 x좌표가 커질수록 밀림).
     private static final int PLOT_L = 52;                    // 좌: Y축 라벨
     private static final int PLOT_T = 24;                    // 상: 제목
@@ -66,29 +66,29 @@ public class AudioScope extends Canvas {
     private static final int PLOT_R_PLAIN = 12;              // 우: 범례 없을 때(파형 패널)
 
     private final double fmax;
-    private boolean showPitch = false;   // 주파수(음정) 패널 — 기본 off(파형만)
-    private boolean showTrend = false;   // 일치도 추이 패널 — 기본 off(파형만)
+    private boolean showPitch = false;   // 주파수(음정) 패널 - 기본 off(파형만)
+    private boolean showTrend = false;   // 일치도 추이 패널 - 기본 off(파형만)
 
-    // ── 표출 스타일(클라이언트 주입) — 기본값 유지, setter로 재정의 ──
+    // ── 표출 스타일(클라이언트 주입) - 기본값 유지, setter로 재정의 ──
     private int tickApprox = DEFAULT_TICK_APPROX;              // X축 목표 눈금 수
     private double tickMs = DEFAULT_TICK_MS;                   // >0 이면 눈금 간격(ms) 직접 지정(tickApprox 무시)
     private int passAlpha = 80;                               // PASS 밴드 투명도(0~255)
     private String waveTitle = "파형 그래프";   // 파형 패널 제목
 
-    // 파형 크기 포락선(시간축 ms) — 열당 max/min
+    // 파형 크기 포락선(시간축 ms) - 열당 max/min
     private final double[] eT = new double[ENV_CAP];
     private final double[] eHi = new double[ENV_CAP];
     private final double[] eLo = new double[ENV_CAP];
     private int eHead, eCount;
     private double eLast = -1;
 
-    // 음정 추적(시간축 ms) — 라이브 지배 주파수(Hz)
+    // 음정 추적(시간축 ms) - 라이브 지배 주파수(Hz)
     private final double[] pT = new double[CAP_M];
     private final double[] pHz = new double[CAP_M];
     private int pHead, pCount;
     private double pLast = -1;
 
-    // 일치도 추이(시간축 ms) — 주파수·파형
+    // 일치도 추이(시간축 ms) - 주파수 / 파형
     private final double[] mT = new double[CAP_M];
     private final double[] mF = new double[CAP_M];
     private final double[] mW = new double[CAP_M];
@@ -103,17 +103,17 @@ public class AudioScope extends Canvas {
     private double axLo = 0;    // 눈금 그리드에 정렬된 X축 표시 범위(정수 라벨)
     private double axHi = MATCH_WIN_MS;
 
-    // PASS 판정 구간(ms) 목록 — 파형 패널에 초록 밴드로 표시. isPass 인 동안 실시간으로 자란다.
+    // PASS 판정 구간(ms) 목록 - 파형 패널에 초록 밴드로 표시. isPass 인 동안 실시간으로 자란다.
     private final List<double[]> passSpans = new ArrayList<double[]>();   // 각 원소 = {startMs, endMs}
     private int passOpen = -1;   // 현재 열린(자라는) 밴드 index. -1=없음
     private Color passColor;   // 초록(반투명 밴드용)
 
-    // 결과 스크럽(정적 구간 렌더) — 라이브 스트리밍 대신 wav 구간을 한 번에 그린다.
+    // 결과 스크럽(정적 구간 렌더) - 라이브 스트리밍 대신 wav 구간을 한 번에 그린다.
     private double cursorMs = -1;   // <0 이면 커서 없음
     private Color cursorColor;
     /**
      * true면 X축을 winMin~winMax 그대로 쓴다(스크럽).
-     * false면 눈금에 맞춰 축을 늘린다(라이브) — 늘린 구간엔 포락선이 없어 양끝이 비어 보인다.
+     * false면 눈금에 맞춰 축을 늘린다(라이브) - 늘린 구간엔 포락선이 없어 양끝이 비어 보인다.
      */
     private boolean exactXAxis;
 
@@ -131,7 +131,7 @@ public class AudioScope extends Canvas {
                 }
                 if (composite != null && !composite.isDisposed()) {
                     e.gc.drawImage(composite, 0, 0);
-                    // PASS/커서는 파형 리빌드와 분리 — updatePass 직후 즉시 반영
+                    // PASS/커서는 파형 리빌드와 분리 - updatePass 직후 즉시 반영
                     Rectangle ca = getClientArea();
                     paintOverlays(e.gc, Math.max(120, ca.width), Math.max(160, ca.height));
                 } else {
@@ -171,7 +171,7 @@ public class AudioScope extends Canvas {
         setShowPitch(!b);
     }
 
-    // ── 표출 스타일 주입(items 3·4) ──────────────────────────────
+    // ── 표출 스타일 주입(items 3 / 4) ──────────────────────────────
 
     /** X축 목표 눈금 수(틱 개수). tickMs 미지정(0) 시 사용. */
     public void setTickApprox(int n) {
@@ -210,9 +210,9 @@ public class AudioScope extends Canvas {
     }
 
     /**
-     * <b>실시간 PASS 밴딩</b> — 매 틱 현재 시각(ms)과 합격 여부를 넘긴다.
+     * <b>실시간 PASS 밴딩</b> - 매 틱 현재 시각(ms)과 합격 여부를 넘긴다.
      * 합격 중이면 열린 밴드를 현재 시각까지 <b>실시간으로 늘리고</b>, 불합격이 되면 그 밴드를 닫는다.
-     * 파형 ChartDirector 리빌드 없이 오버레이만 즉시 paint — 짧은 PASS도 초록으로 보인다.
+     * 파형 ChartDirector 리빌드 없이 오버레이만 즉시 paint - 짧은 PASS도 초록으로 보인다.
      *
      * <p>축은 마지막 파형 리빌드와 공유한다. 오버레이만 축을 앞서 바꾸면 PNG와 밴드가 어긋난다.
      */
@@ -247,7 +247,7 @@ public class AudioScope extends Canvas {
         passSpans.add(new double[] { Math.min(startMs, endMs), Math.max(startMs, endMs) });
     }
 
-    /** PASS 밴드 1개만 표시(기존 것 지우고 설정) — 단일 판정용 편의. */
+    /** PASS 밴드 1개만 표시(기존 것 지우고 설정) - 단일 판정용 편의. */
     public void setPassSpan(double startMs, double endMs) {
         passSpans.clear();
         passOpen = -1;
@@ -277,7 +277,7 @@ public class AudioScope extends Canvas {
         return out;
     }
 
-    /** 기대 beep 등록 — 목표 주파수만 음정 패널 수평 점선으로. (파형은 라이브 포락선만 표시) */
+    /** 기대 beep 등록 - 목표 주파수만 음정 패널 수평 점선으로. (파형은 라이브 포락선만 표시) */
     public void setExpected(double[] tmpl, int sr) {
         if (tmpl == null || tmpl.length < 2) {
             return;
@@ -359,7 +359,7 @@ public class AudioScope extends Canvas {
         }
     }
 
-    /** 매 틱: 주파수·파형 일치도 추이 누적 + 화면 커밋(리빌드·리드로우). */
+    /** 매 틱: 주파수 / 파형 일치도 추이 누적 + 화면 커밋(리빌드 / 리드로우). */
     public void setMatchTrend(double freqSim, double waveSim, double fThr, double wThr, double elapsedSec) {
         this.freqThr = fThr;
         this.waveThr = wThr;
@@ -383,11 +383,11 @@ public class AudioScope extends Canvas {
     }
 
     /**
-     * <b>결과 스크럽용 정적 렌더</b> — 저장된 wav의 한 구간을 통째로 그린다.
+     * <b>결과 스크럽용 정적 렌더</b> - 저장된 wav의 한 구간을 통째로 그린다.
      * 라이브 스트리밍({@link #setData})과 달리 링에 누적하지 않고 매번 새로 채우므로,
      * 슬라이더를 아무 방향으로 움직여도 그 시점 파형이 바로 나온다.
      *
-     * <p>DB 없이 wav만 다시 읽어 그리는 경로다 — 파형 이미지를 따로 저장하지 않는다.
+     * <p>DB 없이 wav만 다시 읽어 그리는 경로다 - 파형 이미지를 따로 저장하지 않는다.
      *
      * @param samples wav 전체 샘플([-1,1))
      * @param sr 샘플레이트
@@ -411,7 +411,7 @@ public class AudioScope extends Canvas {
         }
         double span = hi0 - lo0;
 
-        // 창이 그대로면 커서만 옮긴다 — 포락선 재계산과 리빌드를 아예 건너뛴다.
+        // 창이 그대로면 커서만 옮긴다 - 포락선 재계산과 리빌드를 아예 건너뛴다.
         // 스크럽 드래그에서 표시 구간이 바뀌지 않는 동안(예: 0~10s 구간 안에서 이동)
         // 매 이벤트마다 수십만 샘플을 다시 스캔하고 차트를 다시 그리던 낭비를 없앤다.
         // 커서는 paintOverlays 가 그리므로 redraw 만으로 충분하다.
@@ -434,7 +434,7 @@ public class AudioScope extends Canvas {
         mCount = 0;
 
         // 열 개수는 플롯 <b>픽셀 폭</b>에 맞춘다. 예전엔 ENV_CAP(약 3100) 기준이라
-        // 화면 폭의 4~5배를 계산·전달했다 — 눈에 보이지 않는 낭비였고 스크럽이 느렸다.
+        // 화면 폭의 4~5배를 계산 / 전달했다 - 눈에 보이지 않는 낭비였고 스크럽이 느렸다.
         int plotW = Math.max(1, Math.max(120, getClientArea().width) - PLOT_L - PLOT_R_PLAIN);
         int cols = Math.max(2, Math.min(ENV_CAP - 8, plotW));
         double colMs = span / cols;
@@ -465,7 +465,7 @@ public class AudioScope extends Canvas {
         winMin = lo0;
         winMax = hi0;
         this.cursorMs = cursorMs;
-        // 라이브 setData 와 동일 — tickMs 그리드(floor/ceil). exact면 짧은 wav에서 0~4.5s처럼 줄어듦
+        // 라이브 setData 와 동일 - tickMs 그리드(floor/ceil). exact면 짧은 wav에서 0~4.5s처럼 줄어듦
         this.exactXAxis = false;
         rebuildAndRedraw();
     }
@@ -474,7 +474,7 @@ public class AudioScope extends Canvas {
     public void setCursorMs(double ms) {
         this.cursorMs = ms;
         if (!isDisposed()) {
-            redraw();   // 커서는 paint 오버레이 — 전체 차트 리빌드 불필요
+            redraw();   // 커서는 paint 오버레이 - 전체 차트 리빌드 불필요
         }
     }
 
@@ -482,7 +482,7 @@ public class AudioScope extends Canvas {
         return cursorMs;
     }
 
-    /** 그래프 초기화(측정 리셋) — 링 비움. 기대(목표 주파수)는 유지. */
+    /** 그래프 초기화(측정 리셋) - 링 비움. 기대(목표 주파수)는 유지. */
     public void clear() {
         eHead = 0;
         eCount = 0;
@@ -502,7 +502,7 @@ public class AudioScope extends Canvas {
     }
 
     /**
-     * 현재 스코프 PNG (증거·Result용).
+     * 현재 스코프 PNG (증거 / Result용).
      * ChartDirector 오프스크린 {@code composite}를 직접 인코딩한다.
      * (SWT {@code copyArea}는 redraw 전이면 빈 축만 찍히는 문제 있음)
      */
@@ -511,7 +511,7 @@ public class AudioScope extends Canvas {
         if (composite == null || composite.isDisposed()) {
             return null;
         }
-        // composite는 파형만 — PASS/커서는 임시 스냅에만 구워 이중 오버레이를 피한다
+        // composite는 파형만 - PASS/커서는 임시 스냅에만 구워 이중 오버레이를 피한다
         Rectangle b = composite.getBounds();
         Image snap = new Image(getDisplay(), b.width, b.height);
         GC bake = new GC(snap);
@@ -562,7 +562,7 @@ public class AudioScope extends Canvas {
     private long lastRebuildAt;
 
     /**
-     * 재렌더 요청 — <b>과도한 호출을 합친다</b>.
+     * 재렌더 요청 - <b>과도한 호출을 합친다</b>.
      *
      * <p>이 메서드는 세 곳에서 몰려 들어온다: 리사이즈 드래그(초당 수십 번),
      * 오디오 블록 도착(약 46ms마다), 스크럽 슬라이더 드래그. 예전에는 그때마다
@@ -616,7 +616,7 @@ public class AudioScope extends Canvas {
         gc.setBackground(getDisplay().getSystemColor(SWT.COLOR_WHITE));
         gc.fillRectangle(0, 0, w, h);
         if (showPitch) {
-            // 상단: 파형(좌) | 주파수(우) — PASS/커서는 paintOverlays
+            // 상단: 파형(좌) | 주파수(우) - PASS/커서는 paintOverlays
             int halfW = w / 2;
             drawPng(gc, wavePng(halfW, topH), 0, 0);
             drawPng(gc, pitchPng(w - halfW, topH), halfW, 0);
@@ -634,7 +634,7 @@ public class AudioScope extends Canvas {
         composite = comp;
     }
 
-    /** PASS 밴드·스크럽 커서를 파형 패널 위에 덧그림(리빌드와 분리). */
+    /** PASS 밴드 / 스크럽 커서를 파형 패널 위에 덧그림(리빌드와 분리). */
     private void paintOverlays(GC gc, int w, int h) {
         int topH = showTrend ? h / 2 : h;
         if (showPitch) {
@@ -680,7 +680,7 @@ public class AudioScope extends Canvas {
 
     /**
      * PASS 구간을 파형 패널 플롯영역에 초록 반투명 밴드로 덧그림.
-     * (px,py)=패널 원점, (pw,ph)=패널 크기. 플롯영역은 baseChart 의 setPlotArea(52,24,·,h-54) 와 일치.
+     * (px,py)=패널 원점, (pw,ph)=패널 크기. 플롯영역은 baseChart 의 setPlotArea(52,24, / ,h-54) 와 일치.
      */
     private void drawPassBand(GC gc, int px, int py, int pw, int ph) {
         if (passSpans.isEmpty() || passColor == null) {
@@ -711,14 +711,14 @@ public class AudioScope extends Canvas {
         gc.setAlpha(prevAlpha);
     }
 
-    /** 차트 공통 골격 — 플롯영역·제목·ms X축. showLegend=false 면 범례 자리까지 플롯에 사용. */
+    /** 차트 공통 골격 - 플롯영역 / 제목 / ms X축. showLegend=false 면 범례 자리까지 플롯에 사용. */
     private XYChart baseChart(int w, int h, String title, int approxTicks) {
         return baseChart(w, h, title, approxTicks, true);
     }
 
     private XYChart baseChart(int w, int h, String title, int approxTicks, boolean showLegend) {
         XYChart c = new XYChart(w, h, BG);
-        c.setAntiAlias(true);   // 계단현상 완화 — 파형 가장자리가 부드럽게
+        c.setAntiAlias(true);   // 계단현상 완화 - 파형 가장자리가 부드럽게
         int right = showLegend ? PLOT_R_LEGEND : PLOT_R_PLAIN;
         int plotW = Math.max(1, w - PLOT_L - right);
         c.setPlotArea(PLOT_L, PLOT_T, plotW, Math.max(1, h - PLOT_V_CHROME), BG, -1, 0xdddddd, 0xf0f0f0, -1);
@@ -747,11 +747,11 @@ public class AudioScope extends Canvas {
         return c;
     }
 
-    /** ① 파형 크기 포락선 — 채움. Y축은 진폭 ±1 → ±100%. 범례 없음. */
+    /** ① 파형 크기 포락선 - 채움. Y축은 진폭 ±1 → ±100%. 범례 없음. */
     /**
-     * <b>임의 구간 파형 PNG</b> — 라이브 스코프 상태와 무관하게 샘플에서 직접 렌더한다.
+     * <b>임의 구간 파형 PNG</b> - 라이브 스코프 상태와 무관하게 샘플에서 직접 렌더한다.
      * 클라가 {@code full.wav} 샘플의 {@code [startMs, endMs)} 구간만 잘라
-     * 보고서에 넣을 때 사용. 스타일(검정 채움·±100%·ms축)은 라이브 파형과 동일.
+     * 보고서에 넣을 때 사용. 스타일(검정 채움 / ±100% / ms축)은 라이브 파형과 동일.
      *
      * @param samples    전체 샘플 [-1,1]
      * @param sampleRate 샘플레이트(Hz)
@@ -793,7 +793,7 @@ public class AudioScope extends Canvas {
         if (i1 - i0 < 2) {
             return null;
         }
-        // 열(column)당 max/min 포락선 — 열 수는 플롯 폭을 넘지 않게
+        // 열(column)당 max/min 포락선 - 열 수는 플롯 폭을 넘지 않게
         int cols = Math.max(2, Math.min(plotW, (int) Math.round((b - a) / ENV_COL_MS)));
         double[] tx = new double[cols];
         double[] hiV = new double[cols];
@@ -826,9 +826,9 @@ public class AudioScope extends Canvas {
     }
 
     /**
-     * 파형 채움 레이어 — 테두리를 <b>채움과 같은 색 1px</b>로 둔다.
+     * 파형 채움 레이어 - 테두리를 <b>채움과 같은 색 1px</b>로 둔다.
      * <ul>
-     *   <li>기본 테두리(다른 색·굵기)를 그대로 두면 열마다 윤곽선이 겹쳐 굵은 덩어리로 보인다.</li>
+     *   <li>기본 테두리(다른 색 / 굵기)를 그대로 두면 열마다 윤곽선이 겹쳐 굵은 덩어리로 보인다.</li>
      *   <li>반대로 테두리를 아예 없애면(Transparent) 1픽셀 폭의 짧은 스파이크가
      *       안티에일리어싱에 묻혀 <b>잘려 보인다</b>. 같은 색 1px이면 최소 1픽셀은 찍힌다.</li>
      * </ul>
@@ -861,7 +861,7 @@ public class AudioScope extends Canvas {
             m++;
         }
         if (m >= 2) {
-            // 한 픽셀 = 한 열(max/min) — 녹음 파형과 같은 밀도.
+            // 한 픽셀 = 한 열(max/min) - 녹음 파형과 같은 밀도.
             // 버킷 경계를 <b>시간(axLo 기준)</b>으로 고정한다. 인덱스로 나누면 프레임마다
             // 경계가 밀려 같은 소리가 픽셀을 오가며 "지글지글" 떨린다.
             int plotW = Math.max(1, w - PLOT_L - PLOT_R_PLAIN);
@@ -922,7 +922,7 @@ public class AudioScope extends Canvas {
         return c.makeChart2(Chart.PNG);
     }
 
-    /** ② 음정 추적 — 기대(수평 점선) vs 라이브(실선). */
+    /** ② 음정 추적 - 기대(수평 점선) vs 라이브(실선). */
     private byte[] pitchPng(int w, int h) {
         XYChart c = baseChart(w, h, "음정 추적 (X=경과시간 / Y=주파수 Hz / 기대 점선 / 라이브 실선)", tickApprox);
         c.yAxis().setLinearScale(0, fmax, 1000);
@@ -952,7 +952,7 @@ public class AudioScope extends Canvas {
         return c.makeChart2(Chart.PNG);
     }
 
-    /** ③ 일치도 추이 — 주파수·파형 실선 + 각 임계 점선. */
+    /** ③ 일치도 추이 - 주파수 / 파형 실선 + 각 임계 점선. */
     private byte[] trendPng(int w, int h) {
         XYChart c = baseChart(w, h, "일치도 추이 - 주파수 and 파형 (경과시간축, 임계선)", tickApprox);
         c.yAxis().setLinearScale(0, 1.0, 0.2);
@@ -991,7 +991,7 @@ public class AudioScope extends Canvas {
         return c.makeChart2(Chart.PNG);
     }
 
-    /** ms X축 눈금 간격 — 구간/목표틱수에 맞는 nice-step. */
+    /** ms X축 눈금 간격 - 구간/목표틱수에 맞는 nice-step. */
     private static double msTick(double range, int approx) {
         double raw = range / Math.max(1, approx);
         double[] nice = { 100, 200, 500, 1000, 2000, 5000, 10000 };

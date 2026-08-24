@@ -19,11 +19,11 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 
 /**
- * 후방 모니터 — 설정과 동일 범례({@link RearGridCanvas#applyDefaultLegend} +
+ * 후방 모니터 - 설정과 동일 범례({@link RearGridCanvas#applyDefaultLegend} +
  * {@link ApxSettings#isRearShowLegend}).
  * 측정 중 Select는 MEASURING만. PASS/FAIL은 중단 시 클라 {@link #setVerdicts}.
  *
- * <p>격자 색으로 상태를 표시한다. 판독값(집계·좌표별 판정 글) UI는 제공하지 않는다.
+ * <p>격자 색으로 상태를 표시한다. 판독값(집계 / 좌표별 판정 글) UI는 제공하지 않는다.
  */
 public class RearMonitorView extends ViewPart {
 
@@ -53,7 +53,7 @@ public class RearMonitorView extends ViewPart {
         applyFromSettings();
     }
 
-    /** 설정 확인 후 — 격자·Select·범례(설정과 동일). */
+    /** 설정 확인 후 - 격자 / Select / 범례(설정과 동일). */
     public void applyFromSettings() {
         if (canvas == null || canvas.isDisposed()) {
             return;
@@ -77,7 +77,7 @@ public class RearMonitorView extends ViewPart {
         }
     }
 
-    /** 측정 시작 — 스냅샷 격자·Select, Select 포인트는 MEASURING. */
+    /** 측정 시작 - 스냅샷 격자 / Select, Select 포인트는 MEASURING. */
     public void onMeasureStarted(MeasureSession session) {
         MeasureConfigSnapshot snap = session == null ? null : session.getSnapshot();
         if (canvas == null || canvas.isDisposed() || snap == null) {
@@ -118,8 +118,8 @@ public class RearMonitorView extends ViewPart {
     }
 
     /**
-     * 측정 중단 시 클라 최종 판정 — PASS/FAIL 색 반영.
-     * ResultView·증거 스냅샷은 이 호출 이후 캡처한다.
+     * 측정 중단 시 클라 최종 판정 - PASS/FAIL 색 반영.
+     * ResultView / 증거 스냅샷은 이 호출 이후 캡처한다.
      */
     public void setVerdicts(List<VerdictResult> results) {
         if (canvas == null || canvas.isDisposed()) {
@@ -153,14 +153,14 @@ public class RearMonitorView extends ViewPart {
     }
 
     /**
-     * 중단 시 Kickoff 최종 동기 판정 — 판독값 UI 미제공이므로 no-op.
+     * 중단 시 Kickoff 최종 동기 판정 - 판독값 UI 미제공이므로 no-op.
      * Kickoff 호출 호환용으로 남긴다.
      */
     public void setFinalVerdict(boolean pass, Long overallMs, String summary) {
         // no-op: 판독값 UI 미제공
     }
 
-    /** 저장된 후방 증거 스냅샷 요약 — 판독값 UI 미제공이므로 no-op. */
+    /** 저장된 후방 증거 스냅샷 요약 - 판독값 UI 미제공이므로 no-op. */
     public void setEvidenceNote(String note) {
         // no-op: 판독값 UI 미제공
     }
@@ -170,7 +170,7 @@ public class RearMonitorView extends ViewPart {
     }
 
     /**
-     * 대기 중인 그리기를 즉시 반영 — {@link #setVerdicts} 직후 캡처 시
+     * 대기 중인 그리기를 즉시 반영 - {@link #setVerdicts} 직후 캡처 시
      * PASS/FAIL 색이 빠진 화면이 찍히는 것을 막는다.
      */
     public void refreshNow() {

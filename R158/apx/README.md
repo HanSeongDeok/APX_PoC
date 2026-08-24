@@ -4,7 +4,7 @@
 
 ## 기준 (고정)
 
-- **Java 8** (JavaSE-1.8) — `Bundle-RequiredExecutionEnvironment` 및 컴파일 타겟
+- **Java 8** (JavaSE-1.8) - `Bundle-RequiredExecutionEnvironment` 및 컴파일 타겟
 - **레거시 RCP** (Eclipse 3.x 계열: `IPerspectiveFactory`, `org.eclipse.ui.views` 확장점, 클래식 plugin.xml)
 - **번들 네이밍** `com.suresofttech.apx.*` (기존 제품 편입 대비)
 - **원칙**: 유지보수를 위해 **외부 라이브러리 우선**(직접 구현 최소화), native 의존 회피(RCP p2 배포 단순화)
@@ -39,25 +39,25 @@ R158/apx/
       ApxPerspective, view/*, widget/*
 ```
 
-기대 자산(차량 후방 이미지·기대음 WAV)은 PoC 경로 `poc/r158/expected/` 를 그대로 사용한다.
+기대 자산(차량 후방 이미지 / 기대음 WAV)은 PoC 경로 `poc/r158/expected/` 를 그대로 사용한다.
 
 ## 이식 상태
 
 | 모듈 | 파이썬 원본 | 상태 |
 |---|---|---|
-| 음향 일치 엔진 | engine/audio.py | ✅ **이식·검증 완료** (파이썬과 동일 결과) |
+| 음향 일치 엔진 | engine/audio.py | ✅ **이식 / 검증 완료** (파이썬과 동일 결과) |
 | 근접 경고음 생성 | engine/tone.py | ✅ 이식 완료 |
 | wav 로드 | (scipy.io.wavfile) | ✅ WavIo (JDK 내장) |
 | FFT/상관 | numpy/scipy | ✅ 무의존 구현 (radix-2 FFT + NCC) |
 | 음향 View | ui/audio_tab.py | 🟡 배선 골격 (마이크→엔진→SWT) |
 | 설정/기어/클러스터 View | ui/*.py | 🟡 스켈레톤 |
-| 실시간 파형·스펙트럼 | ui/scope.py | ✅ ScopeCanvas (SWT GC, 무의존) |
+| 실시간 파형 / 스펙트럼 | ui/scope.py | ✅ ScopeCanvas (SWT GC, 무의존) |
 | 검출 지연(콜드스타트) | (신규) | ✅ AudioView 표시 + LatencyCheck |
-| 기어·클러스터 엔진 | engine/{gear,cluster}.py | 🔴 미착수 (BoofCV 필요) |
+| 기어 / 클러스터 엔진 | engine/{gear,cluster}.py | 🔴 미착수 (BoofCV 필요) |
 
-## 빌드·검증
+## 빌드 / 검증
 
-### 엔진(core) — Eclipse 없이 순수 검증 가능
+### 엔진(core) - Eclipse 없이 순수 검증 가능
 ```
 cd com.suresofttech.apx.core
 javac -encoding UTF-8 -source 8 -target 8 -d bin $(find src -name "*.java")
@@ -65,16 +65,16 @@ java -cp bin com.suresofttech.apx.core.audio.SelfCheck      # → ALL PASS
 ```
 SelfCheck 는 파이썬에서 돌린 것과 동일 시나리오(일치 PASS, 900Hz 불일치 FAIL, AND 게이트, Tone 5.28s)를 검증.
 
-### UI 번들 — Eclipse PDE 필요
+### UI 번들 - Eclipse PDE 필요
 
-**Import 경로 (이동 후):** `R158/apx/com.suresofttech.apx.core`, `R158/apx/com.suresofttech.apx.ui`  
+**Import 경로 (이동 후):** `R158/apx/com.suresofttech.apx.core`, `R158/apx/com.suresofttech.apx.ui`
 (예전 `poc/r158/apx_app_java/...` 프로젝트가 워크스페이스에 있으면 먼저 제거)
 
 1. **File → Import → Existing Projects into Workspace**
    - root: `R158/apx` (또는 두 플러그인 폴더를 각각 선택)
    - `com.suresofttech.apx.core`, `com.suresofttech.apx.ui` 둘 다 체크
-2. **Target Platform** (중요): Window → Preferences → Plug-in Development → Target Platform  
-   - Eclipse SDK / RCP가 포함된 active target 필요  
+2. **Target Platform** (중요): Window → Preferences → Plug-in Development → Target Platform
+   - Eclipse SDK / RCP가 포함된 active target 필요
    - `org.eclipse.ui` 등이 빨간불이면 Target이 비어 있는 상태
 3. **JRE**: JavaSE-1.8 실행 환경이 잡혀 있어야 함 (Project → Properties → Java Build Path)
 4. core `lib/opencv-4.9.0-0.jar` 로컬 배치 확인 (`VISION_SETUP.md`)
@@ -83,6 +83,6 @@ SelfCheck 는 파이썬에서 돌린 것과 동일 시나리오(일치 PASS, 900
 
 ## 이식 시 주의 (엔진)
 
-- **FFT**: radix-2 로 다음 2의 거듭제곱 zero-padding. 라이브·템플릿 동일 길이라 일치도(정규화)엔 영향 없음. NumPy 완전 수치 일치가 필요하면 JTransforms(임의 길이 rfft)로 교체.
-- **상호상관**: FFT 기반(합성곱 정리) O(S log S) + 국소에너지 prefix-sum O(S). 직접 O(S·L)(`nccMaxDirect`)과 수치 동일, 검증 완료. sr=44100 기준 블록당 45ms→4ms(11×), 실시간 배속 0.96→0.09.
-- **판정**: `(freqSim ≥ freqThr) AND (waveSim ≥ waveThr)` — 파이썬 최신본과 동일.
+- **FFT**: radix-2 로 다음 2의 거듭제곱 zero-padding. 라이브 / 템플릿 동일 길이라 일치도(정규화)엔 영향 없음. NumPy 완전 수치 일치가 필요하면 JTransforms(임의 길이 rfft)로 교체.
+- **상호상관**: FFT 기반(합성곱 정리) O(S log S) + 국소에너지 prefix-sum O(S). 직접 O(S / L)(`nccMaxDirect`)과 수치 동일, 검증 완료. sr=44100 기준 블록당 45ms→4ms(11×), 실시간 배속 0.96→0.09.
+- **판정**: `(freqSim ≥ freqThr) AND (waveSim ≥ waveThr)` - 파이썬 최신본과 동일.

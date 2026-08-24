@@ -8,7 +8,7 @@ import org.eclipse.ui.actions.ActionFactory.IWorkbenchAction;
 import org.eclipse.ui.application.ActionBarAdvisor;
 import org.eclipse.ui.application.IActionBarConfigurer;
 
-/** 메뉴/툴바 — [보기] 메뉴에 '퍼스펙티브 초기화'(레이아웃 깨질 때 복구용). */
+/** 메뉴/툴바 - [보기] 메뉴에 '퍼스펙티브 초기화'(레이아웃 깨질 때 복구용). */
 public class ApplicationActionBarAdvisor extends ActionBarAdvisor {
 
     private IWorkbenchAction resetPerspective;

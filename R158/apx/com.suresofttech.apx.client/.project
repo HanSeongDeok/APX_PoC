@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
 	<name>com.suresofttech.apx.client</name>
-	<comment>이솝 RCP 샘플 — workspace에서 core/ui Require-Bundle 후 Eclipse Application 실행</comment>
+	<comment>이솝 RCP 샘플 - workspace에서 core/ui Require-Bundle 후 Eclipse Application 실행</comment>
 	<projects>
 		<project>com.suresofttech.apx.core</project>
 		<project>com.suresofttech.apx.ui</project>

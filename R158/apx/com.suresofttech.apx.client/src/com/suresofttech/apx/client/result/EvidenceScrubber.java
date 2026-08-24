@@ -17,21 +17,21 @@ import com.suresofttech.apx.core.measure.EvidenceStore;
 /**
  * 증거 폴더 하나를 물려 <b>시간축으로 되짚는</b> 결과 재생기.
  *
- * <p>슬라이더 하나가 기준이고, 그 시각을 비전 프레임과 음향 파형이 함께 따라간다 —
+ * <p>슬라이더 하나가 기준이고, 그 시각을 비전 프레임과 음향 파형이 함께 따라간다 -
  * 측정 당시가 아니라 <b>TC가 끝난 뒤 다시 열었을 때</b>도 폴더만 있으면 재현된다
- * (시각·판정은 {@code meta.properties}, 화면은 {@code full.avi}/{@code full.wav}에서 복원).
+ * (시각 / 판정은 {@code meta.properties}, 화면은 {@code full.avi}/{@code full.wav}에서 복원).
  *
- * <p>재생 중에는 음향 클럭이 마스터다 — 실제 재생 위치를 폴링해 슬라이더와 비전 프레임을
+ * <p>재생 중에는 음향 클럭이 마스터다 - 실제 재생 위치를 폴링해 슬라이더와 비전 프레임을
  * 끌고 간다(비전 프레임 속도로 소리를 맞추면 소리가 끊긴다).
  */
 public class EvidenceScrubber extends Composite {
 
-    /** 재생 중 위치 폴링 주기(ms) — 30fps 화면 갱신에 맞춘다. */
+    /** 재생 중 위치 폴링 주기(ms) - 30fps 화면 갱신에 맞춘다. */
     private static final int TICK_MS = 33;
     /**
      * 드래그 스크럽 최소 처리 간격(ms).
      *
-     * <p>스크럽 한 번은 <b>영상 프레임 시크·JPEG 디코딩</b>(VisionPlayer)과
+     * <p>스크럽 한 번은 <b>영상 프레임 시크 / JPEG 디코딩</b>(VisionPlayer)과
      * <b>파형 구간 재계산</b>(AudioScope)을 동시에 부른다. 슬라이더는 픽셀마다
      * 이벤트를 쏟아내므로 그대로 처리하면 5초를 끌 때 100회가 넘는 시크가 걸려 렉이 된다.
      * 여기서 합쳐 초당 최대 {@code 1000/SEEK_COALESCE_MS} 회로 제한한다.
@@ -75,14 +75,14 @@ public class EvidenceScrubber extends Composite {
         timeline.setSeekListener(new TimelineBar.SeekListener() {
             public void onSeek(double tMs, boolean fromPlayback) {
                 if (fromPlayback) {
-                    // 재생 중 — 다음 프레임을 순서대로 읽으므로 영상 시크 비용이 없다.
+                    // 재생 중 - 다음 프레임을 순서대로 읽으므로 영상 시크 비용이 없다.
                     applySeek(tMs);
                 } else {
-                    // 드래그 — 이벤트가 픽셀마다 쏟아진다. 합쳐서 처리한다.
+                    // 드래그 - 이벤트가 픽셀마다 쏟아진다. 합쳐서 처리한다.
                     requestSeek(tMs);
                 }
                 if (!fromPlayback && audio.isPlaying()) {
-                    audio.play(tMs);   // 재생 중 스크럽 — 그 지점부터 이어 듣게
+                    audio.play(tMs);   // 재생 중 스크럽 - 그 지점부터 이어 듣게
                 }
             }
         });
@@ -105,7 +105,7 @@ public class EvidenceScrubber extends Composite {
     }
 
     /**
-     * {@link EvidenceStore}의 TC id로 연다 — 파일이 곧 DB row.
+     * {@link EvidenceStore}의 TC id로 연다 - 파일이 곧 DB row.
      * @return 스크럽할 자료가 하나라도 있으면 true
      */
     public boolean openTc(EvidenceStore store, String tcId) {
@@ -124,7 +124,7 @@ public class EvidenceScrubber extends Composite {
     }
 
     /**
-     * 증거 폴더(TC 폴더)를 연다 — {@code audio/full.wav}, {@code vision/full.avi}, {@code meta.properties}.
+     * 증거 폴더(TC 폴더)를 연다 - {@code audio/full.wav}, {@code vision/full.avi}, {@code meta.properties}.
      * @return 스크럽할 자료가 하나라도 있으면 true
      */
     public boolean open(File evidenceRoot) {
@@ -138,7 +138,7 @@ public class EvidenceScrubber extends Composite {
         }
         boolean hasVideo = vision.open(bundle.getVisionDir());
         boolean hasAudio = audio.open(bundle.getFullWav());
-        // ROI 좌표·임계 — 스크럽 시 PASS/FAIL 색 박스
+        // ROI 좌표 / 임계 - 스크럽 시 PASS/FAIL 색 박스
         vision.setRoiConfig(bundle.getRoiNorm(), bundle.getSimThr());
         // 라이브 모니터와 동일: 저장된 PASS 초록 밴드 복원
         java.util.List<double[]> audioSpans = bundle.getAudioPassSpans();
@@ -176,7 +176,7 @@ public class EvidenceScrubber extends Composite {
         return audio;
     }
 
-    /** 처음 표시할 시각 — 비전 PASS > 음향 PASS > 0. */
+    /** 처음 표시할 시각 - 비전 PASS > 음향 PASS > 0. */
     private double initialCursorMs() {
         Long v = bundle.getVisionPassMs();
         if (v != null) {
@@ -191,11 +191,11 @@ public class EvidenceScrubber extends Composite {
         sb.append(bundle.isOverallPass() ? "PASS" : "FAIL");
         String summary = bundle.getSummary();
         if (summary != null && !summary.isEmpty()) {
-            sb.append(" — ").append(summary);
+            sb.append(" - ").append(summary);
         }
-        sb.append("   ·   ").append(bundle.getRoot().getName());
+        sb.append(" / ").append(bundle.getRoot().getName());
         if (!hasVideo || !hasAudio) {
-            sb.append("   ·   없는 자료: ");
+            sb.append(" / 없는 자료: ");
             if (!hasVideo) {
                 sb.append("비전 녹화본 ");
             }
@@ -207,10 +207,10 @@ public class EvidenceScrubber extends Composite {
     }
 
     /**
-     * 재생 중 음향 위치를 따라 슬라이더·비전 프레임을 끈다.
+     * 재생 중 음향 위치를 따라 슬라이더 / 비전 프레임을 끈다.
      * 음향이 없으면 타이머로 시간을 흘려보낸다(무음 재생).
      */
-    /** 드래그 스크럽 — 첫 이벤트는 즉시, 이어지는 것은 합쳐서 처리한다. */
+    /** 드래그 스크럽 - 첫 이벤트는 즉시, 이어지는 것은 합쳐서 처리한다. */
     private void requestSeek(double tMs) {
         pendingSeekMs = tMs;
         if (seekScheduled) {
@@ -254,12 +254,12 @@ public class EvidenceScrubber extends Composite {
                 }
                 long now = System.nanoTime();
                 double elapsed = (now - lastNanos[0]) / 1e6;
-                lastNanos[0] = now;   // 분기와 무관하게 매 틱 갱신 — 전환 순간 시간이 튀지 않게
+                lastNanos[0] = now;   // 분기와 무관하게 매 틱 갱신 - 전환 순간 시간이 튀지 않게
                 double next;
                 if (audio.hasAudio() && audio.isRunning()) {
                     next = audio.playbackPositionMs();   // 소리가 나는 동안은 음향이 마스터
                 } else {
-                    // wav가 타임라인보다 짧은 경우(비전 녹화가 더 김) — 벽시계로 이어 간다
+                    // wav가 타임라인보다 짧은 경우(비전 녹화가 더 김) - 벽시계로 이어 간다
                     next = timeline.getCurrentMs() + elapsed;
                 }
                 if (next >= timeline.getDurationMs()) {

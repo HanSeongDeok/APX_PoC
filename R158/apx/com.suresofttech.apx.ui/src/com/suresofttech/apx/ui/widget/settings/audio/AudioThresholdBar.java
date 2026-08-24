@@ -14,16 +14,16 @@ import org.eclipse.swt.widgets.Label;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 주파수·파형 임계 ± — {@link ApxSettings#setAudioThresholds}.
- * 기본값·step·라벨은 {@link Cfg} 로 클라이언트가 주입한다.
+ * 주파수 / 파형 임계 ± - {@link ApxSettings#setAudioThresholds}.
+ * 기본값 / step / 라벨은 {@link Cfg} 로 클라이언트가 주입한다.
  */
 public class AudioThresholdBar extends Composite {
 
-    /** 클라이언트 주입 파라미터 — 기본값 유지, 필요한 것만 덮어쓴다.
-     *  주파수·파형 임계는 <b>동일 값</b>으로 관리(단일 임계·단일 step). */
+    /** 클라이언트 주입 파라미터 - 기본값 유지, 필요한 것만 덮어쓴다.
+     *  주파수 / 파형 임계는 <b>동일 값</b>으로 관리(단일 임계 / 단일 step). */
     public static final class Cfg {
-        public double defaultThr = 0.90;   // 주파수·파형 공통 임계 기본값
-        public double step = 0.05;         // 주파수·파형 공통 ± 증감폭
+        public double defaultThr = 0.90;   // 주파수 / 파형 공통 임계 기본값
+        public double step = 0.05;         // 주파수 / 파형 공통 ± 증감폭
         public String descText = "음향 탭 측정 시 비교 기준으로 사용";
         public String minusText = "임계 -";
         public String plusText = "임계 +";
@@ -41,7 +41,7 @@ public class AudioThresholdBar extends Composite {
     public AudioThresholdBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
         this.cfg = (cfg != null) ? cfg : new Cfg();
-        settings.setAudioThresholds(this.cfg.defaultThr, this.cfg.defaultThr);   // 주파수·파형 동일 기본값 시드
+        settings.setAudioThresholds(this.cfg.defaultThr, this.cfg.defaultThr);   // 주파수 / 파형 동일 기본값 시드
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;

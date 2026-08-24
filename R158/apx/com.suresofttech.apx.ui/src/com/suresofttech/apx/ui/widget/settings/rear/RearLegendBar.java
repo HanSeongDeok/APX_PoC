@@ -12,7 +12,7 @@ import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
  * 후방 범례 on/off.
- * 기본은 {@link ApxSettings#setRearShowLegend}와 연동(설정·모니터 동일).
+ * 기본은 {@link ApxSettings#setRearShowLegend}와 연동(설정 / 모니터 동일).
  * 로컬만 토글하려면 {@link Cfg#bindToSettings}=false.
  */
 public class RearLegendBar extends Composite {
@@ -65,7 +65,7 @@ public class RearLegendBar extends Composite {
         });
     }
 
-    /** Canvas 연결 — 체크 ↔ 범례 표시 동기화. */
+    /** Canvas 연결 - 체크 ↔ 범례 표시 동기화. */
     public void setCanvas(RearGridCanvas canvas) {
         this.canvas = canvas;
         if (canvas == null || canvas.isDisposed()) {

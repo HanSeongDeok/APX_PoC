@@ -29,7 +29,7 @@ import com.suresofttech.apx.core.rear.Verdict;
 import com.suresofttech.apx.core.rear.VerdictResult;
 
 /**
- * 후방 최소 단위 — 차량(후방 그림) + 검증 포인트 격자.
+ * 후방 최소 단위 - 차량(후방 그림) + 검증 포인트 격자.
  * Select 클릭({@link RearGrid#selectSingle}). 범례는 {@link #setShowLegend}로 on/off.
  * 모니터용: {@link #setInteractive(false)}, {@link #setCellVerdict}.
  * 판정 스냅샷: {@link #setSnapshotDir}/{@link #saveVerdictSnapshot}/{@link #getCombinedSnapshot}.
@@ -39,11 +39,11 @@ public class RearGridCanvas extends Canvas {
     /** 기본 차량 후방 이미지 파일명 (고정). {@code com.suresofttech.apx.ui/ref/} 하위. */
     public static final String DEFAULT_CAR_IMAGE_NAME = "차량 후방 레이아웃_Default.png";
 
-    /** 설정·모니터 공통 범례 이름 (선택·측정중·합격·불합격). */
+    /** 설정 / 모니터 공통 범례 이름 (선택 / 측정중 / 합격 / 불합격). */
     public static final String[] DEFAULT_LEGEND_NAMES =
             new String[] { "선택", "측정중", "합격", "불합격" };
 
-    /** 설정·모니터 공통 범례 색. */
+    /** 설정 / 모니터 공통 범례 색. */
     public static RGB[] defaultLegendColors() {
         return new RGB[] {
                 new RGB(135, 206, 250),
@@ -57,7 +57,7 @@ public class RearGridCanvas extends Canvas {
     private static final Pattern SNAP_NAME = Pattern.compile(
             "^(.+)_c(\\d+)_r(\\d+)_(NONE|MEASURING|PASS|FAIL)_(\\d+)x(\\d+)\\.png$");
 
-    /** 기준 이미지 폴더 — 플러그인 루트 바로 아래({@code com.suresofttech.apx.ui/ref}). */
+    /** 기준 이미지 폴더 - 플러그인 루트 바로 아래({@code com.suresofttech.apx.ui/ref}). */
     private static final String REF_REL =
             "com.suresofttech.apx.ui" + File.separator + "ref";
 
@@ -70,7 +70,7 @@ public class RearGridCanvas extends Canvas {
     /** 판정 스냅샷 저장 폴더(없으면 임시폴더/rear_snapshots). */
     private File snapshotDir;
 
-    // 상태 범례(클라이언트 커스텀 가능) — 기본 이름/색은 생성자에서 설정.
+    // 상태 범례(클라이언트 커스텀 가능) - 기본 이름/색은 생성자에서 설정.
     private String[] legendLabels;
     private Color[] legendColors;      // 기본은 cSel/cMeas/cPass/cFail 공유(미소유). setLegend 시 새 Color(소유).
     private boolean legendColorsOwned;
@@ -82,7 +82,7 @@ public class RearGridCanvas extends Canvas {
     private static final double TRUNK_REAR_X_FRAC = 0.36;
     private static final int GAP = 4;
     private static final int PAD = 8;
-    /** 범례 이상적 폭 — 남는 폭이 이보다 작으면 범례만 축소(차량·격자 우선). */
+    /** 범례 이상적 폭 - 남는 폭이 이보다 작으면 범례만 축소(차량 / 격자 우선). */
     private static final int LEGEND_IDEAL_W = 130;
     private static final int LEGEND_MIN_W = 40;
 
@@ -120,7 +120,7 @@ public class RearGridCanvas extends Canvas {
         cFail = new Color(d, 150, 20, 20);
         cMeas = new Color(d, 230, 200, 40);
 
-        // 기본 범례 — 이름/색(선택·측정중·합격·불합격). setLegend로 교체 가능.
+        // 기본 범례 - 이름/색(선택 / 측정중 / 합격 / 불합격). setLegend로 교체 가능.
         legendLabels = new String[] { "SELECT", "MEASURING", "PASS", "FAIL" };
         legendColors = new Color[] { cSel, cMeas, cPass, cFail };
         legendColorsOwned = false;
@@ -170,7 +170,7 @@ public class RearGridCanvas extends Canvas {
         });
     }
 
-    /** 변경(클릭) 콜백 — Select → Settings 동기화 등. */
+    /** 변경(클릭) 콜백 - Select → Settings 동기화 등. */
     public void setOnChange(Runnable r) {
         this.onChange = r;
     }
@@ -231,7 +231,7 @@ public class RearGridCanvas extends Canvas {
         }
     }
 
-    /** {@link VerdictResult} 편의 — {@link #setCellVerdict} 위임. */
+    /** {@link VerdictResult} 편의 - {@link #setCellVerdict} 위임. */
     public void setVerdict(VerdictResult r) {
         if (r == null) {
             return;
@@ -284,7 +284,7 @@ public class RearGridCanvas extends Canvas {
         }
     }
 
-    /** 설정과 동일한 기본 범례 이름·색 적용. */
+    /** 설정과 동일한 기본 범례 이름 / 색 적용. */
     public void applyDefaultLegend() {
         setLegend(DEFAULT_LEGEND_NAMES, defaultLegendColors());
     }
@@ -326,7 +326,7 @@ public class RearGridCanvas extends Canvas {
     }
 
     /**
-     * 현재 판정 상태 PNG (메모리·Result용).
+     * 현재 판정 상태 PNG (메모리 / Result용).
      * 화면 paint와 무관하게 {@link #renderImage} 오프스크린으로 그린다.
      */
     public byte[] capturePng() {
@@ -390,7 +390,7 @@ public class RearGridCanvas extends Canvas {
 
     /**
      * 이솝 측정 중지→save 시 판정 스냅샷 파일 저장.
-     * 파일명에 Point·Verdict·격자크기를 넣어 DB 없이도 통합 재렌더 가능.
+     * 파일명에 Point / Verdict / 격자크기를 넣어 DB 없이도 통합 재렌더 가능.
      */
     public File saveVerdictSnapshot(VerdictResult r, String tcId) {
         if (r == null || tcId == null || grid == null) {
@@ -438,7 +438,7 @@ public class RearGridCanvas extends Canvas {
     }
 
     /**
-     * 여러 TC 스냅샷 파일명에서 Point·Verdict·격자크기를 읽어 한 판에 합친 통합 이미지.
+     * 여러 TC 스냅샷 파일명에서 Point / Verdict / 격자크기를 읽어 한 판에 합친 통합 이미지.
      *
      * <p><b>동일 격자 규격만 통합된다.</b> 서로 다른 {@code <cols>x<rows>}가 섞이면
      * 부분 통합본을 조용히 돌려주지 않고 {@link IllegalArgumentException}을 던진다
@@ -471,7 +471,7 @@ public class RearGridCanvas extends Canvas {
                 specOwner = id;
             } else if (cols != meta.cols || rows != meta.rows) {
                 throw new IllegalArgumentException(String.format(
-                        "격자 크기가 다릅니다 — 동일 규격만 통합할 수 있습니다: %s=%dx%d, %s=%dx%d",
+                        "격자 크기가 다릅니다 - 동일 규격만 통합할 수 있습니다: %s=%dx%d, %s=%dx%d",
                         specOwner, Integer.valueOf(cols), Integer.valueOf(rows),
                         id, Integer.valueOf(meta.cols), Integer.valueOf(meta.rows)));
             }
@@ -593,8 +593,8 @@ public class RearGridCanvas extends Canvas {
     }
 
     /**
-     * 상태 범례 항목(이름·색)을 커스텀 지정. names/colors 중 null은 기존값 유지.
-     * colors는 이 위젯이 {@link Color}로 만들어 소유(교체·dispose 시 자동 해제).
+     * 상태 범례 항목(이름 / 색)을 커스텀 지정. names/colors 중 null은 기존값 유지.
+     * colors는 이 위젯이 {@link Color}로 만들어 소유(교체 / dispose 시 자동 해제).
      * 이름과 색의 개수가 다르면 더 적은 개수만큼만 표시한다.
      */
     public void setLegend(String[] names, RGB[] colors) {
@@ -615,7 +615,7 @@ public class RearGridCanvas extends Canvas {
         }
     }
 
-    /** 선택 점 색 — 범례 SELECT(첫 항목) 색과 연동. setLegend로 바꾸면 선택 점도 그 색이 된다. */
+    /** 선택 점 색 - 범례 SELECT(첫 항목) 색과 연동. setLegend로 바꾸면 선택 점도 그 색이 된다. */
     private Color selDotColor() {
         if (legendColors != null && legendColors.length > 0
                 && legendColors[0] != null && !legendColors[0].isDisposed()) {
@@ -690,7 +690,7 @@ public class RearGridCanvas extends Canvas {
         String name = DEFAULT_CAR_IMAGE_NAME;
         String sep = File.separator;
 
-        // (1) 클래스가 실제로 로드된 위치 기준 — RCP 로 띄우면 user.dir 이 작업 디렉터리라
+        // (1) 클래스가 실제로 로드된 위치 기준 - RCP 로 띄우면 user.dir 이 작업 디렉터리라
         //     저장소 구조와 무관해진다. 그래서 클래스 위치에서 플러그인 루트를 거슬러 찾는다.
         //       개발:  .../com.suresofttech.apx.ui/bin  → 한 단계 위가 플러그인 루트
         //       배포:  .../plugins/com.suresofttech.apx.ui_0.1.0/  또는 .jar
@@ -699,7 +699,7 @@ public class RearGridCanvas extends Canvas {
             return byCode;
         }
 
-        // (2) 현재 작업 디렉터리에서 위로 올라가며 — 데모/CLI 실행용
+        // (2) 현재 작업 디렉터리에서 위로 올라가며 - 데모/CLI 실행용
         File dir = new File(System.getProperty("user.dir"));
         for (int depth = 0; depth < 10 && dir != null; depth++) {
             // 워크스페이스/저장소 루트에서 본 경로
@@ -848,7 +848,7 @@ public class RearGridCanvas extends Canvas {
     }
 
     /**
-     * 상태 범례 — 판 오른쪽 <b>남는 폭 안에서만</b> 그린다.
+     * 상태 범례 - 판 오른쪽 <b>남는 폭 안에서만</b> 그린다.
      * 창이 좁으면 범례만 축소. 남는 폭이 최소치 미만이면 그리지 않음(격자 침범 금지).
      */
     private void drawLegend(GC gc, Rectangle ca, int boardRight, int remainW) {
@@ -878,7 +878,7 @@ public class RearGridCanvas extends Canvas {
             dot = Math.max(4, Math.round(dot * hs));
             boxH = pad * 2 + rowH * n;
         }
-        // 판 오른쪽 밖 + 캔버스 안 — 격자 영역과 겹치지 않음
+        // 판 오른쪽 밖 + 캔버스 안 - 격자 영역과 겹치지 않음
         int bx = boardRight + gap;
         if (bx + boxW > ca.x + ca.width - 2) {
             boxW = Math.max(LEGEND_MIN_W, (ca.x + ca.width - 2) - bx);

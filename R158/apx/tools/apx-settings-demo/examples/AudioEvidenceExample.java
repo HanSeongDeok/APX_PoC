@@ -6,12 +6,12 @@ import com.suresofttech.apx.core.measure.MeasureSession;
 /**
  * 음향 검측 증거 API 예시.
  *
- * <p>디스크 규약 — {@code <증거루트>/audio/}:
+ * <p>디스크 규약 - {@code <증거루트>/audio/}:
  * <ul>
- *   <li>{@code full.wav} — 측정 전체</li>
- *   <li>{@code clip.wav} — PASS 초록 밴드 시작~해제 구간 ({@link MeasureEvidence#setAudioPassSpan})</li>
- *   <li>{@code wave_pass.png} — PASS 시점 파형 스냅샷</li>
- *   <li>{@code wave_full.png} — 측정 종료 시점 전체 파형</li>
+ *   <li>{@code full.wav} - 측정 전체</li>
+ *   <li>{@code clip.wav} - PASS 초록 밴드 시작~해제 구간 ({@link MeasureEvidence#setAudioPassSpan})</li>
+ *   <li>{@code wave_pass.png} - PASS 시점 파형 스냅샷</li>
+ *   <li>{@code wave_full.png} - 측정 종료 시점 전체 파형</li>
  * </ul>
  *
  * <p>구간 추출: {@link MeasureEvidence#saveRange} / {@link MeasureEvidence#getRangeWavBytes}

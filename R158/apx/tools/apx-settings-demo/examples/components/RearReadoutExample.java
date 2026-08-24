@@ -8,7 +8,7 @@ import com.suresofttech.apx.core.rear.VerdictResult;
 import com.suresofttech.apx.client.monitor.RearReadout;
 
 /**
- * RearReadout 조립 예시 — 격자·지정·판정 집계·증거 규약 판독값.
+ * RearReadout 조립 예시 - 격자 / 지정 / 판정 집계 / 증거 규약 판독값.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/RearReadoutExample.java}
  */

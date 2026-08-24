@@ -8,15 +8,15 @@ import java.util.Arrays;
 import com.suresofttech.apx.core.audio.WavIo;
 
 /**
- * 측정 증거 버퍼. WAV·스코프 PNG·PASS 시각 메타(메모리).
- * 디스크 규약 — 음향 폴더({@code <증거루트>/audio/}):
+ * 측정 증거 버퍼. WAV / 스코프 PNG / PASS 시각 메타(메모리).
+ * 디스크 규약 - 음향 폴더({@code <증거루트>/audio/}):
  * <ul>
- *   <li>{@code full.wav} — 측정 전체 ({@link #saveFull})</li>
- *   <li>{@code clip.wav} — PASS 시작~PASS 해제까지 ({@link #setAudioPassSpan})</li>
- *   <li>{@code wave_pass.png} — PASS 시점 파형 스냅샷</li>
- *   <li>{@code wave_full.png} — 측정 종료 시점 전체 파형 스냅샷</li>
+ *   <li>{@code full.wav} - 측정 전체 ({@link #saveFull})</li>
+ *   <li>{@code clip.wav} - PASS 시작~PASS 해제까지 ({@link #setAudioPassSpan})</li>
+ *   <li>{@code wave_pass.png} - PASS 시점 파형 스냅샷</li>
+ *   <li>{@code wave_full.png} - 측정 종료 시점 전체 파형 스냅샷</li>
  * </ul>
- * 비전 프레임·후방 PNG는 각각 EvidenceCapture / RearGridCanvas 규약으로 클라가 저장.
+ * 비전 프레임 / 후방 PNG는 각각 EvidenceCapture / RearGridCanvas 규약으로 클라가 저장.
  */
 public final class MeasureEvidence {
 
@@ -32,7 +32,7 @@ public final class MeasureEvidence {
     /** 자체 판단(ms) = gap + analysis. 미확정 null. */
     private Double audioJudgeMs;
     private Double visionJudgeMs;
-    /** PASS 초록 밴드 시작·끝(ms). clip.wav 구간. */
+    /** PASS 초록 밴드 시작 / 끝(ms). clip.wav 구간. */
     private Double audioPassStartMs;
     private Double audioPassEndMs;
 
@@ -65,14 +65,14 @@ public final class MeasureEvidence {
         }
     }
 
-    /** 음향 스코프 PNG — 최초 PASS 구간 스냅샷만 보관. → wave_pass.png */
+    /** 음향 스코프 PNG - 최초 PASS 구간 스냅샷만 보관. → wave_pass.png */
     public synchronized void putAudioPng(byte[] png) {
         if (this.audioScopePng == null && png != null) {
             this.audioScopePng = png.clone();
         }
     }
 
-    /** 측정 종료 시점 전체 파형 스냅샷 — 매번 최신으로 갱신. → wave_full.png */
+    /** 측정 종료 시점 전체 파형 스냅샷 - 매번 최신으로 갱신. → wave_full.png */
     public synchronized void putAudioFullPng(byte[] png) {
         if (png != null) {
             this.audioFullPng = png.clone();
@@ -83,7 +83,7 @@ public final class MeasureEvidence {
         return audioFullPng == null ? null : audioFullPng.clone();
     }
 
-    /** 비전 캔버스 PNG — ResultView 메모리 표시용(최초만). 디스크는 EvidenceCapture 규약. */
+    /** 비전 캔버스 PNG - ResultView 메모리 표시용(최초만). 디스크는 EvidenceCapture 규약. */
     public synchronized void putVisionPng(byte[] png) {
         if (this.visionCanvasPng == null && png != null) {
             this.visionCanvasPng = png.clone();
@@ -91,7 +91,7 @@ public final class MeasureEvidence {
     }
 
     /**
-     * 후방 캔버스 PNG — ResultView 메모리 표시용(최초만).
+     * 후방 캔버스 PNG - ResultView 메모리 표시용(최초만).
      * 디스크 저장은 후방 규약 파일명 API를 쓴다({@code saveVerdictSnapshot}).
      */
     public synchronized void putRearPng(byte[] png) {
@@ -164,7 +164,7 @@ public final class MeasureEvidence {
         return visionJudgeMs;
     }
 
-    /** MeasureReport.saveFull 대응 — 측정 전체 WAV. */
+    /** MeasureReport.saveFull 대응 - 측정 전체 WAV. */
     public synchronized File saveFull(File path) throws Exception {
         if (path == null || audioSamples == null || audioSamples.length == 0 || audioSampleRate <= 0) {
             return null;
@@ -197,7 +197,7 @@ public final class MeasureEvidence {
     }
 
     /**
-     * 구간 WAV 바이트 [startMs, endMs) — 파일로 떨구지 않고 클라가 바로 받아갈 때.
+     * 구간 WAV 바이트 [startMs, endMs) - 파일로 떨구지 않고 클라가 바로 받아갈 때.
      * 범위가 비었거나 샘플이 없으면 null.
      */
     public synchronized byte[] getRangeWavBytes(double startMs, double endMs) throws Exception {
@@ -231,7 +231,7 @@ public final class MeasureEvidence {
     }
 
     /**
-     * 음향 증거 폴더에 규약 파일 저장 — {@code full.wav}, {@code wave_pass.png},
+     * 음향 증거 폴더에 규약 파일 저장 - {@code full.wav}, {@code wave_pass.png},
      * {@code wave_full.png}, (PASS 구간 있으면) {@code clip.wav} = PASS 시작~해제.
      */
     public synchronized void saveTo(File dir) throws Exception {

@@ -10,9 +10,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 측정 중 프레임별 ROI 매칭 시계열 — 결과 스크럽에서 PASS/FAIL 색 복원용.
+ * 측정 중 프레임별 ROI 매칭 시계열 - 결과 스크럽에서 PASS/FAIL 색 복원용.
  *
- * <p>파일: {@code vision/matches.csv} — {@code tMs,hit,ncc} (측정 시작=0).
+ * <p>파일: {@code vision/matches.csv} - {@code tMs,hit,ncc} (측정 시작=0).
  */
 public final class VisionMatchLog {
 

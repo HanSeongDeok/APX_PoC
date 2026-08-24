@@ -48,7 +48,7 @@ public final class SettingsDialogExample {
     }
 
     /**
-     * 데모용 — JFace 없이 {@link SettingsForm}을 modal Shell에 띄운다.
+     * 데모용 - JFace 없이 {@link SettingsForm}을 modal Shell에 띄운다.
      * 값은 위젯이 {@code ApxSettings}에 즉시 쓴다. 확인/취소는 창만 닫는다.
      *
      * @return SWT.OK 또는 SWT.CANCEL

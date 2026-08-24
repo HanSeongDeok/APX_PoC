@@ -16,13 +16,13 @@ import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.rear.RearGrid;
 
 /**
- * 후방 격자 크기 — 프리셋 라디오+콤보 / 커스텀 스피너 → {@link ApxSettings} + 연결 캔버스.
+ * 후방 격자 크기 - 프리셋 라디오+콤보 / 커스텀 스피너 → {@link ApxSettings} + 연결 캔버스.
  * Select 클릭도 {@link #setCanvas} 시 {@code ApxSettings.rearSelectedPoints}에 동기화한다.
- * 모드에 따라 프리셋·커스텀 편집 UI를 같은 자리에 하나만 표시한다.
+ * 모드에 따라 프리셋 / 커스텀 편집 UI를 같은 자리에 하나만 표시한다.
  */
 public class RearGridSizeBar extends Composite {
 
-    /** 클라이언트 주입 라벨·프리셋 — 기본값 유지, 필요한 것만 덮어쓴다. */
+    /** 클라이언트 주입 라벨 / 프리셋 - 기본값 유지, 필요한 것만 덮어쓴다. */
     public static final class Cfg {
         public String presetText = "프리셋";
         public String customText = "커스텀";
@@ -30,7 +30,7 @@ public class RearGridSizeBar extends Composite {
         public String colsLabelText = "가로(열)";
         public String rowsLabelText = "세로(행)";
         public String applyText = "적용";
-        /** 고정크기(프리셋) 목록 {열,행}. null이면 기본 4x6·8x12·10x14·9x7. */
+        /** 고정크기(프리셋) 목록 {열,행}. null이면 기본 4x6 / 8x12 / 10x14 / 9x7. */
         public int[][] presets;
     }
 
@@ -38,7 +38,7 @@ public class RearGridSizeBar extends Composite {
 
     private final ApxSettings settings = ApxSettings.get();
     private final Cfg cfg;
-    /** 프리셋(고정크기) 목록 — cfg.presets 또는 기본값. */
+    /** 프리셋(고정크기) 목록 - cfg.presets 또는 기본값. */
     private final int[][] presets;
     private final Button presetRadio;
     private final Button customRadio;
@@ -77,7 +77,7 @@ public class RearGridSizeBar extends Composite {
         customRadio = new Button(modeRow, SWT.RADIO);
         customRadio.setText(this.cfg.customText);
 
-        // 프리셋·커스텀 편집 UI — 동일 위치, 하나만 표시
+        // 프리셋 / 커스텀 편집 UI - 동일 위치, 하나만 표시
         editorHost = new Composite(this, SWT.NONE);
         editorStack = new StackLayout();
         editorHost.setLayout(editorStack);
@@ -135,7 +135,7 @@ public class RearGridSizeBar extends Composite {
         loadFromSettings();
     }
 
-    /** 캔버스 연결 — 크기 변경·Select 클릭을 Settings와 동기화. */
+    /** 캔버스 연결 - 크기 변경 / Select 클릭을 Settings와 동기화. */
     public void setCanvas(RearGridCanvas canvas) {
         this.canvas = canvas;
         if (canvas == null) {
@@ -210,7 +210,7 @@ public class RearGridSizeBar extends Composite {
         applyGridToCanvas();
     }
 
-    /** Settings 크기·Select를 캔버스에 반영 (크기 변경 시 Settings가 포인트를 비움). */
+    /** Settings 크기 / Select를 캔버스에 반영 (크기 변경 시 Settings가 포인트를 비움). */
     private void applyGridToCanvas() {
         if (canvas == null || canvas.isDisposed()) {
             return;

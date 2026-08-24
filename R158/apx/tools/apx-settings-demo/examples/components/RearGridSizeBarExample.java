@@ -4,7 +4,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 
 /**
- * RearGridSizeBar 조립 예시 — 격자 크기(프리셋/커스텀) + Canvas 연결.
+ * RearGridSizeBar 조립 예시 - 격자 크기(프리셋/커스텀) + Canvas 연결.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/RearGridSizeBarExample.java}
  */

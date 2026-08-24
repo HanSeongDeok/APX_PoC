@@ -19,9 +19,9 @@ import com.suresofttech.apx.core.vision.VisionRecorder;
 /**
  * 증거 폴더 하나를 통째로 읽어 결과 탭에 물리는 리더. SWT無(core).
  *
- * <p>폴더 구조는 저장 규약 그대로다 — {@code audio/}, {@code vision/}, {@code rear/}.
+ * <p>폴더 구조는 저장 규약 그대로다 - {@code audio/}, {@code vision/}, {@code rear/}.
  * TC가 끝나고 앱을 껐다 켠 뒤에도 결과를 복원해야 하므로, 메모리에만 있던
- * PASS 시각·판정은 {@link #writeMeta}가 {@code meta.properties}로 남긴다.
+ * PASS 시각 / 판정은 {@link #writeMeta}가 {@code meta.properties}로 남긴다.
  *
  * <p>스크럽 타임라인의 시간축은 <b>측정 시작 = 0 ms</b>로, 저장된 PASS 시각과 같은 기준이다.
  */
@@ -96,7 +96,7 @@ public final class EvidenceBundle {
 
     /**
      * 저장된 {@code full.wav}에서 임의 구간 [startMs,endMs) 바이트.
-     * 세션이 끝난 뒤에도 되는 경로 — 메모리 버퍼가 아니라 파일에서 읽는다.
+     * 세션이 끝난 뒤에도 되는 경로 - 메모리 버퍼가 아니라 파일에서 읽는다.
      */
     public byte[] audioRangeBytes(double startMs, double endMs) throws Exception {
         File wav = getFullWav();
@@ -117,7 +117,7 @@ public final class EvidenceBundle {
 
     // ── 비전 ────────────────────────────────────────────────────
 
-    /** PASS 시점 3장 — 기본 조회(없는 장은 null 자리 유지). */
+    /** PASS 시점 3장 - 기본 조회(없는 장은 null 자리 유지). */
     public List<File> getVisionFrames() {
         return VisionEvidenceStore.getAll(visionDir);
     }
@@ -196,7 +196,7 @@ public final class EvidenceBundle {
         return getDouble("syncSpreadMs");
     }
 
-    /** PASS 초록 밴드 시작(ms) — {@code clip.wav} 구간. 없으면 null. */
+    /** PASS 초록 밴드 시작(ms) - {@code clip.wav} 구간. 없으면 null. */
     public Double getAudioPassStartMs() {
         return getDouble("audioPassStartMs");
     }
@@ -268,7 +268,7 @@ public final class EvidenceBundle {
     }
 
     /**
-     * 타임라인 전체 길이(ms) — 음향 wav 길이와 meta 기록 중 큰 쪽.
+     * 타임라인 전체 길이(ms) - 음향 wav 길이와 meta 기록 중 큰 쪽.
      * 둘 다 없으면 PASS 시각 뒤로 1초 여유를 준다.
      */
     public double durationMs() {
@@ -360,7 +360,7 @@ public final class EvidenceBundle {
         FileOutputStream out = new FileOutputStream(new File(root, META_NAME));
         try {
             p.store(new OutputStreamWriter(out, "UTF-8"),
-                    "APX 측정 증거 메타 — 시간축 기준: 측정 시작 = 0 ms");
+                    "APX 측정 증거 메타 - 시간축 기준: 측정 시작 = 0 ms");
         } finally {
             out.close();
         }

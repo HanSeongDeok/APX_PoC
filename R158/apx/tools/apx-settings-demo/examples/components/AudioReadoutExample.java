@@ -6,7 +6,7 @@ import com.suresofttech.apx.core.audio.MatchResult;
 import com.suresofttech.apx.client.monitor.AudioReadout;
 
 /**
- * AudioReadout 조립 예시 — 일치도·PASS 구간(clip.wav)·자체 판단 판독값.
+ * AudioReadout 조립 예시 - 일치도 / PASS 구간(clip.wav) / 자체 판단 판독값.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/AudioReadoutExample.java}
  */

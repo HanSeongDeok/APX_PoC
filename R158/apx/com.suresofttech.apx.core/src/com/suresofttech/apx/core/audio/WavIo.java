@@ -105,7 +105,7 @@ public final class WavIo {
     }
 
     /**
-     * 저장된 WAV에서 구간 [startMs, endMs) 만 읽어온다 — 세션이 끝난 뒤
+     * 저장된 WAV에서 구간 [startMs, endMs) 만 읽어온다 - 세션이 끝난 뒤
      * {@code full.wav}만 있는 상태에서 이솝이 임의 구간을 요청할 때의 경로.
      * (메모리 버퍼 기준 추출은 {@code MeasureEvidence.getRangeWavBytes})
      */
@@ -132,7 +132,7 @@ public final class WavIo {
         return new File(outPath);
     }
 
-    /** 저장된 WAV의 구간 바이트 — 파일로 떨구지 않고 바로 받아갈 때. 빈 구간이면 null. */
+    /** 저장된 WAV의 구간 바이트 - 파일로 떨구지 않고 바로 받아갈 때. 빈 구간이면 null. */
     public static byte[] rangeBytesOf(String srcPath, double startMs, double endMs) throws Exception {
         Wav cut = loadRange(srcPath, startMs, endMs);
         if (cut.samples.length == 0) {

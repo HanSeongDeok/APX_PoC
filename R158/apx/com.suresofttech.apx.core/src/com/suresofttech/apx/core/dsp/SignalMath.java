@@ -1,7 +1,7 @@
 package com.suresofttech.apx.core.dsp;
 
 /**
- * 벡터 연산·윈도우·정규화 상호상관(NCC) 헬퍼.
+ * 벡터 연산 / 윈도우 / 정규화 상호상관(NCC) 헬퍼.
  * 파이썬 NumPy/SciPy 대응을 무의존성으로 직접 구현.
  */
 public final class SignalMath {
@@ -73,7 +73,7 @@ public final class SignalMath {
      * 무음 창(최대 에너지의 10% 미만)은 제외. 결과 [0,1] 클립.
      *
      * <p>상관값(분자)은 FFT(합성곱 정리)로 O(S log S), 국소 에너지(분모)는 prefix-sum O(S).
-     * 직접 O(S·L) 방식({@link #nccMaxDirect})과 수치 동일, 실시간 처리를 위해 이쪽 사용.
+     * 직접 O(S / L) 방식({@link #nccMaxDirect})과 수치 동일, 실시간 처리를 위해 이쪽 사용.
      */
     public static double nccMax(double[] seg, double[] tmpl) {
         int l = tmpl.length;
@@ -113,7 +113,7 @@ public final class SignalMath {
     }
 
     /**
-     * valid 모드 상호상관 num[k] = Σ_i seg[k+i]·tmpl[i], k=0..S-L. FFT(합성곱 정리) 사용.
+     * valid 모드 상호상관 num[k] = Σ_i seg[k+i] / tmpl[i], k=0..S-L. FFT(합성곱 정리) 사용.
      * corr = conv(seg, reverse(tmpl)); num[k] = conv[L-1+k].
      */
     static double[] crossCorrValid(double[] seg, double[] tmpl) {
@@ -130,7 +130,7 @@ public final class SignalMath {
         }
         Fft.transform(ar, ai);
         Fft.transform(br, bi);
-        for (int i = 0; i < n; i++) {                  // 복소 곱 A·B
+        for (int i = 0; i < n; i++) {                  // 복소 곱 A / B
             double re = ar[i] * br[i] - ai[i] * bi[i];
             double im = ar[i] * bi[i] + ai[i] * br[i];
             ar[i] = re;
@@ -146,7 +146,7 @@ public final class SignalMath {
     }
 
     /**
-     * seg 위에서 tmpl 이 가장 잘 겹치는 지연(lag) 반환 — 위상 정렬(오버레이 표시)용.
+     * seg 위에서 tmpl 이 가장 잘 겹치는 지연(lag) 반환 - 위상 정렬(오버레이 표시)용.
      * 부호 있는 정규화 상관을 최대화(peak↔peak, 극성 유지). 무음/불가 시 -1.
      * lag 위치의 seg[lag..lag+L] 이 tmpl 과 위상이 맞는 구간.
      */
@@ -188,7 +188,7 @@ public final class SignalMath {
         return bestK;
     }
 
-    /** 직접 O(S·L) NCC (참조·동등성 검증용). 실시간 경로는 {@link #nccMax} 사용. */
+    /** 직접 O(S / L) NCC (참조 / 동등성 검증용). 실시간 경로는 {@link #nccMax} 사용. */
     public static double nccMaxDirect(double[] seg, double[] tmpl) {
         int l = tmpl.length;
         int s = seg.length;

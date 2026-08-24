@@ -20,13 +20,13 @@ import com.suresofttech.apx.core.audio.WavIo;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 파형 측정/초기화 버튼 행 — matcher·capture 내장.
+ * 파형 측정/초기화 버튼 행 - matcher / capture 내장.
  * 스코프는 {@link #setScope(AudioScope)}로 주입. 기대음 재생은 {@link ExpectedTonePlayBar}.
  *
  * <p>설정 다이얼로그는 모니터와 <b>구동만</b> 다르다(위젯 {@link AudioScope}는 동일):
  * <ul>
- *   <li>PASS 밴드 — 캡처 블록마다 오버레이만(가벼움 → 실시간)</li>
- *   <li>파형 — {@link #WAVE_POLL_MS} 폴링으로 ChartDirector 리빌드
+ *   <li>PASS 밴드 - 캡처 블록마다 오버레이만(가벼움 → 실시간)</li>
+ *   <li>파형 - {@link #WAVE_POLL_MS} 폴링으로 ChartDirector 리빌드
  *       (블록마다 setData 하면 설정 UI가 멈춰 파형이 안 움직임)</li>
  * </ul>
  * 모니터({@code AudioMonitorView})는 뷰가 단순해 블록마다 setData 해도 버틴다.
@@ -56,7 +56,7 @@ public class AudioMeasureBar extends Composite {
     private volatile long capturedSamples;
     private String loadedPath;
     private boolean wavePolling;
-    /** PASS UI 갱신 합치기 — 블록마다 asyncExec 폭주 방지. */
+    /** PASS UI 갱신 합치기 - 블록마다 asyncExec 폭주 방지. */
     private volatile boolean passUiScheduled;
     /** 파형 리빌드 중이면 다음 폴링 스킵(큐 적체 방지). */
     private boolean waveBusy;
@@ -258,7 +258,7 @@ public class AudioMeasureBar extends Composite {
         }
     }
 
-    /** 파형만 주기적 리빌드 — 한 번에 하나만, 끝나면 다음 예약. */
+    /** 파형만 주기적 리빌드 - 한 번에 하나만, 끝나면 다음 예약. */
     private void startWavePoll() {
         wavePolling = true;
         display.timerExec(WAVE_POLL_MS, new Runnable() {

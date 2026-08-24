@@ -6,7 +6,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 
 /**
- * CameraCanvas 조립 예시 — 표시 전용 화면 + SelectBar 연결.
+ * CameraCanvas 조립 예시 - 표시 전용 화면 + SelectBar 연결.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/CameraCanvasExample.java}
  */

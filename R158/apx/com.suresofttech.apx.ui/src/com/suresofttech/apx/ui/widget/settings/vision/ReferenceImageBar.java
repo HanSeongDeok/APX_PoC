@@ -18,7 +18,7 @@ import org.eclipse.swt.widgets.Text;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 기준 이미지 사용 체크 + 경로 + 파일 선택 — {@link ApxSettings} 연동.
+ * 기준 이미지 사용 체크 + 경로 + 파일 선택 - {@link ApxSettings} 연동.
  */
 public class ReferenceImageBar extends Composite {
 
@@ -62,7 +62,7 @@ public class ReferenceImageBar extends Composite {
 
         refPathText = new Text(this, SWT.BORDER | SWT.READ_ONLY | SWT.SINGLE);
         refPathText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-   
+
         refPickBtn = new Button(this, SWT.PUSH);
         refPickBtn.setText("파일...");
         refPickBtn.addSelectionListener(new SelectionAdapter() {

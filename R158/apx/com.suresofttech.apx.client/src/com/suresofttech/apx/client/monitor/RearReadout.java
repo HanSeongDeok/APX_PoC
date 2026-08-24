@@ -10,7 +10,7 @@ import com.suresofttech.apx.core.rear.VerdictResult;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
- * 후방 모니터 판독값 — 격자 그림만으로는 안 보이는 <b>지정·판정 상태</b>.
+ * 후방 모니터 판독값 - 격자 그림만으로는 안 보이는 <b>지정 / 판정 상태</b>.
  *
  * @deprecated 모니터 뷰에서 판독값 UI를 제공하지 않는다. {@link com.suresofttech.apx.client.view.RearMonitorView} 참고.
  */
@@ -25,7 +25,7 @@ public class RearReadout extends ReadoutBar {
     private final Label evidenceLbl;
     private final Label legendLbl;
 
-    /** 포인트 목록에 나열할 최대 개수 — 넘으면 "외 N점". */
+    /** 포인트 목록에 나열할 최대 개수 - 넘으면 "외 N점". */
     private static final int POINTS_LIMIT = 6;
 
     private int selectedCount;
@@ -43,26 +43,26 @@ public class RearReadout extends ReadoutBar {
         set(legendLbl, legendText());
     }
 
-    /** 격자·지정 포인트 — 설정 적용/측정 시작 양쪽에서 호출. */
+    /** 격자 / 지정 포인트 - 설정 적용/측정 시작 양쪽에서 호출. */
     public void setGrid(int cols, int rows, List<int[]> selected) {
         selectedCount = selected == null ? 0 : selected.size();
         set(gridLbl, cols + " × " + rows + " (" + (cols * rows) + "칸)");
-        set(selectedLbl, selectedCount + "점" + (selectedCount == 0 ? " — 설정에서 지정 필요" : ""),
+        set(selectedLbl, selectedCount + "점" + (selectedCount == 0 ? " - 설정에서 지정 필요" : ""),
                 selectedCount == 0 ? STATE_FAIL : STATE_IDLE);
         commit();
     }
 
-    /** 측정 시작 — 지정 포인트는 중단 전까지 측정중. */
+    /** 측정 시작 - 지정 포인트는 중단 전까지 측정중. */
     public void onStarted(int cols, int rows, List<int[]> selected) {
         running = true;
         setGrid(cols, rows, selected);
         clear(finalLbl);
         set(evidenceLbl, "중단 시 저장", STATE_BUSY);
-        head("후방: 측정 중 — 지정 " + selectedCount + "점", STATE_BUSY);
+        head("후방: 측정 중 - 지정 " + selectedCount + "점", STATE_BUSY);
         commit();
     }
 
-    /** 판정 갱신 — 집계·좌표별 상태. */
+    /** 판정 갱신 - 집계 / 좌표별 상태. */
     public void setVerdicts(List<VerdictResult> results) {
         int measuring = 0;
         int pass = 0;
@@ -88,7 +88,7 @@ public class RearReadout extends ReadoutBar {
             }
             if (listed < POINTS_LIMIT) {
                 if (listed > 0) {
-                    pts.append(" · ");
+                    pts.append(" / ");
                 }
                 pts.append("c").append(r.getPoint().x).append("r").append(r.getPoint().y)
                         .append(' ').append(label(v));
@@ -98,8 +98,8 @@ public class RearReadout extends ReadoutBar {
         if (total > listed) {
             pts.append(" 외 ").append(total - listed).append("점");
         }
-        set(countLbl, "측정중 " + measuring + " · 합격 " + pass + " · 불합격 " + fail
-                + " · 미판정 " + none, countState(pass, fail, measuring));
+        set(countLbl, "측정중 " + measuring + " / 합격 " + pass + " / 불합격 " + fail
+                + " / 미판정 " + none, countState(pass, fail, measuring));
         set(pointsLbl, pts.length() == 0 ? DASH : pts.toString());
         if (!running) {
             head("후방: 합격 " + pass + " / 불합격 " + fail,
@@ -109,7 +109,7 @@ public class RearReadout extends ReadoutBar {
     }
 
     /**
-     * 중단 시 최종 판정 — Kickoff 동기 결과를 그대로 표기.
+     * 중단 시 최종 판정 - Kickoff 동기 결과를 그대로 표기.
      * @param overallMs 최종 PASS 시각(ms). 없으면 null
      */
     public void setFinal(boolean pass, Long overallMs, String summary) {
@@ -119,7 +119,7 @@ public class RearReadout extends ReadoutBar {
             sb.append(" @ ").append(overallMs).append(" ms");
         }
         if (summary != null && !summary.isEmpty()) {
-            sb.append(" — ").append(summary);
+            sb.append(" - ").append(summary);
         }
         set(finalLbl, sb.toString(), pass ? STATE_PASS : STATE_FAIL);
         // setVerdicts 이후에 불리므로 헤더도 최종 판정으로 덮는다(측정 중 표기 잔류 방지).
@@ -167,9 +167,9 @@ public class RearReadout extends ReadoutBar {
         return "미판정";
     }
 
-    /** 캔버스 기본 범례와 같은 이름·순서(선택/측정중/합격/불합격). */
+    /** 캔버스 기본 범례와 같은 이름 / 순서(선택/측정중/합격/불합격). */
     private static String legendText() {
         String[] n = RearGridCanvas.DEFAULT_LEGEND_NAMES;
-        return n[0] + " 하늘 · " + n[1] + " 노랑 · " + n[2] + " 초록 · " + n[3] + " 빨강";
+        return n[0] + " 하늘 / " + n[1] + " 노랑 / " + n[2] + " 초록 / " + n[3] + " 빨강";
     }
 }

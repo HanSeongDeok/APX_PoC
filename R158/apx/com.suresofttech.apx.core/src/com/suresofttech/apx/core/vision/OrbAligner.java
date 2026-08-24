@@ -16,7 +16,7 @@ import org.opencv.features2d.DescriptorMatcher;
 import org.opencv.features2d.ORB;
 
 /**
- * ORB 특징점 정렬 (frame → 기준영상 좌표계 homography). 기어·클러스터 공용.
+ * ORB 특징점 정렬 (frame → 기준영상 좌표계 homography). 기어 / 클러스터 공용.
  * 파이썬 gear.py Aligner / cluster.py OrbAligner 이식.
  */
 public final class OrbAligner {

@@ -11,7 +11,7 @@ import org.opencv.core.MatOfByte;
 import org.opencv.imgcodecs.Imgcodecs;
 
 /**
- * OpenCV 공통 유틸 — 네이티브 로딩 + 한글경로 imread + BufferedImage↔Mat 변환.
+ * OpenCV 공통 유틸 - 네이티브 로딩 + 한글경로 imread + BufferedImage↔Mat 변환.
  *
  * <p>네이티브(opencv_java490.dll)는 openpnp 번들에 포함, {@link #ensureLoaded()}가 임시폴더로
  * 풀어 로드(오프라인 OK). webcam-capture는 프레임을 {@link BufferedImage}로 주므로 처리 전
@@ -54,12 +54,12 @@ public final class Cv {
         int h = src.getHeight();
         Mat m = new Mat(h, w, CvType.CV_8UC3);
         if (src.getType() == BufferedImage.TYPE_3BYTE_BGR) {
-            // 웹캠 기본 타입 — 래스터 바이트 그대로 복사(가장 빠름)
+            // 웹캠 기본 타입 - 래스터 바이트 그대로 복사(가장 빠름)
             byte[] px = ((DataBufferByte) src.getRaster().getDataBuffer()).getData();
             m.put(0, 0, px);
             return m;
         }
-        // 일반 타입 — ColorModel 경유 ARGB 읽어 BGR로 패킹(Graphics2D 불필요)
+        // 일반 타입 - ColorModel 경유 ARGB 읽어 BGR로 패킹(Graphics2D 불필요)
         int[] argb = src.getRGB(0, 0, w, h, null, 0, w);
         byte[] bgr = new byte[w * h * 3];
         for (int i = 0; i < argb.length; i++) {

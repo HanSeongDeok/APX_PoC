@@ -19,7 +19,7 @@ import com.suresofttech.apx.core.vision.VisionPlayer;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 
 /**
- * 결과 탭 비전 스크럽 — FULL 녹화 프레임 + 측정 당시 ROI PASS/FAIL 색.
+ * 결과 탭 비전 스크럽 - FULL 녹화 프레임 + 측정 당시 ROI PASS/FAIL 색.
  *
  * <p>{@code matches.csv}의 hit 시계열과 meta ROI로, 스크럽 시각에 모니터와 같은
  * 초록(PASS)/노랑(FAIL) ROI 박스를 그린다.
@@ -63,7 +63,7 @@ public class VisionScrubPanel extends Composite {
         });
 
         infoLbl = new Label(this, SWT.NONE);
-        infoLbl.setText("—");
+        infoLbl.setText("-");
         infoLbl.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         addDisposeListener(new DisposeListener() {
@@ -94,20 +94,20 @@ public class VisionScrubPanel extends Composite {
             canvas.setFrame(null);
             canvas.setPlaceholder("비전 녹화본 없음 (full.avi)");
             infoLbl.setText(matchLog.isEmpty()
-                    ? "녹화본 없음 — 이번 측정 이후 저장분부터 스크럽됩니다"
-                    : "녹화본 없음 · ROI 시계열만 있음");
+                    ? "녹화본 없음 - 이번 측정 이후 저장분부터 스크럽됩니다"
+                    : "녹화본 없음 / ROI 시계열만 있음");
             return false;
         }
-        infoLbl.setText(String.format("녹화 %d프레임 · %.2f s%s%s",
+        infoLbl.setText(String.format("녹화 %d프레임 / %.2f s%s%s",
                 Integer.valueOf(player.getFrameCount()),
                 Double.valueOf(player.durationMs() / 1000.0),
-                player.hasIndex() ? " · 시각 인덱스" : " · fps 근사",
-                matchLog.isEmpty() ? " · ROI 로그 없음" : " · ROI 로그 " + matchLog.size()));
+                player.hasIndex() ? " / 시각 인덱스" : " / fps 근사",
+                matchLog.isEmpty() ? " / ROI 로그 없음" : " / ROI 로그 " + matchLog.size()));
         showAt(0);
         return true;
     }
 
-    /** 측정 스냅샷 ROI — meta의 roiNorm / simThr. */
+    /** 측정 스냅샷 ROI - meta의 roiNorm / simThr. */
     public void setRoiConfig(double[] roiNorm, double simThr) {
         this.roiNorm = roiNorm == null || roiNorm.length < 4 ? null : roiNorm.clone();
         this.simThr = simThr;
@@ -155,12 +155,12 @@ public class VisionScrubPanel extends Composite {
         } else if (hitChanged) {
             canvas.redraw();
         }
-        String pass = hit == null ? "ROI —"
+        String pass = hit == null ? "ROI -"
                 : (hit.booleanValue() ? "ROI PASS" : "ROI FAIL");
         String ncc = sample == null ? ""
-                : String.format(" · NCC %.2f (thr %.2f)",
+                : String.format(" / NCC %.2f (thr %.2f)",
                         Double.valueOf(sample.ncc), Double.valueOf(simThr));
-        infoLbl.setText(String.format("프레임 %d / %d · %.0f ms · %s%s",
+        infoLbl.setText(String.format("프레임 %d / %d / %.0f ms / %s%s",
                 Integer.valueOf(frame), Integer.valueOf(player.getFrameCount()),
                 Double.valueOf(tMs), pass, ncc));
     }
@@ -187,7 +187,7 @@ public class VisionScrubPanel extends Composite {
         int wh = (int) Math.round((roi[1] - roi[0]) * scale);
         VisionMatchLog.Sample sample = matchLog.at(currentMs);
         if (sample == null) {
-            // 구 증거(로그 없음) — ROI 위치만 회색으로
+            // 구 증거(로그 없음) - ROI 위치만 회색으로
             gc.setForeground(canvas.getDisplay().getSystemColor(SWT.COLOR_GRAY));
         } else {
             gc.setForeground(sample.hit ? hitColor : missColor);

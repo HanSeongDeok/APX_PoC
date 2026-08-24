@@ -6,7 +6,7 @@ import org.eclipse.swt.widgets.Label;
 import com.suresofttech.apx.core.audio.MatchResult;
 
 /**
- * 음향 모니터 판독값 — 파형 그래프가 못 보여주는 <b>판정 근거 숫자</b>.
+ * 음향 모니터 판독값 - 파형 그래프가 못 보여주는 <b>판정 근거 숫자</b>.
  *
  * @deprecated 모니터 뷰에서 판독값 UI를 제공하지 않는다. {@link com.suresofttech.apx.client.view.AudioMonitorView} 참고.
  */
@@ -37,12 +37,12 @@ public class AudioReadout extends ReadoutBar {
         srcLbl = field("입력");
     }
 
-    /** 측정 시작 — 스냅샷 소스 표기 후 지표 초기화. */
+    /** 측정 시작 - 스냅샷 소스 표기 후 지표 초기화. */
     public void onStarted(String micName, int sampleRate, String expectedWavPath) {
         running = true;
         passAtMs = null;
         set(srcLbl, (micName == null || micName.isEmpty() ? "기본 마이크" : micName)
-                + " · " + sampleRate + " Hz · " + baseName(expectedWavPath));
+                + " / " + sampleRate + " Hz / " + baseName(expectedWavPath));
         clear(freqLbl);
         clear(waveLbl);
         clear(targetLbl);
@@ -55,7 +55,7 @@ public class AudioReadout extends ReadoutBar {
     }
 
     /**
-     * 매 폴링 틱 — 블록 판정 지표.
+     * 매 폴링 틱 - 블록 판정 지표.
      * @param m 최신 블록 결과(없으면 지표 유지)
      * @param elapsedSec 측정 경과(초)
      * @param passSpanCount 스코프 초록 밴드 수
@@ -65,20 +65,20 @@ public class AudioReadout extends ReadoutBar {
             set(freqLbl, vsThr(m.freqSim, m.freqThr), thrState(m.freqSim, m.freqThr));
             set(waveLbl, vsThr(m.waveSim, m.waveThr), thrState(m.waveSim, m.waveThr));
             set(targetLbl, String.format("%.0f Hz", Double.valueOf(m.targetFreq)));
-            set(energyLbl, f1(m.energyRatio) + "배 · 소리 " + (m.hasSound ? "있음" : "없음"),
+            set(energyLbl, f1(m.energyRatio) + "배 / 소리 " + (m.hasSound ? "있음" : "없음"),
                     m.hasSound ? STATE_BUSY : STATE_IDLE);
             if (passAtMs == null) {
                 set(judgeLbl, "블록 간격 " + f1(m.blockGapMs) + " ms (전환 대기)");
             }
         }
-        set(spanLbl, passSpanCount + "개" + (passSpanCount > 0 ? " · clip.wav = PASS 밴드" : ""),
+        set(spanLbl, passSpanCount + "개" + (passSpanCount > 0 ? " / clip.wav = PASS 밴드" : ""),
                 passSpanCount > 0 ? STATE_PASS : STATE_IDLE);
         head(headText(elapsedSec), passAtMs != null ? STATE_PASS : STATE_BUSY);
         commit();
     }
 
     /**
-     * PASS 확정 — 검출 시각과 자체 판단 분해.
+     * PASS 확정 - 검출 시각과 자체 판단 분해.
      * 검출 시각은 L2 캘리브 보정 없이 물리지연(D_mic)을 포함한 값이다.
      */
     public void setPass(Long passAtMs, Double judgeMs, Double gapMs, Double analysisMs) {
@@ -98,7 +98,7 @@ public class AudioReadout extends ReadoutBar {
         commit();
     }
 
-    /** 측정 중단 — 헤더를 최종 표기로 고정. */
+    /** 측정 중단 - 헤더를 최종 표기로 고정. */
     public void onStopped(boolean pass) {
         running = false;
         if (pass && passAtMs != null) {
@@ -112,7 +112,7 @@ public class AudioReadout extends ReadoutBar {
     }
 
     /**
-     * 입력 끊김 표시 — 측정 중 마이크가 빠지거나 드라이버가 멈춘 경우.
+     * 입력 끊김 표시 - 측정 중 마이크가 빠지거나 드라이버가 멈춘 경우.
      * 이 시점 이후 {@code full.wav}는 더 쌓이지 않으므로 증거 해석에 반드시 필요한 정보다.
      */
     public void setInputError(String reason) {
@@ -142,7 +142,7 @@ public class AudioReadout extends ReadoutBar {
             return passAtMs != null ? "음향: PASS @ " + passAtMs + " ms" : "음향: 대기";
         }
         return passAtMs != null
-                ? "음향: PASS @ " + passAtMs + " ms · " + t
-                : "음향: 측정 중 · " + t;
+                ? "음향: PASS @ " + passAtMs + " ms / " + t
+                : "음향: 측정 중 / " + t;
     }
 }

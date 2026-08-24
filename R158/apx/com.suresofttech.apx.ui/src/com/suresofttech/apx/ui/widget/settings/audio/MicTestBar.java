@@ -18,7 +18,7 @@ import com.suresofttech.apx.core.audio.MicMeter;
 import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
- * 입력 레벨 + 마이크 테스트 토글 — {@link MicMeter}. (장치 선택은 {@link MicSelectBar}.)
+ * 입력 레벨 + 마이크 테스트 토글 - {@link MicMeter}. (장치 선택은 {@link MicSelectBar}.)
  * 장치는 {@link ApxSettings#getMicName()} → {@link AudioCapture#findInputDevice}.
  */
 public class MicTestBar extends Composite {

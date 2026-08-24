@@ -10,15 +10,15 @@ import org.opencv.dnn.Dnn;
 import org.opencv.dnn.Net;
 
 /**
- * YOLO(분류) 기반 비전 판정기 — ONNX 모델을 <b>OpenCV DNN</b>으로 돌린다(Python 불필요).
+ * YOLO(분류) 기반 비전 판정기 - ONNX 모델을 <b>OpenCV DNN</b>으로 돌린다(Python 불필요).
  *
  * <p><b>NCC와의 차이</b>: NCC는 기준 영상과 픽셀을 비교해 "닮은 정도"를 계산하지만,
  * 이 판정기는 기준 영상 없이 학습된 모델이 "그 클래스일 <b>확률</b>"을 낸다.
  * 값의 의미는 다르지만 <b>0~1 점수 ≥ 임계 → PASS</b> 구조가 같아
  * {@link RoiMatchResult} 를 그대로 채운다({@code ncc}/{@code psc} = 확률).
- * 덕분에 기존 오버레이·HUD·임계 바를 고치지 않고 바꿔 낄 수 있다.
+ * 덕분에 기존 오버레이 / HUD / 임계 바를 고치지 않고 바꿔 낄 수 있다.
  *
- * <p>ORB 정렬은 쓰지 않는다 — 학습 모델은 위치가 조금 틀어져도 인식하므로
+ * <p>ORB 정렬은 쓰지 않는다 - 학습 모델은 위치가 조금 틀어져도 인식하므로
  * {@link #setAlignEnabled}는 무시된다(정렬 드리프트 문제 없음).
  *
  * <p>모델이 없거나 로드에 실패하면 판정하지 않고 {@code state="no-model"} 을 돌려준다.
@@ -26,11 +26,11 @@ import org.opencv.dnn.Net;
  */
 public final class YoloVisionJudge implements VisionJudge {
 
-    /** 학습·내보내기 설정과 맞춰야 하는 값들. */
+    /** 학습 / 내보내기 설정과 맞춰야 하는 값들. */
     public static final class Cfg {
         /** ONNX 모델 경로(필수). */
         public String modelPath;
-        /** 모델 입력 한 변(px) — 학습 시 imgsz 와 동일해야 한다. */
+        /** 모델 입력 한 변(px) - 학습 시 imgsz 와 동일해야 한다. */
         public int inputSize = 224;
         /** PASS 로 볼 클래스 인덱스(예: 0=없음, 1=팝업있음 이면 1). */
         public int hitClassId = 1;
@@ -134,7 +134,7 @@ public final class YoloVisionJudge implements VisionJudge {
         roi = new int[] { y1, y2, x1, x2 };
     }
 
-    /** YOLO는 정렬이 필요 없다 — 계약 유지를 위한 no-op. */
+    /** YOLO는 정렬이 필요 없다 - 계약 유지를 위한 no-op. */
     public void setAlignEnabled(boolean enabled) {
         // no-op
     }
@@ -171,7 +171,7 @@ public final class YoloVisionJudge implements VisionJudge {
         double tArrive = now();
         long sig = frameSig(bi);
         if (haveSig && sig == prevSig && lastResult != null) {
-            return lastResult;   // 같은 프레임 — 재계산 안 함
+            return lastResult;   // 같은 프레임 - 재계산 안 함
         }
         double rawGap = (haveSig && tPrevFrame > 0) ? (tArrive - tPrevFrame) * 1000.0 : 0.0;
         tPrevFrame = tArrive;
@@ -223,7 +223,7 @@ public final class YoloVisionJudge implements VisionJudge {
             r.frameGapMs = gapMs;
             r.canonImage = Cv.toBufferedImage(frame);
             r.roi = roi;
-            r.ncc = score;    // NCC 자리에 YOLO 확률 — 기존 UI/증거가 그대로 동작
+            r.ncc = score;    // NCC 자리에 YOLO 확률 - 기존 UI/증거가 그대로 동작
             r.ssim = 0;
             r.psc = score;
             r.simThr = thr;
@@ -303,7 +303,7 @@ public final class YoloVisionJudge implements VisionJudge {
         return denom > 0 ? Math.exp(v[idx] - max) / denom : 0;
     }
 
-    // ── 프레임 간격·중복 프레임 판별 (NCC 판정기와 동일 규칙) ──────────────
+    // ── 프레임 간격 / 중복 프레임 판별 (NCC 판정기와 동일 규칙) ──────────────
 
     private static double resolveFrameGapMs(double measuredMedianMs) {
         double fps = 0;
@@ -340,7 +340,7 @@ public final class YoloVisionJudge implements VisionJudge {
         return tmp[gapCount / 2];
     }
 
-    /** 가운데 가로줄 샘플링 해시 — 같은 프레임이 다시 들어왔는지 판별. */
+    /** 가운데 가로줄 샘플링 해시 - 같은 프레임이 다시 들어왔는지 판별. */
     private static long frameSig(BufferedImage bi) {
         int w = bi.getWidth();
         int h = bi.getHeight();

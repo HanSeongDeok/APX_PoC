@@ -7,7 +7,7 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.part.ViewPart;
 
 /**
- * 설정 View — {@link SettingsForm} 조립.
+ * 설정 View - {@link SettingsForm} 조립.
  */
 public class SettingsClientView extends ViewPart {
 

@@ -23,7 +23,7 @@ public final class AudioCapture {
     }
 
     /**
-     * 캡처가 더 이상 진행될 수 없을 때 — 마이크 분리, 드라이버 오류, 입력 정지.
+     * 캡처가 더 이상 진행될 수 없을 때 - 마이크 분리, 드라이버 오류, 입력 정지.
      * 측정 중 하드웨어가 빠지면 조용히 무음이 녹음되므로 반드시 위로 알린다.
      */
     public interface ErrorListener {
@@ -103,7 +103,7 @@ public final class AudioCapture {
         return list.get(0);
     }
 
-    /** "Primary Sound Capture Driver", Mapper, Port 라인 등 — 콤보에 넣지 않음. */
+    /** "Primary Sound Capture Driver", Mapper, Port 라인 등 - 콤보에 넣지 않음. */
     private static boolean isSystemOrVirtualMic(String name) {
         if (name == null || name.isEmpty()) {
             return true;
@@ -201,7 +201,7 @@ public final class AudioCapture {
                     try {
                         read = line.read(raw, 0, raw.length);
                     } catch (Exception ex) {
-                        // 측정 중 마이크 분리 — 드라이버가 예외를 던지는 경로
+                        // 측정 중 마이크 분리 - 드라이버가 예외를 던지는 경로
                         fail("마이크 입력 오류: " + ex.getMessage());
                         return;
                     }
@@ -210,7 +210,7 @@ public final class AudioCapture {
                         return;
                     }
                     if (read == 0) {
-                        // 0을 계속 돌려주는 장치가 있다 — 바쁜 대기 대신 끊김으로 판정
+                        // 0을 계속 돌려주는 장치가 있다 - 바쁜 대기 대신 끊김으로 판정
                         if (elapsedSinceBlockMs() > STALL_TIMEOUT_MS) {
                             fail("마이크 입력이 " + STALL_TIMEOUT_MS + "ms 이상 들어오지 않습니다");
                             return;
@@ -233,7 +233,7 @@ public final class AudioCapture {
         thread.start();
     }
 
-    /** 캡처 중단 사유 통지 대상 — {@link #start} 전에 걸어둔다. */
+    /** 캡처 중단 사유 통지 대상 - {@link #start} 전에 걸어둔다. */
     public void setErrorListener(ErrorListener l) {
         this.errorListener = l;
     }
@@ -257,7 +257,7 @@ public final class AudioCapture {
         closeLine();
     }
 
-    /** 캡처 스레드에서 치명적 상황 — 라인을 닫고 위로 알린다. */
+    /** 캡처 스레드에서 치명적 상황 - 라인을 닫고 위로 알린다. */
     private void fail(String reason) {
         if (!running) {
             return;

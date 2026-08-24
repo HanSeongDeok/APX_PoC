@@ -14,14 +14,14 @@ import org.opencv.imgproc.Imgproc;
  * 웹캠/기준 해상도가 바뀌면 그 크기가 곧 작업 공간이다.
  *
  * <p>기본: ORB로 프레임을 기준 좌표계로 정렬한 뒤, 고정 ROI만 NCC/SSIM 비교.
- * {@link #setAlignEnabled(false)} — 설정 탭 라이브 기준: ORB 없이 동일 해상도(다르면 ref 크기로 resize) 후 NCC.
+ * {@link #setAlignEnabled(false)} - 설정 탭 라이브 기준: ORB 없이 동일 해상도(다르면 ref 크기로 resize) 후 NCC.
  */
 public final class RoiMatchDetector implements VisionJudge {
 
     private static final int LOCK_INLIERS = 25;
     public static final double DEFAULT_SIM = 0.70;
 
-    /** 판정기 이름 — 증거·HUD 표기용. */
+    /** 판정기 이름 - 증거 / HUD 표기용. */
     public String name() {
         return "NCC";
     }
@@ -72,7 +72,7 @@ public final class RoiMatchDetector implements VisionJudge {
     }
 
     private void initRef(Mat ref, int[] roi, double simThr) {
-        // 기준 영상 원본 해상도 유지 — 640² stretch 금지
+        // 기준 영상 원본 해상도 유지 - 640² stretch 금지
         this.refCanon = ref;
         this.canonW = ref.cols();
         this.canonH = ref.rows();
@@ -81,7 +81,7 @@ public final class RoiMatchDetector implements VisionJudge {
         setRoi(roi != null ? roi : defaultCenterRoi(canonW, canonH));
     }
 
-    /** @deprecated 정사각 가정이 깨짐 — {@link #canonWidth()}/{@link #canonHeight()} 사용. */
+    /** @deprecated 정사각 가정이 깨짐 - {@link #canonWidth()}/{@link #canonHeight()} 사용. */
     public int canonSize() {
         return Math.max(canonW, canonH);
     }
@@ -110,7 +110,7 @@ public final class RoiMatchDetector implements VisionJudge {
         simThr = Math.max(0.0, Math.min(1.0, v));
     }
 
-    /** 판정 ROI 지정(드래그) — 기준 화면 픽셀 좌표. */
+    /** 판정 ROI 지정(드래그) - 기준 화면 픽셀 좌표. */
     public void setRoi(int[] r) {
         if (r == null || r.length < 4) {
             return;
@@ -141,7 +141,7 @@ public final class RoiMatchDetector implements VisionJudge {
     }
 
     /**
-     * ORB 정렬 on/off. 설정 탭 라이브 기준은 false —
+     * ORB 정렬 on/off. 설정 탭 라이브 기준은 false -
      * 특징점 부족 장면에서도 NCC가 aligning에 갇히지 않는다.
      */
     public void setAlignEnabled(boolean enabled) {
@@ -165,12 +165,12 @@ public final class RoiMatchDetector implements VisionJudge {
         return ev.getEvidence();
     }
 
-    /** 측정 중단 시 — post 미완이어도 pre/decide 확정. */
+    /** 측정 중단 시 - post 미완이어도 pre/decide 확정. */
     public void flushEvidence() {
         ev.flush();
     }
 
-    /** ui용 진입점 — BufferedImage(webcam)로 받아 내부에서 Mat 변환/해제. */
+    /** ui용 진입점 - BufferedImage(webcam)로 받아 내부에서 Mat 변환/해제. */
     public RoiMatchResult process(BufferedImage bi) {
         double tArrive = now();
         long sig = frameSigBi(bi);
@@ -244,7 +244,7 @@ public final class RoiMatchDetector implements VisionJudge {
         Size refSize = new Size(canonW, canonH);
         Mat canon;
         if (!alignEnabled) {
-            // 라이브: 해상도만 맞추고(같으면 clone) NCC — 640 강제 없음
+            // 라이브: 해상도만 맞추고(같으면 clone) NCC - 640 강제 없음
             if (frame.cols() == canonW && frame.rows() == canonH) {
                 canon = frame.clone();
             } else {

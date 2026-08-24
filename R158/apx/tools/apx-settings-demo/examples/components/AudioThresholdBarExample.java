@@ -3,7 +3,7 @@ import org.eclipse.swt.widgets.Composite;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioThresholdBar;
 
 /**
- * AudioThresholdBar 조립 예시 — 주파수·파형 임계를 한 값으로 조절.
+ * AudioThresholdBar 조립 예시 - 주파수 / 파형 임계를 한 값으로 조절.
  *
  * <p>경로: {@code apx-settings-demo/examples/components/AudioThresholdBarExample.java}
  */

@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 비전 증거({@code vision/}) 파일명 규약 + 조회 API. SWT無(core).
  *
- * <p>PASS 판정 시점 기준 3장이 한 세트다 — {@code -1f} / 판정 / {@code +1f}.
+ * <p>PASS 판정 시점 기준 3장이 한 세트다 - {@code -1f} / 판정 / {@code +1f}.
  * 클라(이솝) 조회의 <b>기본은 3장 전부</b>({@link #getAll} / {@link #readAll});
  * 낱장이 필요할 때만 {@link #get(File, Frame)}을 쓴다.
  */
@@ -33,7 +33,7 @@ public final class VisionEvidenceStore {
         }
     }
 
-    /** 세트 순서 — pre → decide → post 고정. */
+    /** 세트 순서 - pre → decide → post 고정. */
     public static final Frame[] SET = { Frame.PRE, Frame.DECIDE, Frame.POST };
 
     private VisionEvidenceStore() {
@@ -44,7 +44,7 @@ public final class VisionEvidenceStore {
         return f == null ? null : f.fileName();
     }
 
-    /** 낱장 조회 — 없으면 null. */
+    /** 낱장 조회 - 없으면 null. */
     public static File get(File visionDir, Frame f) {
         if (visionDir == null || f == null) {
             return null;
@@ -54,7 +54,7 @@ public final class VisionEvidenceStore {
     }
 
     /**
-     * <b>기본 조회</b> — pre/decide/post 3장 전부. 순서는 {@link #SET} 고정이고,
+     * <b>기본 조회</b> - pre/decide/post 3장 전부. 순서는 {@link #SET} 고정이고,
      * 없는 장은 {@code null}로 자리를 지켜 항상 크기 3을 반환한다
      * (인덱스로 어느 프레임이 빠졌는지 바로 알 수 있게).
      */
@@ -76,13 +76,13 @@ public final class VisionEvidenceStore {
         return true;
     }
 
-    /** 낱장 PNG 바이트 — 없으면 null. */
+    /** 낱장 PNG 바이트 - 없으면 null. */
     public static byte[] read(File visionDir, Frame f) {
         return readFile(get(visionDir, f));
     }
 
     /**
-     * <b>기본 조회(바이트)</b> — 3장 전부. {@link #getAll}과 같은 순서·크기 3,
+     * <b>기본 조회(바이트)</b> - 3장 전부. {@link #getAll}과 같은 순서 / 크기 3,
      * 없는 장은 null.
      */
     public static List<byte[]> readAll(File visionDir) {

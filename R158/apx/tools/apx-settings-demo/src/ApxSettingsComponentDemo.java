@@ -45,7 +45,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * APX Settings 컴포넌트 가이드 데모 — 설정 화면을 이루는 최소 단위 위젯을 하나씩 보여 준다.
+ * APX Settings 컴포넌트 가이드 데모 - 설정 화면을 이루는 최소 단위 위젯을 하나씩 보여 준다.
  *
  * <p><b>사용법</b>: 왼쪽 트리에서 항목을 고르면, 오른쪽에
  * ① 역할 설명  ② 소스 파일 위치  ③ 예시 코드 경로
@@ -53,7 +53,7 @@ import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
  *
  * <p><b>검측 뷰 (조립)</b>: 클라이언트 {@code *MonitorView} 와 같은 모니터 조립만 미리보기.
  * <p><b>설정 UI (조합)</b>: 클라 {@code SettingsForm} 전체 조립 + Kickoff {@code SettingsDialog} 예시.
- * Vision/Audio/Rear 아래는 개별 설정·모니터 컴포넌트 가이드.
+ * Vision/Audio/Rear 아래는 개별 설정 / 모니터 컴포넌트 가이드.
  *
  * <p><b>처음이면 이 용어부터</b>:
  * <ul>
@@ -114,7 +114,7 @@ public final class ApxSettingsComponentDemo {
     private ApxSettingsComponentDemo(Display display) {
         this.display = display;
         shell = new Shell(display);
-        shell.setText("APX Settings — 최소 단위 가이드");
+        shell.setText("APX Settings - 최소 단위 가이드");
         shell.setSize(1100, 760);
         shell.setLayout(new FillLayout());
 
@@ -156,7 +156,7 @@ public final class ApxSettingsComponentDemo {
 
         rightSash.setWeights(new int[] { 42, 58 });
 
-        // 보이지 않는 보관소 — Measure/Scope 를 dispose 하지 않고 옮길 때 사용
+        // 보이지 않는 보관소 - Measure/Scope 를 dispose 하지 않고 옮길 때 사용
         audioPark = new Composite(right, SWT.NONE);
         GridData parkGd = new GridData(0, 0);
         parkGd.exclude = true;
@@ -343,13 +343,13 @@ public final class ApxSettingsComponentDemo {
         return new Item(
                 "SettingsForm 조합",
                 "SettingsForm",
-                doc("  클라 설정 화면 전체 조립 — 비전·음향·후방 3열.\n"
+                doc("  클라 설정 화면 전체 조립 - 비전 / 음향 / 후방 3열.\n"
                                 + "  SettingsClientView / SettingsDialog 가 이 Composite를 그대로 붙인다.\n"
                                 + "  값은 ApxSettings에 즉시 반영(확인 버튼은 Dialog 쪽 책임).\n"
                                 + "\n"
-                                + "  · Vision: CameraSelect + CameraCanvas + RoiNcc + VisionThreshold\n"
-                                + "  · Audio: MicSelect/Test + ExpectedWav + Measure + Scope + Threshold\n"
-                                + "  · Rear: SizeBar + Legend + GridCanvas",
+                                + " / Vision: CameraSelect + CameraCanvas + RoiNcc + VisionThreshold\n"
+                                + " / Audio: MicSelect/Test + ExpectedWav + Measure + Scope + Threshold\n"
+                                + " / Rear: SizeBar + Legend + GridCanvas",
                         SRC_CLIENT + "SettingsForm.java",
                         EXAMPLES + "SettingsFormExample.java",
                         "SettingsForm form = new SettingsForm(parent);\n"
@@ -412,7 +412,7 @@ public final class ApxSettingsComponentDemo {
     }
 
     /**
-     * SettingsDialogExample.openAsShell 과 동일 — 데모 classpath에 examples 가 없어
+     * SettingsDialogExample.openAsShell 과 동일 - 데모 classpath에 examples 가 없어
      * 여기에 인라인(JFace 없이 SettingsForm modal Shell).
      */
     private void openSettingsDialogShell(Shell parent) {
@@ -465,10 +465,10 @@ public final class ApxSettingsComponentDemo {
                 "후방 검측",
                 "RearMonitorView 조립",
                 doc("  클라이언트 RearMonitorView 와 같은 모니터 조립 미리보기.\n"
-                                + "  · RearLegendBar (상태 범례, settings 동기)\n"
-                                + "  · RearGridCanvas — setInteractive(false), 색으로 PASS/FAIL\n"
+                                + " / RearLegendBar (상태 범례, settings 동기)\n"
+                                + " / RearGridCanvas - setInteractive(false), 색으로 PASS/FAIL\n"
                                 + "\n"
-                                + "  ※ 판독값(집계·좌표별 판정 글) UI 미제공.\n"
+                                + "  ※ 판독값(집계 / 좌표별 판정 글) UI 미제공.\n"
                                 + "  ※ SizeBar 등 설정 위젯은 포함하지 않음 (Vision/Audio/Rear 개별 항목 참고).\n"
                                 + "\n"
                                 + "  증거 규약 (<증거루트>/rear/):\n"
@@ -516,13 +516,13 @@ public final class ApxSettingsComponentDemo {
                 "음향 검측",
                 "AudioMonitorView 조립",
                 doc("  클라이언트 AudioMonitorView 와 같은 모니터 조립 미리보기.\n"
-                                + "  · AudioScope — 파형·초록 PASS 밴드만\n"
+                                + " / AudioScope - 파형 / 초록 PASS 밴드만\n"
                                 + "\n"
-                                + "  ※ 음정 추적·일치도 추이·판독값 UI 미제공.\n"
-                                + "  ※ MicSelect·ExpectedWav·Threshold 등 설정 위젯 없음.\n"
+                                + "  ※ 음정 추적 / 일치도 추이 / 판독값 UI 미제공.\n"
+                                + "  ※ MicSelect / ExpectedWav / Threshold 등 설정 위젯 없음.\n"
                                 + "\n"
                                 + "  증거 규약 (<증거루트>/audio/):\n"
-                                + "    full.wav · clip.wav · wave_pass.png · wave_full.png",
+                                + "    full.wav / clip.wav / wave_pass.png / wave_full.png",
                         SRC_UI + "settings/audio/AudioScope.java",
                         EXAMPLES + "AudioEvidenceExample.java\n"
                                 + "  " + EX_COMP + "AudioScopeExample.java",
@@ -548,14 +548,14 @@ public final class ApxSettingsComponentDemo {
                 "비전 검측",
                 "VisionMonitorView 조립",
                 doc("  클라이언트 VisionMonitorView 와 같은 모니터 조립 미리보기.\n"
-                                + "  · CameraCanvas + RoiNcc(setInteractive false) — 웹캠·ROI만\n"
+                                + " / CameraCanvas + RoiNcc(setInteractive false) - 웹캠 / ROI만\n"
                                 + "\n"
                                 + "  ※ CameraSelectBar는 설정 전용(모니터에 없음).\n"
-                                + "  ※ 판독값(유사도·ROI·자체 판단 글) UI 미제공.\n"
-                                + "  ※ ReferenceImageBar·VisionThresholdBar 등 설정 위젯 없음.\n"
+                                + "  ※ 판독값(유사도 / ROI / 자체 판단 글) UI 미제공.\n"
+                                + "  ※ ReferenceImageBar / VisionThresholdBar 등 설정 위젯 없음.\n"
                                 + "\n"
                                 + "  증거 규약 (<증거루트>/vision/):\n"
-                                + "    evidence_pre_-1f.png · evidence_decide.png · evidence_post_+1f.png",
+                                + "    evidence_pre_-1f.png / evidence_decide.png / evidence_post_+1f.png",
                         SRC_UI + "settings/vision/",
                         EXAMPLES + "VisionEvidenceExample.java\n"
                                 + "  " + EX_COMP + "CameraCanvasExample.java\n"
@@ -598,7 +598,7 @@ public final class ApxSettingsComponentDemo {
                 doc("  웹캠 선택 콤보 + 새로고침 버튼.\n"
                                 + "  고른 웹캠을 켜서, setCanvas로 연결한 화면(CameraCanvas)에 실시간 영상 공급.\n"
                                 + "  ※ 웹캠 장치 자체는 ApxSettings가 아니라 CameraService가 보관.\n"
-                                + "  (이 바는 '영상 공급'만 담당 — 설정 저장은 다른 바 몫)",
+                                + "  (이 바는 '영상 공급'만 담당 - 설정 저장은 다른 바 몫)",
                         SRC_UI + "settings/vision/CameraSelectBar.java",
                         EX_COMP + "CameraSelectBarExample.java",
                         "CameraSelectBar cam = new CameraSelectBar(parent);\n"
@@ -622,7 +622,7 @@ public final class ApxSettingsComponentDemo {
                 doc("  웹캠 영상을 보여 주는 '화면'만 담당하는 위젯(버튼 없음).\n"
                                 + "  CameraSelectBar.setCanvas(canvas)로 연결 시 영상 입력.\n"
                                 + "  ROI(비교할 사각형 영역) 지정 기능은 이 화면 위에 겹쳐 붙음(RoiNcc).\n"
-                                + "  ※ 설정값 저장 없음 — 표시 전용.",
+                                + "  ※ 설정값 저장 없음 - 표시 전용.",
                         SRC_UI + "settings/vision/CameraCanvas.java",
                         EX_COMP + "CameraCanvasExample.java",
                         "CameraCanvas canvas = new CameraCanvas(parent);\n"
@@ -655,7 +655,7 @@ public final class ApxSettingsComponentDemo {
                         "CameraCanvas canvas = new CameraCanvas(parent);\n"
                                 + "cam.setCanvas(canvas);\n"
                                 + "\n"
-                                + "RoiNcc roi = new RoiNcc(canvas); // 기본 색·선 두께",
+                                + "RoiNcc roi = new RoiNcc(canvas); // 기본 색 / 선 두께",
                         "RoiNcc.Style st = new RoiNcc.Style();\n"
                                 + "st.hit = new RGB(0, 200, 0);     // 일치 색\n"
                                 + "st.miss = new RGB(220, 60, 60);  // 불일치 색\n"
@@ -683,7 +683,7 @@ public final class ApxSettingsComponentDemo {
                 "ReferenceImageBar",
                 doc("  '기준 이미지 사용' 체크 + 이미지 파일 선택.\n"
                                 + "  실시간 화면 대신 저장해 둔 사진 한 장을 기준으로 비교할 때 사용.\n"
-                                + "  ※ ApxSettings: 사용 여부(useReferenceImage)·파일 경로(visionRefPath) 저장.\n"
+                                + "  ※ ApxSettings: 사용 여부(useReferenceImage) / 파일 경로(visionRefPath) 저장.\n"
                                 + "  비전 비교가 이 값을 보고 '사진 기준 모드'로 동작.",
                         SRC_UI + "settings/vision/ReferenceImageBar.java",
                         EX_COMP + "ReferenceImageBarExample.java",
@@ -730,7 +730,7 @@ public final class ApxSettingsComponentDemo {
                 "MicSelectBar",
                 doc("  마이크 선택 콤보 + 새로고침(선택만 담당).\n"
                                 + "  ※ ApxSettings: 고른 마이크 이름을 micName으로 저장.\n"
-                                + "  테스트·측정 바는 이 이름을 읽어 실제 마이크를 엶\n"
+                                + "  테스트 / 측정 바는 이 이름을 읽어 실제 마이크를 엶\n"
                                 + "  (AudioCapture.findInputDevice).\n"
                                 + "  → '고르는 바'와 '쓰는 바'는 설정값(micName)으로만 연결.",
                         SRC_UI + "settings/audio/MicSelectBar.java",
@@ -790,10 +790,10 @@ public final class ApxSettingsComponentDemo {
         return new Item(
                 "AudioMeasureBar",
                 "AudioMeasureBar",
-                doc("  '측정 / 초기화' 버튼 줄(3칸 — 3번째에 재생 버튼 추가 가능).\n"
+                doc("  '측정 / 초기화' 버튼 줄(3칸 - 3번째에 재생 버튼 추가 가능).\n"
                                 + "  측정 ON 시 마이크를 열어 기대음과 실시간 비교 + setScope로 연결한 그래프에 파형 표시.\n"
                                 + "  (setScope 없으면 버튼만 표시, 그래프 없음.)\n"
-                                + "  ※ ApxSettings에서 기대음·마이크·합격 기준선을 읽어 사용.",
+                                + "  ※ ApxSettings에서 기대음 / 마이크 / 합격 기준선을 읽어 사용.",
                         SRC_UI + "settings/audio/AudioMeasureBar.java",
                         EX_COMP + "AudioMeasureBarExample.java",
                         "AudioMeasureBar measure = new AudioMeasureBar(parent);\n"
@@ -819,7 +819,7 @@ public final class ApxSettingsComponentDemo {
                 "AudioScope",
                 doc("  측정 파형을 그려 주는 '그래프'만 담당하는 위젯(버튼 없음).\n"
                                 + "  AudioMeasureBar.setScope(scope)로 연결해야 데이터 입력.\n"
-                                + "  ※ 설정값 저장 없음 — 측정 바가 넘겨준 파형을 그리기만 함.\n"
+                                + "  ※ 설정값 저장 없음 - 측정 바가 넘겨준 파형을 그리기만 함.\n"
                                 + "  생성 인자 5000.0 = 주파수 그래프 Y축 최대(Hz). 파형만 써도 필요.",
                         SRC_UI + "settings/audio/AudioScope.java",
                         EX_COMP + "AudioScopeExample.java",
@@ -872,8 +872,8 @@ public final class ApxSettingsComponentDemo {
                 "AudioThresholdBar",
                 "AudioThresholdBar",
                 doc("  음향 합격 기준선(임계)을 ± 버튼으로 조절.\n"
-                                + "  주파수·파형 두 기준을 '한 값으로 똑같이' 조정.\n"
-                                + "  ※ ApxSettings: audioFreqThr·audioWaveThr를 같은 값으로 저장.\n"
+                                + "  주파수 / 파형 두 기준을 '한 값으로 똑같이' 조정.\n"
+                                + "  ※ ApxSettings: audioFreqThr / audioWaveThr를 같은 값으로 저장.\n"
                                 + "  측정 바가 '일치도 ≥ 임계'이면 합격 판정할 때 사용.",
                         SRC_UI + "settings/audio/AudioThresholdBar.java",
                         EX_COMP + "AudioThresholdBarExample.java",
@@ -902,8 +902,8 @@ public final class ApxSettingsComponentDemo {
                 doc("  후방 격자 크기 UI만 담당(프리셋 라디오+콤보 / 커스텀 스피너).\n"
                                 + "  모드 전환 시 편집 컨트롤은 같은 자리에 하나만 표시.\n"
                                 + "  setCanvas(canvas)로 연결하면:\n"
-                                + "    · 크기 변경 → ApxSettings + canvas.setGrid\n"
-                                + "    · 캔버스 Select 클릭 → ApxSettings.rearSelectedPoints\n"
+                                + " / 크기 변경 → ApxSettings + canvas.setGrid\n"
+                                + " / 캔버스 Select 클릭 → ApxSettings.rearSelectedPoints\n"
                                 + "  ※ ApxSettings: rearCols / rearRows / rearSizeMode\n"
                                 + "    크기가 바뀌면 Select 포인트는 초기화된다.",
                         SRC_UI + "settings/rear/RearGridSizeBar.java",
@@ -955,7 +955,7 @@ public final class ApxSettingsComponentDemo {
                         cfg.legendText = "상태 범례";
                         RearLegendBar legend = new RearLegendBar(parent, cfg);
 
-                        // 미리보기용 캔버스 — 체크 시 이 판에 범례가 뜬다
+                        // 미리보기용 캔버스 - 체크 시 이 판에 범례가 뜬다
                         RearGrid g = new RearGrid(s.getRearCols(), s.getRearRows());
                         g.selectPoints(s.getRearSelectedPoints());
                         RearGridCanvas canvas = new RearGridCanvas(parent, g);
@@ -974,18 +974,18 @@ public final class ApxSettingsComponentDemo {
         return new Item(
                 "RearGridCanvas",
                 "RearGridCanvas",
-                doc("  후방 최소 표시 단위 — 차량 후방 그림 + 검증 포인트 격자만.\n"
+                doc("  후방 최소 표시 단위 - 차량 후방 그림 + 검증 포인트 격자만.\n"
                                 + "  (SizeBar / LegendBar는 이 미리보기에 붙이지 않음)\n"
                                 + "\n"
                                 + "  동작:\n"
-                                + "    · 셀(점) 클릭 → Select 한 번에 하나만 (다시 클릭하면 해제)\n"
-                                + "    · loadDefaultCarImage() → com.suresofttech.apx.ui/ref/차량 후방 레이아웃_Default.png\n"
-                                + "    · setShowLegend(true/false) → 판 오른쪽 범례 (격자 침범 없음)\n"
-                                + "    · setOnChange(runnable) → Select 변경 콜백 (Settings 동기화 등)\n"
-                                + "    · setGrid(RearGrid) → 크기/지정 교체 후 다시 그림\n"
-                                + "    · setLegend(names, colors) → 범례 이름·색 커스텀\n"
+                                + " / 셀(점) 클릭 → Select 한 번에 하나만 (다시 클릭하면 해제)\n"
+                                + " / loadDefaultCarImage() → com.suresofttech.apx.ui/ref/차량 후방 레이아웃_Default.png\n"
+                                + " / setShowLegend(true/false) → 판 오른쪽 범례 (격자 침범 없음)\n"
+                                + " / setOnChange(runnable) → Select 변경 콜백 (Settings 동기화 등)\n"
+                                + " / setGrid(RearGrid) → 크기/지정 교체 후 다시 그림\n"
+                                + " / setLegend(names, colors) → 범례 이름 / 색 커스텀\n"
                                 + "\n"
-                                + "  ※ 조립은 Client에서 SizeBar·LegendBar와 따로 연결한다.",
+                                + "  ※ 조립은 Client에서 SizeBar / LegendBar와 따로 연결한다.",
                         SRC_UI + "settings/rear/RearGridCanvas.java",
                         EX_COMP + "RearGridCanvasExample.java",
                         "RearGrid g = new RearGrid(4, 6);          // 열×행\n"
@@ -1004,7 +1004,7 @@ public final class ApxSettingsComponentDemo {
                                 + "        s.setRearSelectedPoints(canvas.getGrid().selectedPoints());\n"
                                 + "    }\n"
                                 + "});\n"
-                                + "canvas.setLegend(                          // 범례 이름·색 커스텀\n"
+                                + "canvas.setLegend(                          // 범례 이름 / 색 커스텀\n"
                                 + "    new String[]{\"선택\",\"측정중\",\"합격\",\"불합격\"},\n"
                                 + "    new RGB[]{new RGB(0,120,255), new RGB(230,200,40),\n"
                                 + "              new RGB(40,170,70), new RGB(200,40,40)});\n"

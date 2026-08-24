@@ -3,10 +3,10 @@ package com.suresofttech.apx.core.dsp;
 import org.jtransforms.fft.DoubleFFT_1D;
 
 /**
- * FFT — JTransforms(org.jtransforms) 백엔드. 파이썬 NumPy rfft/ifft 대체.
+ * FFT - JTransforms(org.jtransforms) 백엔드. 파이썬 NumPy rfft/ifft 대체.
  *
  * <p>공개 API(nextPow2/transform/inverse/magnitude)는 기존 자작 radix-2와 동일하게 유지하여
- * 호출부(BeepMatcher·SignalMath·AudioScope 등) 변경 없음. 내부만 검증된 라이브러리로 교체.
+ * 호출부(BeepMatcher / SignalMath / AudioScope 등) 변경 없음. 내부만 검증된 라이브러리로 교체.
  * transform=복소 forward, inverse=복소 역(1/n 스케일), magnitude=실수 rfft 크기(0..N/2).
  */
 public final class Fft {

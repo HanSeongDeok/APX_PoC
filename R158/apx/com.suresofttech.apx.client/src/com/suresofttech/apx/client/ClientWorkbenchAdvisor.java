@@ -13,7 +13,7 @@ public class ClientWorkbenchAdvisor extends WorkbenchAdvisor {
         return ClientPerspective.ID;
     }
 
-    /** 저장된 레이아웃을 복원하지 않음 — perspective(createInitialLayout)를 매 실행마다 새로 적용.
+    /** 저장된 레이아웃을 복원하지 않음 - perspective(createInitialLayout)를 매 실행마다 새로 적용.
      *  (뷰를 추가/변경해도 이전 워크스페이스 상태에 가려지지 않게 함) */
     @Override
     public void initialize(IWorkbenchConfigurer configurer) {
@@ -25,7 +25,7 @@ public class ClientWorkbenchAdvisor extends WorkbenchAdvisor {
             IWorkbenchWindowConfigurer configurer) {
         return new WorkbenchWindowAdvisor(configurer) {
             public void preWindowOpen() {
-                configurer.setTitle("APX 이솝 클라이언트 - 예시 프로그램");
+                configurer.setTitle("APX 클라이언트 - 예시 프로그램");
                 configurer.setShowCoolBar(false);
                 configurer.setShowMenuBar(true);
                 configurer.setShowStatusLine(true);

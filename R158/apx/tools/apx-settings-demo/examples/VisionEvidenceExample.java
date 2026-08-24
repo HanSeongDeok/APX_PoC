@@ -7,13 +7,13 @@ import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 /**
  * 비전 검측 증거(±1프레임) API 예시.
  *
- * <p>디스크 규약 — {@code <증거루트>/vision/}:
+ * <p>디스크 규약 - {@code <증거루트>/vision/}:
  * <ul>
- *   <li>{@code evidence_pre_-1f.png} — 판정 직전 1프레임</li>
- *   <li>{@code evidence_decide.png} — 판정 프레임</li>
- *   <li>{@code evidence_post_+1f.png} — 판정 직후 1프레임</li>
- *   <li>{@code full.avi} + {@code frames.csv} — FULL 녹화·시각 인덱스</li>
- *   <li>{@code matches.csv} — 프레임별 ROI hit/ncc (결과 스크럽 PASS/FAIL 색)</li>
+ *   <li>{@code evidence_pre_-1f.png} - 판정 직전 1프레임</li>
+ *   <li>{@code evidence_decide.png} - 판정 프레임</li>
+ *   <li>{@code evidence_post_+1f.png} - 판정 직후 1프레임</li>
+ *   <li>{@code full.avi} + {@code frames.csv} - FULL 녹화 / 시각 인덱스</li>
+ *   <li>{@code matches.csv} - 프레임별 ROI hit/ncc (결과 스크럽 PASS/FAIL 색)</li>
  * </ul>
  * meta.properties 에 {@code roiNorm}/{@code simThr} 도 함께 저장된다.
  *

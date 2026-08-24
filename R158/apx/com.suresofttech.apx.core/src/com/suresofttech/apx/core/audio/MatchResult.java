@@ -3,7 +3,7 @@ package com.suresofttech.apx.core.audio;
 /**
  * BeepMatcher.feed() 한 블록 처리 결과 (파이썬 dict 대응 POJO).
  * onsetT 는 미검출 시 Double.NaN.
- * passMs(자체 판단) = blockGapMs + analysisMs — 전환 확정 블록에만 non-null.
+ * passMs(자체 판단) = blockGapMs + analysisMs - 전환 확정 블록에만 non-null.
  * blockGap = 실제 캡처 블록 길이/sr (고정 ms 아님).
  */
 public final class MatchResult {
@@ -19,7 +19,7 @@ public final class MatchResult {
     public final boolean match;       // 최초 확정(latch) 발생 블록
     public final double onsetT;       // 확정 시각(초), 미확정 NaN
 
-    /** 블록 양자화 간격(ms) = blockSamples/sr·1000. 매 블록. */
+    /** 블록 양자화 간격(ms) = blockSamples/sr / 1000. 매 블록. */
     public final double blockGapMs;
     /** 전환 순간 분석 시간(ms). 미확정이면 null. */
     public final Double analysisMs;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>R158 후방 검측 탭 — 화면설계</title>
+<title>R158 후방 검측 탭 - 화면설계</title>
 <style>
   html,body{margin:0;padding:0;height:100%}
   :root{
@@ -101,7 +101,7 @@
 </head>
 <body>
 <div class="page"><div class="wrap">
-  <p class="capnote">R158 · 후방 검측 탭 화면설계 (RearGridPanel 실화면 기준) · 목업(우클릭·버튼 동작)</p>
+  <p class="capnote">R158 / 후방 검측 탭 화면설계 (RearGridPanel 실화면 기준) / 목업(우클릭 / 버튼 동작)</p>
 
   <div class="win">
     <div class="chrome">R158 UX 정합성 검증 도구 <span class="x">▢ ✕</span></div>
@@ -141,7 +141,7 @@
           <div class="row"><span class="sw f"></span>FAIL</div>
         </div>
       </div>
-      <p class="hint">· 점을 <b>마우스 우클릭</b>하면 색상(SELECT/MEASURING/PASS/FAIL) 지정 · <b>전체 선택</b>/<b>초기화</b> 버튼</p>
+      <p class="hint"> / 점을 <b>마우스 우클릭</b>하면 색상(SELECT/MEASURING/PASS/FAIL) 지정 / <b>전체 선택</b>/<b>초기화</b> 버튼</p>
     </div>
   </div>
 
@@ -159,8 +159,8 @@
     <div class="r"><span>격자 크기 라디오</span><span class="a"><b>RearGridPanel</b> presetRadio / customRadio</span></div>
     <div class="r"><span>콤보 4×6 / 8×12 / 10×14</span><span class="a"><b>PRESETS</b> → canvas.setGrid</span></div>
     <div class="r"><span>커스텀 열×행</span><span class="a">colSpin × rowSpin → applyCustom</span></div>
-    <div class="r"><span>범례 체크</span><span class="a">canvas.setShowLegend · SELECT(회색)/MEASURING/PASS/FAIL</span></div>
-    <div class="r"><span>전체 선택 / 초기화</span><span class="a"><b>canvas.selectAll()</b> / <b>canvas.clearAll()</b> (※ 실제 탭 버튼은 제거 — 목업만)</span></div>
+    <div class="r"><span>범례 체크</span><span class="a">canvas.setShowLegend / SELECT(회색)/MEASURING/PASS/FAIL</span></div>
+    <div class="r"><span>전체 선택 / 초기화</span><span class="a"><b>canvas.selectAll()</b> / <b>canvas.clearAll()</b> (※ 실제 탭 버튼은 제거 - 목업만)</span></div>
     <div class="r"><span>점 우클릭 색상 지정</span><span class="a">우클릭 → <b>setPointVerdict(c,r,Verdict)</b> (SELECT=지정 회색)</span></div>
     <div class="r"><span>모든 TC 포인트 통합</span><span class="a"><b>showAll(List&lt;VerdictResult&gt;)</b> → canvas.setVerdicts</span></div>
     <div class="r"><span>차량 이미지</span><span class="a">canvas.setCarImage (expected/car_rear_white.png)</span></div>

@@ -11,8 +11,8 @@ package com.suresofttech.apx.core.vision;
  * <p>이식 대상 요약:
  * <ul>
  *   <li>Gear: ORB 정렬 + R단 채도 앵커/밝기 비교 판정 (gear.py, 227줄)</li>
- *   <li>Cluster: 팝업 경고창 템플릿/NCC·SSIM 검출 (cluster.py, 187줄)</li>
- *   <li>Evidence: 판정 근거 CSV/스냅샷 기록 (evidence.py, 40줄) — OpenCV 최소</li>
+ *   <li>Cluster: 팝업 경고창 템플릿/NCC / SSIM 검출 (cluster.py, 187줄)</li>
+ *   <li>Evidence: 판정 근거 CSV/스냅샷 기록 (evidence.py, 40줄) - OpenCV 최소</li>
  * </ul>
  *
  * <p>cv2 → JavaCV 매핑: VideoCapture→org.bytedeco.opencv FrameGrabber,

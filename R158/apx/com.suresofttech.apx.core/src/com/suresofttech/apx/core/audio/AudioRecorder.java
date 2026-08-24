@@ -37,7 +37,7 @@ public final class AudioRecorder {
         len += block.length;
     }
 
-    /** 녹음 종료(현 구현은 상태 표시용 no-op — 버퍼는 그대로 조회 가능). */
+    /** 녹음 종료(현 구현은 상태 표시용 no-op - 버퍼는 그대로 조회 가능). */
     public synchronized void stop() {
         // 버퍼 유지: stop 후에도 getSamples/extract 가능
     }

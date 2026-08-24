@@ -9,7 +9,7 @@ $Ui   = Join-Path $Root 'com.suresofttech.apx.ui'
 $Dist = Join-Path $Root 'dist\apx-module'
 
 function Require-Dir($p, $hint) {
-    if (-not (Test-Path $p)) { throw "없음: $p — $hint" }
+    if (-not (Test-Path $p)) { throw "없음: $p - $hint" }
 }
 Require-Dir (Join-Path $Core 'bin') 'core 빌드'
 Require-Dir (Join-Path $Ui 'bin') 'ui 빌드'

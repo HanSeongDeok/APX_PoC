@@ -14,9 +14,9 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
  *
  * <p>조회:
  * <ul>
- *   <li>{@link RearGridCanvas#getSnapshot} — TC 1개</li>
- *   <li>{@link RearGridCanvas#getSnapshots} — TC 여러 개(없는 항목은 null)</li>
- *   <li>{@link RearGridCanvas#getCombinedSnapshot} — 한 판으로 합친 PNG
+ *   <li>{@link RearGridCanvas#getSnapshot} - TC 1개</li>
+ *   <li>{@link RearGridCanvas#getSnapshots} - TC 여러 개(없는 항목은 null)</li>
+ *   <li>{@link RearGridCanvas#getCombinedSnapshot} - 한 판으로 합친 PNG
  *       (격자 cols×rows 가 서로 다르면 합칠 수 없음)</li>
  * </ul>
  *
@@ -57,7 +57,7 @@ public final class RearEvidenceExample {
             System.out.println("  " + ids.get(i) + " → " + many.get(i));
         }
 
-        // 5) 통합 조회 — 동일 격자 규격(cols×rows)만 한 판으로 합침
+        // 5) 통합 조회 - 동일 격자 규격(cols×rows)만 한 판으로 합침
         //    규격이 섞이면 해당 항목은 건너뛰거나 결과가 null 이 될 수 있음
         File combined = canvas.getCombinedSnapshot(ids);
         System.out.println("getCombinedSnapshot → " + combined);

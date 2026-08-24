@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>R158 비전 검증 탭 — 화면설계</title>
+<title>R158 비전 검증 탭 - 화면설계</title>
 <style>
   html,body{margin:0;padding:0;height:100%}
-  /* R158 비전 탭 — 실제 SWT 앱 화면 레이아웃 (네이티브 스타일 화면설계) */
+  /* R158 비전 탭 - 실제 SWT 앱 화면 레이아웃 (네이티브 스타일 화면설계) */
   :root{
     --app:#f0f0f0; --panel:#f0f0f0; --ink:#1a1a1a; --muted:#5a5a5a; --faint:#8a8a8a;
     --btn-top:#fdfdfd; --btn-bot:#e6e6e6; --btn-br:#adadad; --btn-br2:#8f8f8f;
@@ -82,7 +82,7 @@
 </head>
 <body>
 <div class="page"><div class="wrap">
-  <p class="capnote">R158 · 비전 탭 화면설계 (실제 앱 레이아웃)</p>
+  <p class="capnote">R158 / 비전 탭 화면설계 (실제 앱 레이아웃)</p>
 
   <div class="win">
     <div class="chrome">R158 UX 정합성 검증 도구 <span class="x">▢ ✕</span></div>
@@ -99,12 +99,12 @@
         <div class="mon"></div>
         <div class="roi"><span class="tag">ROI</span></div>
         <div class="ovl"><span>NCC <b>0.94</b></span><span>ROI 180×120</span></div>
-        <div class="hint">웹캠 라이브 · 드래그로 ROI 지정</div>
+        <div class="hint">웹캠 라이브 / 드래그로 ROI 지정</div>
       </div>
 
       <!-- 우: 컨트롤 -->
       <div class="ctrl">
-        <div class="status"><span class="lab">상태:</span> 정렬 중 (ORB) — 웹캠에 기어봉을 비추세요</div>
+        <div class="status"><span class="lab">상태:</span> 정렬 중 (ORB) - 웹캠에 기어봉을 비추세요</div>
 
         <div class="grid2">
           <div class="b">정렬 리셋 <span class="k">(C)</span></div>
@@ -113,7 +113,7 @@
           <div class="b">임계 +</div>
           <div class="b">보고서 저장 <span class="k">(D)</span></div>
           <div class="b">웹캠 캡처 <span class="k">(기준 등록)</span></div>
-          <div class="b wide">▶ 테스트 화면 열기 <span class="k">(P·R·N·D)</span></div>
+          <div class="b wide">▶ 테스트 화면 열기 <span class="k">(P / R / N / D)</span></div>
         </div>
 
         <div class="sep"></div>
@@ -127,13 +127,13 @@
   <!-- 화면 요소 → API (설계 주석) -->
   <div class="anno">
     <h3>화면 요소 → API</h3>
-    <div class="r"><span class="w">웹캠 영상 출력</span><span class="a"><b>VisionPanel</b>.getControl() — 라이브 프레임</span></div>
+    <div class="r"><span class="w">웹캠 영상 출력</span><span class="a"><b>VisionPanel</b>.getControl() - 라이브 프레임</span></div>
     <div class="r"><span class="w">ROI 드래그(단일)</span><span class="a"><b>setRoi</b>(Roi)</span></div>
     <div class="r"><span class="w">NCC 유사도 오버레이</span><span class="a"><b>setScoreListener</b> / <b>setOverlay</b>(score,roi)</span></div>
-    <div class="r"><span class="w">웹캠 캡처(기준 등록)</span><span class="a"><b>addReference</b>(File) — 기준 이미지</span></div>
+    <div class="r"><span class="w">웹캠 캡처(기준 등록)</span><span class="a"><b>addReference</b>(File) - 기준 이미지</span></div>
     <div class="r"><span class="w">보고서 저장</span><span class="a">stop() → <b>VisionReport</b>.getEvidence() PNG</span></div>
-    <div class="r"><span class="w">임계 ± / 판정·정렬 리셋</span><span class="a">참고 기준선 · <b>판정=이솝</b>(setVerdict)</span></div>
-    <div class="warn"><b>모듈</b>: 영상·NCC·오버레이·PNG　·　<b>이솝</b>: PASS/FAIL 판정　·　<b>설정탭</b>: 카메라 2ch·해상도</div>
+    <div class="r"><span class="w">임계 ± / 판정 / 정렬 리셋</span><span class="a">참고 기준선 / <b>판정=이솝</b>(setVerdict)</span></div>
+    <div class="warn"><b>모듈</b>: 영상 / NCC / 오버레이 / PNG　 / 　<b>이솝</b>: PASS/FAIL 판정　 / 　<b>설정탭</b>: 카메라 2ch / 해상도</div>
   </div>
 </div></div>
 </body>

@@ -7,9 +7,9 @@ import java.util.List;
 import com.suresofttech.apx.core.sync.SyncBus.Event;
 
 /**
- * 물리 지연(L2) 캘리브레이션 — 모달별 파이프라인 지연 상수와 지터를 표본에서 산출. SWT 무의존(core).
+ * 물리 지연(L2) 캘리브레이션 - 모달별 파이프라인 지연 상수와 지터를 표본에서 산출. SWT 무의존(core).
  *
- * <p>음향(D_mic)·비전(D_cap)의 하드웨어 경로 지연을 여러 번 재서 표본으로 쌓고,
+ * <p>음향(D_mic) / 비전(D_cap)의 하드웨어 경로 지연을 여러 번 재서 표본으로 쌓고,
  * <b>상수 = 중앙값(median)</b>, <b>지터 = 중앙값 절대편차(MAD)</b> 로 확정한다.
  * 상수는 발생시각 보정에 빼고(L2), 지터는 "하드웨어 스펙 근거"로 표시한다([[r158-project-spec]]).
  *
@@ -17,9 +17,9 @@ import com.suresofttech.apx.core.sync.SyncBus.Event;
  */
 public final class Calibration {
 
-    /** 지연 모달리티 — 비전(카메라 경로) / 음향(마이크 경로). */
+    /** 지연 모달리티 - 비전(카메라 경로) / 음향(마이크 경로). */
     public enum Modality {
-        VISION,   // 카메라: 기어 R 표시·클러스터 팝업
+        VISION,   // 카메라: 기어 R 표시 / 클러스터 팝업
         AUDIO     // 마이크: PDW 경고음
     }
 
@@ -33,7 +33,7 @@ public final class Calibration {
         }
     }
 
-    /** 이벤트 → 모달리티. BEEP=음향, 기어R·클러스터=비전, 그 외(CAN)=null. */
+    /** 이벤트 → 모달리티. BEEP=음향, 기어R / 클러스터=비전, 그 외(CAN)=null. */
     public static Modality modalityOf(Event e) {
         if (e == Event.BEEP) {
             return Modality.AUDIO;

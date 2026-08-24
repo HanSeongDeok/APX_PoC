@@ -20,7 +20,7 @@ import java.util.List;
  * </pre>
  *
  * <p>후방 스냅샷 파일명의 {@code TC-001}은 격자 셀용이며, 여기서의 {@code tcId}(Aesop 측정 TC)와
- * 별개다. 클라가 {@code tcId}로 열고 PASS 시각·밴드를 읽는다.
+ * 별개다. 클라가 {@code tcId}로 열고 PASS 시각 / 밴드를 읽는다.
  *
  * <pre>
  * EvidenceStore store = EvidenceStore.at(root);
@@ -63,7 +63,7 @@ public final class EvidenceStore {
     }
 
     /**
-     * TC 폴더와 {@code audio/}·{@code vision/}·{@code rear/}를 만든다.
+     * TC 폴더와 {@code audio/} / {@code vision/} / {@code rear/}를 만든다.
      * @return 준비된 TC 폴더. tcId 무효면 null
      */
     public File prepare(String tcId) {
@@ -142,8 +142,8 @@ public final class EvidenceStore {
     }
 
     /**
-     * tcId에서 경로 이탈·예약 문자를 제거한다.
-     * {@code / \ : * ? " < > |} 및 제어문자를 {@code _}로, 양끝 공백·점 제거.
+     * tcId에서 경로 이탈 / 예약 문자를 제거한다.
+     * {@code / \ : * ? " < > |} 및 제어문자를 {@code _}로, 양끝 공백 / 점 제거.
      * 결과가 비면 null.
      */
     public static String sanitize(String tcId) {

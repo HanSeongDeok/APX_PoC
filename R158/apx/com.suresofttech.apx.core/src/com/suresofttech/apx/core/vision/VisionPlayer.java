@@ -20,7 +20,7 @@ import org.opencv.videoio.Videoio;
  * <b>시각 → 프레임번호</b>를 찾고, MJPG AVI라 그 프레임으로 바로 시크한다.
  * 인덱스가 없으면 컨테이너 fps로 근사한다(정확도는 떨어진다).
  *
- * <p>스레드 안전하지 않다 — UI 스레드에서만 쓴다. 다 쓰면 {@link #close()}.
+ * <p>스레드 안전하지 않다 - UI 스레드에서만 쓴다. 다 쓰면 {@link #close()}.
  */
 public final class VisionPlayer {
 
@@ -35,7 +35,7 @@ public final class VisionPlayer {
     }
 
     /**
-     * 녹화 폴더를 연다 — {@code full.avi} + (있으면) {@code frames.csv}.
+     * 녹화 폴더를 연다 - {@code full.avi} + (있으면) {@code frames.csv}.
      * @return 열지 못하면 null
      */
     public static VisionPlayer open(File visionDir) {
@@ -46,7 +46,7 @@ public final class VisionPlayer {
                 new File(visionDir, VisionRecorder.INDEX_NAME));
     }
 
-    /** 영상·인덱스 파일을 직접 지정해 연다. 인덱스는 null 허용. */
+    /** 영상 / 인덱스 파일을 직접 지정해 연다. 인덱스는 null 허용. */
     public static VisionPlayer openFile(File video, File index) {
         if (video == null || !video.isFile()) {
             return null;
@@ -80,7 +80,7 @@ public final class VisionPlayer {
         return frameCount;
     }
 
-    /** 녹화 길이(ms) — 인덱스가 있으면 마지막 프레임 시각, 없으면 fps 환산. */
+    /** 녹화 길이(ms) - 인덱스가 있으면 마지막 프레임 시각, 없으면 fps 환산. */
     public double durationMs() {
         if (hasIndex()) {
             return frameMs[frameMs.length - 1];
@@ -88,13 +88,13 @@ public final class VisionPlayer {
         return frameCount <= 0 ? 0 : frameCount * 1000.0 / fps;
     }
 
-    /** 첫 프레임 시각(ms) — 보통 0 근처. */
+    /** 첫 프레임 시각(ms) - 보통 0 근처. */
     public double startMs() {
         return hasIndex() ? frameMs[0] : 0;
     }
 
     /**
-     * 시각(ms)에 해당하는 프레임 번호 — 그 시각 <b>이하</b>의 가장 늦은 프레임.
+     * 시각(ms)에 해당하는 프레임 번호 - 그 시각 <b>이하</b>의 가장 늦은 프레임.
      * (스크럽에서 "아직 안 온 미래 프레임"을 보여주지 않도록)
      */
     public int frameAt(double tMs) {
@@ -149,7 +149,7 @@ public final class VisionPlayer {
         }
         Mat m = new Mat();
         try {
-            // 순차 재생이면 시크 없이 read — MJPG라도 seek 비용이 있어서
+            // 순차 재생이면 시크 없이 read - MJPG라도 seek 비용이 있어서
             if (frame != lastFrame + 1) {
                 cap.set(Videoio.CAP_PROP_POS_FRAMES, frame);
             }
@@ -193,7 +193,7 @@ public final class VisionPlayer {
             r = new BufferedReader(new InputStreamReader(new FileInputStream(index), "UTF-8"));
             String line;
             while ((line = r.readLine()) != null) {
-                // frame,ms[,srcW,srcH] — 뒤 열은 원본 해상도(측정 중 변경 추적용)로,
+                // frame,ms[,srcW,srcH] - 뒤 열은 원본 해상도(측정 중 변경 추적용)로,
                 // 여기서는 앞 두 열만 쓴다. 열이 늘어도 인덱스가 깨지지 않아야 한다.
                 String[] parts = line.split(",");
                 if (parts.length < 2) {

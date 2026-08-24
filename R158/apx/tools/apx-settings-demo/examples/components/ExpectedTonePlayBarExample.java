@@ -6,7 +6,7 @@ import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
 import com.suresofttech.apx.ui.widget.settings.audio.ExpectedTonePlayBar;
 
 /**
- * ExpectedTonePlayBar 조립 예시 — 기대음 재생(보통 MeasureBar 액션칸).
+ * ExpectedTonePlayBar 조립 예시 - 기대음 재생(보통 MeasureBar 액션칸).
  *
  * <p>경로: {@code apx-settings-demo/examples/components/ExpectedTonePlayBarExample.java}
  */

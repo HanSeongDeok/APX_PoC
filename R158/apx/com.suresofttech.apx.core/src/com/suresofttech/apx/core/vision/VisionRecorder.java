@@ -18,19 +18,19 @@ import org.opencv.videoio.VideoWriter;
 /**
  * 측정 시작~중단 구간의 비전 FULL 녹화. SWT無(core).
  *
- * <p>MJPG AVI로 쓴다 — 전 프레임이 키프레임이라 결과 탭 스크럽에서 임의 시점 역방향
+ * <p>MJPG AVI로 쓴다 - 전 프레임이 키프레임이라 결과 탭 스크럽에서 임의 시점 역방향
  * 시크가 정확하다(H.264는 Windows 기본 배포에 인코더가 없어 열리지 않는다).
  *
  * <p>웹캠 실 fps는 흔들리므로 컨테이너 fps만 믿을 수 없다. 그래서 프레임마다
  * {@code frames.csv}에 {@code <프레임번호>,<측정시작기준 ms>}를 남기고, 재생 측
  * 재생 측은 이 인덱스로 시각→프레임을 찾는다(결과 뷰는 클라이언트 구현).
  *
- * <p>인코딩은 워커 스레드에서 한다 — UI 폴링 스레드가 JPEG 압축에 물리지 않게.
+ * <p>인코딩은 워커 스레드에서 한다 - UI 폴링 스레드가 JPEG 압축에 물리지 않게.
  * 큐가 차면 <b>가장 오래된 프레임을 버리고</b> 최신을 넣는다(측정 자체를 지연시키지 않는 쪽 우선).
  */
 public final class VisionRecorder {
 
-    /** 녹화 산출물 — 영상 + 시각 인덱스. */
+    /** 녹화 산출물 - 영상 + 시각 인덱스. */
     public static final class Recording {
         public final File video;
         public final File index;
@@ -48,10 +48,10 @@ public final class VisionRecorder {
     public static final String VIDEO_NAME = "full.avi";
     public static final String INDEX_NAME = "frames.csv";
 
-    /** 컨테이너에 기록할 명목 fps — 실제 시각은 frames.csv가 정답. */
+    /** 컨테이너에 기록할 명목 fps - 실제 시각은 frames.csv가 정답. */
     private static final double NOMINAL_FPS = 30.0;
     /**
-     * 큐 깊이 — 30fps 기준 약 1초. VideoWriter 오픈(수백 ms)이나 순간적인 인코딩 지연을
+     * 큐 깊이 - 30fps 기준 약 1초. VideoWriter 오픈(수백 ms)이나 순간적인 인코딩 지연을
      * 흡수하고도 프레임을 버리지 않을 만큼은 필요하다(작으면 측정 앞부분이 통째로 날아간다).
      */
     private static final int QUEUE_CAP = 32;
@@ -80,10 +80,10 @@ public final class VisionRecorder {
     private volatile int frameCount;
     private volatile double lastMs;
     private volatile int dropped;
-    /** 해상도가 달라 레터박스로 맞춰 넣은 프레임 수 — 측정 중 하드웨어 변경 흔적. */
+    /** 해상도가 달라 레터박스로 맞춰 넣은 프레임 수 - 측정 중 하드웨어 변경 흔적. */
     private volatile int resized;
 
-    /** 해상도를 모를 때 — 첫 프레임이 올 때 writer를 연다(그 사이 프레임은 큐가 받친다). */
+    /** 해상도를 모를 때 - 첫 프레임이 올 때 writer를 연다(그 사이 프레임은 큐가 받친다). */
     public synchronized void start(File dir) {
         start(dir, 0, 0);
     }
@@ -91,7 +91,7 @@ public final class VisionRecorder {
     /**
      * 녹화 시작.
      *
-     * <p>해상도를 미리 주면 <b>첫 프레임 전에</b> writer를 열어둔다 — VideoWriter 오픈은
+     * <p>해상도를 미리 주면 <b>첫 프레임 전에</b> writer를 열어둔다 - VideoWriter 오픈은
      * 수백 ms가 걸려서, 첫 프레임에 열면 그동안 들어오는 측정 앞부분이 큐에서 밀려난다.
      *
      * @param dir 녹화 산출물 폴더(없으면 생성)
@@ -133,20 +133,20 @@ public final class VisionRecorder {
         return running.get();
     }
 
-    /** 큐가 가득 차 버려진 프레임 수 — 진단용. */
+    /** 큐가 가득 차 버려진 프레임 수 - 진단용. */
     public int getDroppedFrames() {
         return dropped;
     }
 
     /**
      * 녹화 해상도와 달라 레터박스로 맞춰 넣은 프레임 수.
-     * 0보다 크면 측정 도중 카메라·해상도가 바뀌었다는 뜻이다.
+     * 0보다 크면 측정 도중 카메라 / 해상도가 바뀌었다는 뜻이다.
      */
     public int getResizedFrames() {
         return resized;
     }
 
-    /** 녹화 중인 프레임 크기 — 아직 writer가 안 열렸으면 0. */
+    /** 녹화 중인 프레임 크기 - 아직 writer가 안 열렸으면 0. */
     public int getWidth() {
         return width;
     }
@@ -157,7 +157,7 @@ public final class VisionRecorder {
 
     /**
      * 프레임 투입. 호출 스레드에서는 픽셀 복사(Mat 변환)만 하고 인코딩은 워커가 한다.
-     * @param tMs 측정 시작 기준 경과(ms) — PASS 시각과 같은 시간축이어야 스크럽이 맞는다
+     * @param tMs 측정 시작 기준 경과(ms) - PASS 시각과 같은 시간축이어야 스크럽이 맞는다
      */
     public void feed(BufferedImage bi, double tMs) {
         if (!running.get() || bi == null) {
@@ -178,7 +178,7 @@ public final class VisionRecorder {
         }
         Job job = new Job(m, tMs);
         if (!queue.offer(job)) {
-            Job old = queue.poll();     // 최신 우선 — 오래된 프레임을 버린다
+            Job old = queue.poll();     // 최신 우선 - 오래된 프레임을 버린다
             if (old != null) {
                 old.img.release();
                 dropped++;
@@ -191,7 +191,7 @@ public final class VisionRecorder {
     }
 
     /**
-     * 녹화 종료 — 큐를 비우고 파일을 닫는다.
+     * 녹화 종료 - 큐를 비우고 파일을 닫는다.
      * @return 산출물(프레임이 하나도 없으면 null)
      */
     public synchronized Recording stop() {
@@ -249,7 +249,7 @@ public final class VisionRecorder {
             }
             Mat out = job.img;
             if (srcW != width || srcH != height) {
-                // 측정 도중 웹캠 교체·해상도 변경 — AVI 컨테이너는 프레임 크기 변경을 못 받는다.
+                // 측정 도중 웹캠 교체 / 해상도 변경 - AVI 컨테이너는 프레임 크기 변경을 못 받는다.
                 // 버리면 그 뒤 구간이 통째로 사라지므로, 비율을 유지한 채 레터박스로 맞춰 넣고
                 // 원본 해상도는 frames.csv에 남겨 증거에서 변경 시점을 알 수 있게 한다.
                 fitted = letterbox(job.img, width, height);
@@ -273,7 +273,7 @@ public final class VisionRecorder {
         }
     }
 
-    /** 비율 유지 축소 + 검은 여백 — 늘려서 왜곡시키지 않는다(증거 화면이므로). */
+    /** 비율 유지 축소 + 검은 여백 - 늘려서 왜곡시키지 않는다(증거 화면이므로). */
     private static Mat letterbox(Mat src, int dstW, int dstH) {
         Mat resizedMat = null;
         Mat roi = null;

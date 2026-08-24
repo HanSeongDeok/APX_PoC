@@ -6,7 +6,7 @@ import com.suresofttech.apx.core.dsp.Fft;
 import com.suresofttech.apx.core.dsp.SignalMath;
 
 /**
- * 기대 beep 음향 일치 검출 엔진 (순수·결정적). 파이썬 apx_app/engine/audio.py 이식.
+ * 기대 beep 음향 일치 검출 엔진 (순수 / 결정적). 파이썬 apx_app/engine/audio.py 이식.
  *
  * <p>주파수(FFT 코사인 유사도) + 파형(정규화 상호상관) 각각 일치도를 내고,
  * 둘 다 각자 임계 이상이면 PASS(AND).
@@ -98,7 +98,7 @@ public final class BeepMatcher {
         this(template, sr, 150.0, 4.0, 0.5, 0.5, 0.12);
     }
 
-    /** 검출 무장 + 콜드스타트를 위해 버퍼·배경에너지 초기화(빈 상태에서 시작). */
+    /** 검출 무장 + 콜드스타트를 위해 버퍼 / 배경에너지 초기화(빈 상태에서 시작). */
     public void arm() {
         armed = true;
         onsetT = Double.NaN;
@@ -141,7 +141,7 @@ public final class BeepMatcher {
         return buf;
     }
 
-    /** 기대 파형(단위정규화 단일 펄스) — 스코프 '기대 그래프' 표시용. */
+    /** 기대 파형(단위정규화 단일 펄스) - 스코프 '기대 그래프' 표시용. */
     public double[] getTemplate() {
         return tmpl.clone();
     }

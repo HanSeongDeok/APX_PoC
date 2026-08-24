@@ -6,7 +6,7 @@ import com.suresofttech.apx.ui.widget.settings.audio.AudioMeasureBar;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 
 /**
- * AudioScope 조립 예시 — 파형 그래프(버튼 없음, MeasureBar가 데이터 공급).
+ * AudioScope 조립 예시 - 파형 그래프(버튼 없음, MeasureBar가 데이터 공급).
  *
  * <p>경로: {@code apx-settings-demo/examples/components/AudioScopeExample.java}
  */

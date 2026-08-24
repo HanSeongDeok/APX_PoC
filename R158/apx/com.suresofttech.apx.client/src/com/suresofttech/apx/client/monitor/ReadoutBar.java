@@ -11,23 +11,23 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
 
 /**
- * 모니터 판독값 표시 공통 골격 — 굵은 상태 헤더 + "이름 : 값" 2열 격자.
+ * 모니터 판독값 표시 공통 골격 - 굵은 상태 헤더 + "이름 : 값" 2열 격자.
  *
- * <p>세션·워크벤치를 모르고 core POJO/원시값만 받는다(위젯 라이브러리 승격용).
- * 값이 실제로 바뀐 틱에만 다시 배치해 폴링(≈80ms)에서도 깜빡임·부하가 없다.
+ * <p>세션 / 워크벤치를 모르고 core POJO/원시값만 받는다(위젯 라이브러리 승격용).
+ * 값이 실제로 바뀐 틱에만 다시 배치해 폴링(≈80ms)에서도 깜빡임 / 부하가 없다.
  */
 public abstract class ReadoutBar extends Composite {
 
     /** 값 미정 표기. */
-    public static final String DASH = "—";
+    public static final String DASH = "-";
 
-    /** 헤더/값 색 상태 — 대기(회색). */
+    /** 헤더/값 색 상태 - 대기(회색). */
     public static final int STATE_IDLE = 0;
     /** 진행 중(주황). */
     public static final int STATE_BUSY = 1;
-    /** 충족·합격(초록). */
+    /** 충족 / 합격(초록). */
     public static final int STATE_PASS = 2;
-    /** 미달·불합격(빨강). */
+    /** 미달 / 불합격(빨강). */
     public static final int STATE_FAIL = 3;
 
     private final Font boldFont;
@@ -67,7 +67,7 @@ public abstract class ReadoutBar extends Composite {
         });
     }
 
-    /** "이름 : 값" 한 줄 추가 — 반환된 Label이 값 칸. */
+    /** "이름 : 값" 한 줄 추가 - 반환된 Label이 값 칸. */
     protected Label field(String name) {
         Label n = new Label(fields, SWT.NONE);
         n.setText(name);
@@ -79,7 +79,7 @@ public abstract class ReadoutBar extends Composite {
         return v;
     }
 
-    /** 상태 헤더 — 색은 {@code STATE_*}. */
+    /** 상태 헤더 - 색은 {@code STATE_*}. */
     protected void head(String text, int state) {
         setText(headLbl, text, state);
     }
@@ -91,7 +91,7 @@ public abstract class ReadoutBar extends Composite {
 
     /**
      * 값 칸 갱신 + 색. 좁은 View에서 잘릴 수 있어 툴팁에 전문을 남긴다.
-     * 실제로 바뀐 경우만 dirty로 표시 — {@link #commit()}에서 한 번만 배치.
+     * 실제로 바뀐 경우만 dirty로 표시 - {@link #commit()}에서 한 번만 배치.
      */
     protected void set(Label v, String text, int state) {
         setText(v, text, state);
