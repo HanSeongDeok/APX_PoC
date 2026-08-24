@@ -16,10 +16,15 @@ import org.opencv.imgproc.Imgproc;
  * <p>기본: ORB로 프레임을 기준 좌표계로 정렬한 뒤, 고정 ROI만 NCC/SSIM 비교.
  * {@link #setAlignEnabled(false)} — 설정 탭 라이브 기준: ORB 없이 동일 해상도(다르면 ref 크기로 resize) 후 NCC.
  */
-public final class RoiMatchDetector {
+public final class RoiMatchDetector implements VisionJudge {
 
     private static final int LOCK_INLIERS = 25;
     public static final double DEFAULT_SIM = 0.70;
+
+    /** 판정기 이름 — 증거·HUD 표기용. */
+    public String name() {
+        return "NCC";
+    }
 
     private Mat refCanon;
     private int canonW;

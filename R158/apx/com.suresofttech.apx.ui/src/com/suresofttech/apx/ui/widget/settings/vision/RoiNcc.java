@@ -19,6 +19,8 @@ import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
+import com.suresofttech.apx.core.vision.VisionJudge;
+import com.suresofttech.apx.core.vision.VisionJudges;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
@@ -61,7 +63,7 @@ public final class RoiNcc {
     private final ApxSettings settings = ApxSettings.get();
     private final ApxSettings.Listener settingsListener;
 
-    private RoiMatchDetector det;
+    private VisionJudge det;
     private volatile RoiMatchResult last;
     private boolean dragging;
     private int dragX0, dragY0, dragX1, dragY1;
@@ -231,7 +233,7 @@ public final class RoiNcc {
                 return;
             }
             try {
-                det = new RoiMatchDetector(path, null, settings.getSimThr());
+                det = VisionJudges.create(null, path, null, settings.getSimThr());
                 det.setRoi(settings.getRoi(det.canonWidth(), det.canonHeight()));
                 det.setSimThr(settings.getSimThr());
             } catch (Exception ex) {
@@ -254,7 +256,7 @@ public final class RoiNcc {
                 return;
             }
             try {
-                det = new RoiMatchDetector(path, null, cfg.simThr);
+                det = VisionJudges.create(null, path, null, cfg.simThr);
                 int[] roi = normToRoi(cfg.roiNorm, det.canonWidth(), det.canonHeight());
                 if (roi != null) {
                     det.setRoi(roi);
@@ -303,7 +305,7 @@ public final class RoiNcc {
         }
         try {
             int[] roi = settings.getRoi(bi.getWidth(), bi.getHeight());
-            det = new RoiMatchDetector(bi, roi, settings.getSimThr());
+            det = VisionJudges.create(bi, null, roi, settings.getSimThr());
             det.setAlignEnabled(false);
             det.setSimThr(settings.getSimThr());
             RoiMatchResult r = det.process(bi);
@@ -327,7 +329,7 @@ public final class RoiNcc {
         }
         try {
             int[] roi = normToRoi(cfg.roiNorm, bi.getWidth(), bi.getHeight());
-            det = new RoiMatchDetector(bi, roi, cfg.simThr);
+            det = VisionJudges.create(bi, null, roi, cfg.simThr);
             det.setAlignEnabled(false);
             det.setSimThr(cfg.simThr);
             RoiMatchResult r = det.process(bi);
@@ -489,6 +491,11 @@ public final class RoiNcc {
         StringBuilder sb = new StringBuilder();
         sb.append(s.isUseReferenceImage()).append('|');
         sb.append(s.getVisionRefPath()).append('|');
+        // 판정 방식이 바뀌면 판정기를 다시 만들어야 한다(NCC <-> YOLO).
+        sb.append(s.getVisionJudge()).append('|');
+        sb.append(s.getYoloModelPath()).append('|');
+        sb.append(s.getYoloInputSize()).append('|');
+        sb.append(s.getYoloHitClassId()).append('|');
         if (n == null) {
             sb.append("null");
         } else {

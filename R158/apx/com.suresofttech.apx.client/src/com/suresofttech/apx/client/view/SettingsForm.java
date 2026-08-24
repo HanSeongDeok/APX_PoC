@@ -22,6 +22,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
+import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
@@ -83,6 +84,9 @@ public class SettingsForm extends Composite {
         vThr.plusText = "+ 정밀도";
         VisionThresholdBar visionThr = new VisionThresholdBar(refBlock, vThr);
         visionThr.setRoiNcc(roiNcc);
+
+        // 판정 방식 전환(NCC / YOLO) — 고르는 즉시 프리뷰·측정이 그 방식으로 바뀐다.
+        new VisionJudgeBar(refBlock);
 
         cameraSelect.refreshCameras();
         return cameraSelect;

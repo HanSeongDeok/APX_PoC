@@ -16,6 +16,8 @@ import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.Cv;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
+import com.suresofttech.apx.core.vision.VisionJudge;
+import com.suresofttech.apx.core.vision.VisionJudges;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.core.vision.VisionEvidenceStore;
 import com.suresofttech.apx.core.vision.VisionMatchLog;
@@ -65,7 +67,7 @@ public final class MeasureSession {
     private Double audioGapMs;
     private Double audioAnalysisMs;
 
-    private RoiMatchDetector visionDet;
+    private VisionJudge visionDet;
     private volatile RoiMatchResult latestVision;
     private volatile boolean visionPass;
     private volatile Long visionPassAtMs;
@@ -479,7 +481,7 @@ public final class MeasureSession {
         if (!running || bi == null || snapshot == null) {
             return null;
         }
-        RoiMatchDetector det;
+        VisionJudge det;
         synchronized (this) {
             if (!running) {
                 return null;
@@ -646,7 +648,7 @@ public final class MeasureSession {
         evidence.setOverallPassMs(Math.max(a.longValue(), v.longValue()));
     }
 
-    private RoiMatchDetector ensureVisionDetector(BufferedImage bi) throws Exception {
+    private VisionJudge ensureVisionDetector(BufferedImage bi) throws Exception {
         if (visionDet != null) {
             if (!snapshot.useReferenceImage
                     && (bi.getWidth() != visionDet.canonWidth()
@@ -661,7 +663,7 @@ public final class MeasureSession {
             if (path == null || !new File(path).isFile()) {
                 return null;
             }
-            visionDet = new RoiMatchDetector(path, null, snapshot.simThr);
+            visionDet = VisionJudges.create(null, path, null, snapshot.simThr);
             int[] roi = snapshot.toRoiPixels(visionDet.canonWidth(), visionDet.canonHeight());
             if (roi != null) {
                 visionDet.setRoi(roi);
@@ -669,7 +671,7 @@ public final class MeasureSession {
             visionDet.setSimThr(snapshot.simThr);
         } else {
             int[] roi = snapshot.toRoiPixels(bi.getWidth(), bi.getHeight());
-            visionDet = new RoiMatchDetector(bi, roi, snapshot.simThr);
+            visionDet = VisionJudges.create(bi, null, roi, snapshot.simThr);
             visionDet.setAlignEnabled(false);
             visionDet.setSimThr(snapshot.simThr);
         }

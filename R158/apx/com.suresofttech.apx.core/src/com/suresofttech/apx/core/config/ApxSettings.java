@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.suresofttech.apx.core.vision.RoiMatchDetector;
+import com.suresofttech.apx.core.vision.VisionJudges;
+import com.suresofttech.apx.core.vision.YoloVisionJudge;
 
 /**
  * R158 공유 설정 — 설정 탭에서 측정 전 세팅하고, 비전/음향/후방 탭이 재사용한다.
@@ -22,6 +24,10 @@ public final class ApxSettings {
     /** 후방 격자 크기 지정 방식. */
     public static final String REAR_MODE_PRESET = "preset";
     public static final String REAR_MODE_CUSTOM = "custom";
+
+    /** 비전 판정 방식 — 기준영상 대조(NCC) / 학습모델(YOLO). */
+    public static final String JUDGE_NCC = "NCC";
+    public static final String JUDGE_YOLO = "YOLO";
 
     private static final ApxSettings INSTANCE = new ApxSettings();
 
@@ -45,6 +51,16 @@ public final class ApxSettings {
     private double[] roiNorm = { 0.40625, 0.59375, 0.40625, 0.59375 };
     /** 비전 NCC 유사도 임계. */
     private double simThr = RoiMatchDetector.DEFAULT_SIM;
+
+    // ── 비전 판정 방식 ────────────────────────────────────────────────
+    /** {@link #JUDGE_NCC} 또는 {@link #JUDGE_YOLO}. 기본은 NCC. */
+    private String visionJudge = JUDGE_NCC;
+    /** YOLO 분류 모델(.onnx) 경로. 비어 있으면 YOLO 를 켜도 판정이 비활성된다. */
+    private String yoloModelPath;
+    /** 학습 시 imgsz 와 반드시 같아야 한다. */
+    private int yoloInputSize = 128;
+    /** PASS 로 볼 클래스 인덱스. 모델의 names 순서를 확인해 넣는다. */
+    private int yoloHitClassId = 0;
     /** 음향 주파수/파형 일치 임계. */
     private double audioFreqThr = 0.90;
     private double audioWaveThr = 0.90;
@@ -183,6 +199,67 @@ public final class ApxSettings {
         fire();
     }
 
+    // ── 비전 판정 방식 ────────────────────────────────────────────────
+
+    public String getVisionJudge() {
+        return visionJudge;
+    }
+
+    public boolean isYoloJudge() {
+        return JUDGE_YOLO.equals(visionJudge);
+    }
+
+    public String getYoloModelPath() {
+        return yoloModelPath;
+    }
+
+    public int getYoloInputSize() {
+        return yoloInputSize;
+    }
+
+    public int getYoloHitClassId() {
+        return yoloHitClassId;
+    }
+
+    /**
+     * 비전 판정 방식을 바꾸고 {@link VisionJudges} 팩토리에 즉시 반영한다.
+     * 이후 새로 만들어지는 판정기(설정 프리뷰·측정 세션)가 이 방식을 따른다.
+     *
+     * @param judge     {@link #JUDGE_NCC} / {@link #JUDGE_YOLO}
+     * @param modelPath YOLO 일 때 .onnx 경로 (NCC 면 무시)
+     * @param inputSize 학습 imgsz 와 동일해야 한다
+     * @param hitClassId PASS 로 볼 클래스 인덱스
+     */
+    public void setVisionJudge(String judge, String modelPath, int inputSize, int hitClassId) {
+        String j = JUDGE_YOLO.equals(judge) ? JUDGE_YOLO : JUDGE_NCC;
+        int size = (inputSize > 0) ? inputSize : this.yoloInputSize;
+        int cls = (hitClassId >= 0) ? hitClassId : 0;
+        if (j.equals(this.visionJudge) && eq(this.yoloModelPath, modelPath)
+                && this.yoloInputSize == size && this.yoloHitClassId == cls) {
+            return;
+        }
+        this.visionJudge = j;
+        this.yoloModelPath = modelPath;
+        this.yoloInputSize = size;
+        this.yoloHitClassId = cls;
+        applyVisionJudge();
+        fire();
+    }
+
+    /** 현재 설정을 {@link VisionJudges} 에 반영. 앱 시작 시 한 번 불러 두면 좋다. */
+    public void applyVisionJudge() {
+        if (isYoloJudge()) {
+            YoloVisionJudge.Cfg cfg = new YoloVisionJudge.Cfg();
+            cfg.modelPath = yoloModelPath;
+            cfg.inputSize = yoloInputSize;
+            cfg.hitClassId = yoloHitClassId;
+            cfg.thr = simThr;          // 임계는 설정 UI 의 임계 바 값을 따른다
+            VisionJudges.useYolo(cfg);
+        } else {
+            VisionJudges.useNcc();
+        }
+    }
+
     public double getAudioFreqThr() {
         return audioFreqThr;
     }
@@ -306,6 +383,9 @@ public final class ApxSettings {
         lines.add("useRef=" + useReferenceImage);
         lines.add("ref=" + visionRefPath);
         lines.add("simThr=" + String.format("%.2f", simThr));
+        lines.add("judge=" + visionJudge
+                + (isYoloJudge() ? " model=" + yoloModelPath
+                        + " imgsz=" + yoloInputSize + " hitClassId=" + yoloHitClassId : ""));
         lines.add("audioThr=" + String.format("%.2f/%.2f", audioFreqThr, audioWaveThr));
         lines.add("rear=" + rearCols + "x" + rearRows + "/" + rearSizeMode
                 + " legend=" + rearShowLegend + " pts=" + rearSelectedPoints.size());
