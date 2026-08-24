@@ -36,7 +36,7 @@ import com.suresofttech.apx.core.rear.VerdictResult;
  */
 public class RearGridCanvas extends Canvas {
 
-    /** 기본 차량 후방 이미지 파일명 (고정). {@code ui/ref/} 하위. */
+    /** 기본 차량 후방 이미지 파일명 (고정). {@code com.suresofttech.apx.ui/ref/} 하위. */
     public static final String DEFAULT_CAR_IMAGE_NAME = "차량 후방 레이아웃_Default.png";
 
     /** 설정·모니터 공통 범례 이름 (선택·측정중·합격·불합격). */
@@ -57,10 +57,9 @@ public class RearGridCanvas extends Canvas {
     private static final Pattern SNAP_NAME = Pattern.compile(
             "^(.+)_c(\\d+)_r(\\d+)_(NONE|MEASURING|PASS|FAIL)_(\\d+)x(\\d+)\\.png$");
 
+    /** 기준 이미지 폴더 — 플러그인 루트 바로 아래({@code com.suresofttech.apx.ui/ref}). */
     private static final String REF_REL =
-            "com.suresofttech.apx.ui" + File.separator + "src" + File.separator
-                    + "com" + File.separator + "suresofttech" + File.separator + "apx"
-                    + File.separator + "ui" + File.separator + "ref";
+            "com.suresofttech.apx.ui" + File.separator + "ref";
 
     private RearGrid grid;
     private Runnable onChange;
@@ -648,56 +647,106 @@ public class RearGridCanvas extends Canvas {
     }
 
     /**
-     * 기본 차량 이미지({@code ui/ref/}{@link #DEFAULT_CAR_IMAGE_NAME}) 로드.
+     * 기본 차량 이미지({@code com.suresofttech.apx.ui/ref/}{@link #DEFAULT_CAR_IMAGE_NAME}) 로드.
      * 밝은 회색 배경은 흰색으로 치환. 없으면 도형 유지.
      */
     public void loadDefaultCarImage() {
+        Image raw = null;
         File f = resolveDefaultCarImageFile();
-        if (f == null) {
-            return;
-        }
         try {
-            Image raw = new Image(getDisplay(), f.getAbsolutePath());
+            if (f != null) {
+                raw = new Image(getDisplay(), f.getAbsolutePath());
+            } else {
+                // 플러그인이 jar 로 묶이면 파일이 아니라 클래스패스 리소스로만 존재한다.
+                java.io.InputStream in = RearGridCanvas.class.getResourceAsStream(
+                        "/ref/" + DEFAULT_CAR_IMAGE_NAME);
+                if (in == null) {
+                    return;                  // 못 찾으면 도형으로 그린다
+                }
+                try {
+                    raw = new Image(getDisplay(), in);
+                } finally {
+                    in.close();
+                }
+            }
             Image whitened = whitenCarBackground(raw);
-            raw.dispose();
             setCarImage(whitened);
         } catch (Exception ex) {
             // 도형 유지
+        } finally {
+            if (raw != null && !raw.isDisposed()) {
+                raw.dispose();
+            }
         }
     }
 
-    /** {@code .../ui/ref/차량 후방 레이아웃_Default.png} 탐색. */
+    /**
+     * {@code com.suresofttech.apx.ui/ref/차량 후방 레이아웃_Default.png} 탐색.
+     *
+     * <p>실행 위치가 워크스페이스 루트일 수도, 플러그인 폴더일 수도, 배포본일 수도 있어
+     * 현재 디렉터리에서 위로 올라가며 찾는다. 없으면 null(도형으로 그린다).
+     */
     public static File resolveDefaultCarImageFile() {
         String name = DEFAULT_CAR_IMAGE_NAME;
         String sep = File.separator;
-        String[] candidates = {
-                "c:/DEV/apx/R158/apx/" + REF_REL.replace(File.separatorChar, '/') + "/" + name,
-                System.getProperty("user.dir") + sep + ".." + sep + ".." + sep + REF_REL + sep + name,
-                System.getProperty("user.dir") + sep + ".." + sep + REF_REL + sep + name,
-                System.getProperty("user.dir") + sep + REF_REL + sep + name,
-        };
-        for (int i = 0; i < candidates.length; i++) {
-            File f = new File(candidates[i]);
-            if (f.isFile()) {
-                return f;
-            }
+
+        // (1) 클래스가 실제로 로드된 위치 기준 — RCP 로 띄우면 user.dir 이 작업 디렉터리라
+        //     저장소 구조와 무관해진다. 그래서 클래스 위치에서 플러그인 루트를 거슬러 찾는다.
+        //       개발:  .../com.suresofttech.apx.ui/bin  → 한 단계 위가 플러그인 루트
+        //       배포:  .../plugins/com.suresofttech.apx.ui_0.1.0/  또는 .jar
+        File byCode = findNearCodeSource(name);
+        if (byCode != null) {
+            return byCode;
         }
+
+        // (2) 현재 작업 디렉터리에서 위로 올라가며 — 데모/CLI 실행용
         File dir = new File(System.getProperty("user.dir"));
         for (int depth = 0; depth < 10 && dir != null; depth++) {
-            File inRef = new File(dir, "src" + sep + "com" + sep + "suresofttech" + sep
-                    + "apx" + sep + "ui" + sep + "ref" + sep + name);
-            if (inRef.isFile()) {
-                return inRef;
+            // 워크스페이스/저장소 루트에서 본 경로
+            File underWs = new File(dir, REF_REL + sep + name);
+            if (underWs.isFile()) {
+                return underWs;
             }
-            File underUi = new File(dir, REF_REL + sep + name);
-            if (underUi.isFile()) {
-                return underUi;
-            }
+            // 저장소 루트에서 R158/apx 를 거쳐 본 경로
             File underApx = new File(dir, "R158" + sep + "apx" + sep + REF_REL + sep + name);
             if (underApx.isFile()) {
                 return underApx;
             }
+            // 플러그인 폴더 안(혹은 배포본)에서 본 경로
+            File underPlugin = new File(dir, "ref" + sep + name);
+            if (underPlugin.isFile()) {
+                return underPlugin;
+            }
             dir = dir.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * 이 클래스가 로드된 경로에서 위로 올라가며 {@code ref/<name>} 을 찾는다.
+     * OSGi API 를 쓰지 않으므로 RCP 안에서도, 데모(순수 SWT)에서도 같이 동작한다.
+     */
+    private static File findNearCodeSource(String name) {
+        try {
+            java.security.CodeSource cs =
+                    RearGridCanvas.class.getProtectionDomain().getCodeSource();
+            if (cs == null || cs.getLocation() == null) {
+                return null;
+            }
+            String path = java.net.URLDecoder.decode(cs.getLocation().getPath(), "UTF-8");
+            File at = new File(path);
+            if (at.isFile()) {
+                at = at.getParentFile();     // .jar 이면 담고 있는 폴더부터
+            }
+            for (int depth = 0; depth < 5 && at != null; depth++) {
+                File f = new File(at, "ref" + File.separator + name);
+                if (f.isFile()) {
+                    return f;
+                }
+                at = at.getParentFile();
+            }
+        } catch (Exception ignored) {
+            // 보안 매니저 등으로 못 읽으면 다음 방법으로 넘어간다
         }
         return null;
     }

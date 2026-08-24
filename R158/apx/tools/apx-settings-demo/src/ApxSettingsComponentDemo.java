@@ -979,7 +979,7 @@ public final class ApxSettingsComponentDemo {
                                 + "\n"
                                 + "  동작:\n"
                                 + "    · 셀(점) 클릭 → Select 한 번에 하나만 (다시 클릭하면 해제)\n"
-                                + "    · loadDefaultCarImage() → ui/ref/차량 후방 레이아웃_Default.png\n"
+                                + "    · loadDefaultCarImage() → com.suresofttech.apx.ui/ref/차량 후방 레이아웃_Default.png\n"
                                 + "    · setShowLegend(true/false) → 판 오른쪽 범례 (격자 침범 없음)\n"
                                 + "    · setOnChange(runnable) → Select 변경 콜백 (Settings 동기화 등)\n"
                                 + "    · setGrid(RearGrid) → 크기/지정 교체 후 다시 그림\n"
@@ -990,7 +990,7 @@ public final class ApxSettingsComponentDemo {
                         EX_COMP + "RearGridCanvasExample.java",
                         "RearGrid g = new RearGrid(4, 6);          // 열×행\n"
                                 + "RearGridCanvas canvas = new RearGridCanvas(parent, g);\n"
-                                + "canvas.loadDefaultCarImage();         // ui/ref/…_Default.png\n"
+                                + "canvas.loadDefaultCarImage();         // com.suresofttech.apx.ui/ref/…_Default.png\n"
                                 + "canvas.setShowLegend(false);          // 단독 미리보기면 off",
                         "ApxSettings s = ApxSettings.get();\n"
                                 + "RearGrid g = new RearGrid(s.getRearCols(), s.getRearRows());\n"
