@@ -399,6 +399,32 @@ public class AudioScope extends Canvas {
         if (samples == null || sr <= 0 || endMs <= startMs) {
             return;
         }
+        // ── X축을 눈금 그리드에 맞춘 뒤, 그 <b>전 구간</b>에 데이터를 채운다 ──
+        // 예전에는 [startMs, endMs] 만 채우고 축은 floor/ceil 로 넓혔다. 그래서 축 왼쪽
+        // (axLo~startMs)과 오른쪽에 데이터가 없는 빈 띠가 생겨 "파형이 살짝 오른쪽에서
+        // 시작"하는 것처럼 보였다. 정렬된 축 범위로 채우면 왼쪽 끝까지 그려진다.
+        double tick = (tickMs > 0) ? tickMs : msTick(endMs - startMs, tickApprox);
+        double lo0 = Math.floor(startMs / tick) * tick;
+        double hi0 = Math.ceil(endMs / tick) * tick;
+        if (hi0 - lo0 < tick) {
+            hi0 = lo0 + tick;
+        }
+        double span = hi0 - lo0;
+
+        // 창이 그대로면 커서만 옮긴다 — 포락선 재계산과 리빌드를 아예 건너뛴다.
+        // 스크럽 드래그에서 표시 구간이 바뀌지 않는 동안(예: 0~10s 구간 안에서 이동)
+        // 매 이벤트마다 수십만 샘플을 다시 스캔하고 차트를 다시 그리던 낭비를 없앤다.
+        // 커서는 paintOverlays 가 그리므로 redraw 만으로 충분하다.
+        if (eCount > 0
+                && Math.abs(winMin - lo0) < 1e-6
+                && Math.abs(winMax - hi0) < 1e-6) {
+            this.cursorMs = cursorMs;
+            if (!isDisposed()) {
+                redraw();
+            }
+            return;
+        }
+
         eHead = 0;
         eCount = 0;
         eLast = -1;
@@ -407,12 +433,13 @@ public class AudioScope extends Canvas {
         mHead = 0;
         mCount = 0;
 
-        double span = endMs - startMs;
-        // 창이 길면 열 폭을 늘려 링 용량(ENV_CAP) 안에 들어오게 — 해상도보다 전 구간 표시 우선
-        double colMs = Math.max(ENV_COL_MS, span / (ENV_CAP - 8));
-        int cols = (int) Math.ceil(span / colMs);
+        // 열 개수는 플롯 <b>픽셀 폭</b>에 맞춘다. 예전엔 ENV_CAP(약 3100) 기준이라
+        // 화면 폭의 4~5배를 계산·전달했다 — 눈에 보이지 않는 낭비였고 스크럽이 느렸다.
+        int plotW = Math.max(1, Math.max(120, getClientArea().width) - PLOT_L - PLOT_R_PLAIN);
+        int cols = Math.max(2, Math.min(ENV_CAP - 8, plotW));
+        double colMs = span / cols;
         for (int c = 0; c < cols && eCount < ENV_CAP; c++) {
-            double t0 = startMs + c * colMs;
+            double t0 = lo0 + c * colMs;
             int s0 = (int) Math.round(t0 / 1000.0 * sr);
             int s1 = (int) Math.round((t0 + colMs) / 1000.0 * sr);
             s0 = Math.max(0, Math.min(samples.length, s0));
@@ -433,8 +460,10 @@ public class AudioScope extends Canvas {
             eLo[tail] = lo;
             eCount++;
         }
-        winMin = startMs;
-        winMax = endMs;
+        // 데이터를 채운 범위와 축 범위를 일치시킨다(위에서 그리드에 맞춘 lo0~hi0).
+        // exactXAxis=false 라도 이미 정렬된 값이라 baseChart 의 floor/ceil 이 그대로 통과한다.
+        winMin = lo0;
+        winMax = hi0;
         this.cursorMs = cursorMs;
         // 라이브 setData 와 동일 — tickMs 그리드(floor/ceil). exact면 짧은 wav에서 0~4.5s처럼 줄어듦
         this.exactXAxis = false;
@@ -527,7 +556,45 @@ public class AudioScope extends Canvas {
         return (double) argmax * sr / nfft;
     }
 
+    /** 리빌드 최소 간격(ms). ChartDirector 렌더+PNG→Image 는 무거워 매 호출 처리하면 UI가 막힌다. */
+    private static final int REBUILD_MIN_MS = 40;
+    private boolean rebuildPending;
+    private long lastRebuildAt;
+
+    /**
+     * 재렌더 요청 — <b>과도한 호출을 합친다</b>.
+     *
+     * <p>이 메서드는 세 곳에서 몰려 들어온다: 리사이즈 드래그(초당 수십 번),
+     * 오디오 블록 도착(약 46ms마다), 스크럽 슬라이더 드래그. 예전에는 그때마다
+     * 곧바로 리빌드해서 UI 스레드가 포화됐고, 그 결과 리사이즈 중 실시간 파형이
+     * 멈춰 보이고 결과 탭 스크럽이 느렸다.
+     *
+     * <p>{@link #REBUILD_MIN_MS} 안에 다시 요청이 오면 타이머 하나로 미뤄 합친다.
+     * 마지막 요청도 반드시 반영되므로 화면이 낡은 상태로 남지 않는다.
+     */
     private void rebuildAndRedraw() {
+        if (isDisposed() || rebuildPending) {
+            return;                       // 이미 예약돼 있으면 그 한 번이 최신 상태를 그린다
+        }
+        long now = System.currentTimeMillis();
+        long due = lastRebuildAt + REBUILD_MIN_MS;
+        if (now >= due) {
+            rebuildNow();
+            return;
+        }
+        rebuildPending = true;
+        getDisplay().timerExec((int) (due - now), new Runnable() {
+            public void run() {
+                rebuildPending = false;
+                if (!isDisposed()) {
+                    rebuildNow();
+                }
+            }
+        });
+    }
+
+    private void rebuildNow() {
+        lastRebuildAt = System.currentTimeMillis();
         rebuild();
         if (!isDisposed()) {
             redraw();
