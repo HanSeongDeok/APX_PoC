@@ -3,7 +3,7 @@ package com.suresofttech.apx.client.view;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * 가장 최근 측정(시작→중단) 결과 — DB 없이 메모리 1건만 보관(시뮬레이터용).
+ * 가장 최근 측정(시작→중단) 결과 - DB 없이 메모리 1건만 보관(시뮬레이터용).
  * Kickoff가 중단 시 {@link #publish} 하고, {@link ResultView}가 구독해 표시한다.
  */
 public final class LastMeasureResult {
@@ -26,22 +26,30 @@ public final class LastMeasureResult {
     private volatile String summary = "";
     private volatile Long audioPassMs;
     private volatile Long visionPassMs;
+    private volatile Long clusterPassMs;
+    private volatile Long gearPassMs;
     private volatile Double audioJudgeMs;
     private volatile Double visionJudgeMs;
+    private volatile Double clusterJudgeMs;
+    private volatile Double gearJudgeMs;
     private volatile Double audioGapMs;
     private volatile Double visionGapMs;
+    private volatile Double clusterGapMs;
+    private volatile Double gearGapMs;
     private volatile Double audioAnalysisMs;
     private volatile Double visionAnalysisMs;
+    private volatile Double clusterAnalysisMs;
+    private volatile Double gearAnalysisMs;
     private volatile Double syncSpreadMs;
     private volatile boolean syncOk;
     private volatile byte[] audioPassPng;
     private volatile byte[] visionPassPng;
     private volatile byte[] rearPassPng;
-    /** 증거가 저장된 TC 폴더 — 결과 탭이 전 구간 스크럽을 물릴 대상. */
+    /** 증거가 저장된 TC 폴더 - 결과 탭이 전 구간 스크럽을 물릴 대상. */
     private volatile java.io.File evidenceDir;
     /** 측정 TC id({@code EvidenceStore} 키). */
     private volatile String measureTcId;
-    /** 저장된 후방 셀 스냅샷 id — 결과 탭 조회 API 테스트의 입력. */
+    /** 저장된 후방 셀 스냅샷 id - 결과 탭 조회 API 테스트의 입력. */
     private volatile java.util.List<String> rearTcIds = java.util.Collections.emptyList();
 
     private LastMeasureResult() {
@@ -81,12 +89,28 @@ public final class LastMeasureResult {
         return visionPassMs;
     }
 
+    public Long getClusterPassMs() {
+        return clusterPassMs;
+    }
+
+    public Long getGearPassMs() {
+        return gearPassMs;
+    }
+
     public Double getAudioJudgeMs() {
         return audioJudgeMs;
     }
 
     public Double getVisionJudgeMs() {
         return visionJudgeMs;
+    }
+
+    public Double getClusterJudgeMs() {
+        return clusterJudgeMs;
+    }
+
+    public Double getGearJudgeMs() {
+        return gearJudgeMs;
     }
 
     public Double getAudioGapMs() {
@@ -97,12 +121,28 @@ public final class LastMeasureResult {
         return visionGapMs;
     }
 
+    public Double getClusterGapMs() {
+        return clusterGapMs;
+    }
+
+    public Double getGearGapMs() {
+        return gearGapMs;
+    }
+
     public Double getAudioAnalysisMs() {
         return audioAnalysisMs;
     }
 
     public Double getVisionAnalysisMs() {
         return visionAnalysisMs;
+    }
+
+    public Double getClusterAnalysisMs() {
+        return clusterAnalysisMs;
+    }
+
+    public Double getGearAnalysisMs() {
+        return gearAnalysisMs;
     }
 
     public Double getSyncSpreadMs() {
@@ -158,9 +198,26 @@ public final class LastMeasureResult {
         fire();
     }
 
+    /** 클러스터 / 기어봉 채널별 PASS 시각. {@link #publish} 직후 호출. */
+    public synchronized void setVisionChannelTimes(
+        Long clusterPassMs, Long gearPassMs,
+        Double clusterJudgeMs, Double gearJudgeMs,
+        Double clusterGapMs, Double gearGapMs,
+        Double clusterAnalysisMs, Double gearAnalysisMs) {
+        this.clusterPassMs = clusterPassMs;
+        this.gearPassMs = gearPassMs;
+        this.clusterJudgeMs = clusterJudgeMs;
+        this.gearJudgeMs = gearJudgeMs;
+        this.clusterGapMs = clusterGapMs;
+        this.gearGapMs = gearGapMs;
+        this.clusterAnalysisMs = clusterAnalysisMs;
+        this.gearAnalysisMs = gearAnalysisMs;
+        fire();
+    }
+
     /**
-     * 증거 저장이 끝난 뒤 TC 폴더·측정 TC id·후방 셀 id를 알린다.
-     * 결과 탭이 전 구간 스크럽·스냅샷 조회에 쓴다. {@link #publish} 직후 호출.
+     * 증거 저장이 끝난 뒤 TC 폴더 / 측정 TC id / 후방 셀 id를 알린다.
+     * 결과 탭이 전 구간 스크럽 / 스냅샷 조회에 쓴다. {@link #publish} 직후 호출.
      */
     public synchronized void publishEvidence(java.io.File dir, String measureTcId,
             java.util.List<String> rearTcIds) {

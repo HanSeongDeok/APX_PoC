@@ -12,7 +12,7 @@
    </extension>
    <extension id="product" point="org.eclipse.core.runtime.products">
       <product application="com.suresofttech.apx.client.application"
-            name="APX 이솝 클라이언트 (설정)"/>
+            name="APX 클라이언트 - 예시 프로그램"/>
    </extension>
    <extension point="org.eclipse.ui.perspectives">
       <perspective
@@ -37,7 +37,12 @@
             category="com.suresofttech.apx.client.category"
             class="com.suresofttech.apx.client.view.VisionMonitorView"
             id="com.suresofttech.apx.client.view.visionMonitor"
-            name="비전 모니터"/>
+            name="클러스터 비전 모니터"/>
+      <view
+            category="com.suresofttech.apx.client.category"
+            class="com.suresofttech.apx.client.view.GearVisionMonitorView"
+            id="com.suresofttech.apx.client.view.gearVisionMonitor"
+            name="기어봉 비전 모니터"/>
       <view
             category="com.suresofttech.apx.client.category"
             class="com.suresofttech.apx.client.view.RearMonitorView"

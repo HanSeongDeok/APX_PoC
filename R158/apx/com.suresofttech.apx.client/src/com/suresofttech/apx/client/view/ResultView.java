@@ -30,12 +30,13 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.client.result.EvidenceScrubber;
 import com.suresofttech.apx.core.measure.EvidenceStore;
+import com.suresofttech.apx.core.measure.MeasureSession;
 import com.suresofttech.apx.core.measure.MeasureSyncResult;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
- * 최근 측정 결과 View — 메모리 {@link LastMeasureResult} 1건 + 파일 {@link EvidenceStore} TC 폴더.
- * 측정 시각(검출·자체판단·동기) + 모니터 스냅샷
+ * 최근 측정 결과 View - 메모리 {@link LastMeasureResult} 1건 + 파일 {@link EvidenceStore} TC 폴더.
+ * 측정 시각(검출 / 자체판단 / 동기) + 모니터 스냅샷
  * (음향=PASS 밴드 종료 시점, 비전=최초 PASS, 후방=overallPass).
  * 지난 TC는 증거 루트에서 {@link EvidenceScrubber#openTc} / 폴더 열기로 복원.
  */
@@ -50,6 +51,7 @@ public class ResultView extends ViewPart {
     private Label headerLbl;
     private Label audioTimeLbl;
     private Label visionTimeLbl;
+    private Label gearTimeLbl;
     private Label syncLbl;
     private Label audioSnapLbl;
     private Label visionSnapLbl;
@@ -73,7 +75,7 @@ public class ResultView extends ViewPart {
     private org.eclipse.swt.widgets.List tcIdList;
     private Text snapResultText;
     private final java.util.List<String> lastTcIds = new ArrayList<String>();
-    /** 조회 결과로 마지막에 받은 파일 — "결과 열기" 버튼 대상. */
+    /** 조회 결과로 마지막에 받은 파일 - "결과 열기" 버튼 대상. */
     private File lastQueriedFile;
 
     private LastMeasureResult.Listener resultListener;
@@ -96,16 +98,17 @@ public class ResultView extends ViewPart {
         headerLbl = label(body, "");
         audioTimeLbl = label(body, "");
         visionTimeLbl = label(body, "");
+        gearTimeLbl = label(body, "");
         syncLbl = label(body, "");
 
         buildScrubSection(body);
         buildSnapshotQueryGroup(body);
 
-        audioSnapLbl = section(body, "음향 모니터 — PASS 구간 종료 스냅샷");
+        audioSnapLbl = section(body, "음향 모니터 - PASS 구간 종료 스냅샷");
         audioImgLbl = imageSlot(body);
-        visionSnapLbl = section(body, "비전 모니터 — 최초 PASS 스냅샷");
+        visionSnapLbl = section(body, "비전 모니터 - 최초 PASS 스냅샷");
         visionImgLbl = imageSlot(body);
-        rearSnapLbl = section(body, "후방 모니터 — 최초 PASS 스냅샷");
+        rearSnapLbl = section(body, "후방 모니터 - 최초 PASS 스냅샷");
         rearImgLbl = imageSlot(body);
 
         resultListener = new LastMeasureResult.Listener() {
@@ -125,12 +128,12 @@ public class ResultView extends ViewPart {
     }
 
     /**
-     * 전 구간 다시 보기 — 슬라이더 하나로 비전 녹화 프레임과 음향 파형·재생을 같이 끈다.
+     * 전 구간 다시 보기 - 슬라이더 하나로 비전 녹화 프레임과 음향 파형 / 재생을 같이 끈다.
      * 직전 측정은 자동으로 물리고, 지난 TC는 "증거 폴더 열기…"로 다시 연다
-     * (메모리가 아니라 폴더의 {@code meta.properties}·{@code full.avi}·{@code full.wav}에서 복원).
+     * (메모리가 아니라 폴더의 {@code meta.properties} / {@code full.avi} / {@code full.wav}에서 복원).
      */
     private void buildScrubSection(Composite parent) {
-        scrubSectionLbl = section(parent, "전 구간 다시 보기 — 슬라이더를 옮기면 그 시점 화면·소리");
+        scrubSectionLbl = section(parent, "전 구간 다시 보기 - 슬라이더를 옮기면 그 시점 화면 / 소리");
 
         Composite bar = new Composite(parent, SWT.NONE);
         GridLayout gl = new GridLayout(2, false);
@@ -141,7 +144,7 @@ public class ResultView extends ViewPart {
 
         openDirBtn = new Button(bar, SWT.PUSH);
         openDirBtn.setText("증거 폴더 열기…");
-        openDirBtn.setToolTipText("TC 폴더(meta.properties·audio/·vision/·rear/)를 열어 되짚습니다");
+        openDirBtn.setToolTipText("TC 폴더(meta.properties / audio/ / vision/ / rear/)를 열어 되짚습니다");
         openDirBtn.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         openDirBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -161,7 +164,7 @@ public class ResultView extends ViewPart {
     private void chooseEvidenceDir() {
         DirectoryDialog dlg = new DirectoryDialog(getSite().getShell(), SWT.OPEN);
         dlg.setText("TC 증거 폴더 열기");
-        dlg.setMessage("meta.properties 와 audio/ · vision/ · rear/ 가 있는 TC 폴더를 선택하세요.");
+        dlg.setMessage("meta.properties 와 audio/ / vision/ / rear/ 가 있는 TC 폴더를 선택하세요.");
         if (openedEvidenceDir != null) {
             dlg.setFilterPath(openedEvidenceDir.getAbsolutePath());
         } else {
@@ -225,17 +228,17 @@ public class ResultView extends ViewPart {
         ld.heightHint = 96;
         tcIdList.setLayoutData(ld);
 
-        addQueryButton(g, "단일 조회", "getSnapshot(tcId) — 선택한 첫 tcId", new Runnable() {
+        addQueryButton(g, "단일 조회", "getSnapshot(tcId) - 선택한 첫 tcId", new Runnable() {
             public void run() {
                 doGetSnapshot();
             }
         });
-        addQueryButton(g, "배치 조회", "getSnapshots(tcIds) — 선택(미선택 시 전체)", new Runnable() {
+        addQueryButton(g, "배치 조회", "getSnapshots(tcIds) - 선택(미선택 시 전체)", new Runnable() {
             public void run() {
                 doGetSnapshots();
             }
         });
-        addQueryButton(g, "통합 조회", "getCombinedSnapshot(tcIds) — 한 판으로 합친 PNG", new Runnable() {
+        addQueryButton(g, "통합 조회", "getCombinedSnapshot(tcIds) - 한 판으로 합친 PNG", new Runnable() {
             public void run() {
                 doGetCombinedSnapshot();
             }
@@ -266,7 +269,7 @@ public class ResultView extends ViewPart {
         });
     }
 
-    /** 저장된 tcId 목록 갱신 — 조회 테스트 UI의 소스. */
+    /** 저장된 tcId 목록 갱신 - 조회 테스트 UI의 소스. */
     private void setTcIds(java.util.List<String> ids) {
         lastTcIds.clear();
         if (ids != null) {
@@ -281,13 +284,13 @@ public class ResultView extends ViewPart {
         }
         if (tcIdList.getItemCount() > 0) {
             tcIdList.select(0);
-            setSnapResult(lastTcIds.size() + "개 tcId 저장됨 — 조회 버튼으로 규약 API를 테스트하세요.");
+            setSnapResult(lastTcIds.size() + "개 tcId 저장됨 - 조회 버튼으로 규약 API를 테스트하세요.");
         } else {
             setSnapResult("저장된 스냅샷이 없습니다 (후방 Select 포인트를 1개 이상 지정하세요).");
         }
     }
 
-    /** 선택된 tcId — 아무것도 선택 안 했으면 전체. */
+    /** 선택된 tcId - 아무것도 선택 안 했으면 전체. */
     private java.util.List<String> selectedTcIds() {
         if (tcIdList == null || tcIdList.isDisposed()) {
             return new ArrayList<String>();
@@ -299,7 +302,7 @@ public class ResultView extends ViewPart {
         return new ArrayList<String>(Arrays.asList(sel));
     }
 
-    /** 조회 API는 후방 캔버스가 들고 있다 — 모니터 View의 캔버스를 빌려 쓴다. */
+    /** 조회 API는 후방 캔버스가 들고 있다 - 모니터 View의 캔버스를 빌려 쓴다. */
     private RearGridCanvas rearCanvas() {
         IWorkbenchPage page = getSite().getPage();
         if (page == null) {
@@ -371,7 +374,7 @@ public class ResultView extends ViewPart {
             lastQueriedFile = f;
             setSnapResult("getCombinedSnapshot(" + ids + ")\n  → " + describe(f));
         } catch (IllegalArgumentException ex) {
-            // 동일 격자 규격만 통합 가능 — 부분 통합본 대신 에러를 그대로 보여준다
+            // 동일 격자 규격만 통합 가능 - 부분 통합본 대신 에러를 그대로 보여준다
             lastQueriedFile = null;
             setSnapResult("getCombinedSnapshot(" + ids + ")\n  → 통합 불가: " + ex.getMessage());
         }
@@ -433,7 +436,7 @@ public class ResultView extends ViewPart {
         if (body == null || body.isDisposed()) {
             return;
         }
-        // 스크럽·조회 섹션은 결과 유무와 무관하게 늘 열려 있다 — 지난 TC 폴더를 직접 열 수 있어야 하므로
+        // 스크럽 / 조회 섹션은 결과 유무와 무관하게 늘 열려 있다 - 지난 TC 폴더를 직접 열 수 있어야 하므로
         if (r != null && r.getEvidenceDir() != null) {
             openEvidence(r.getEvidenceDir());
             if (r.getMeasureTcId() != null && scrubPathLbl != null && !scrubPathLbl.isDisposed()
@@ -447,31 +450,33 @@ public class ResultView extends ViewPart {
             emptyLbl.setText("아직 측정 결과가 없습니다. Kickoff에서 측정 시작 → 중단 하면 여기에 표시됩니다."
                     + "\n지난 TC는 아래 \"증거 폴더 열기…\"로 되짚을 수 있습니다.");
             setVisible(true, emptyLbl);
-            setVisible(false, headerLbl, audioTimeLbl, visionTimeLbl, syncLbl,
+            setVisible(false, headerLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
                     audioSnapLbl, visionSnapLbl, rearSnapLbl,
                     audioImgLbl, visionImgLbl, rearImgLbl);
             layoutScroll();
             return;
         }
         setVisible(false, emptyLbl);
-        setVisible(true, headerLbl, audioTimeLbl, visionTimeLbl, syncLbl,
+        setVisible(true, headerLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
                 audioSnapLbl, visionSnapLbl, rearSnapLbl,
                 audioImgLbl, visionImgLbl, rearImgLbl);
 
         String when = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(r.getStoppedAtEpochMs()));
-        headerLbl.setText(String.format("최종: %s — %s  (%s)",
+        headerLbl.setText(String.format("최종: %s - %s  (%s)",
                 r.isOverallPass() ? "PASS" : "FAIL", r.getSummary(), when));
-        audioTimeLbl.setText(formatTimeLine("음향", r.getAudioPassMs(), r.getAudioJudgeMs(),
+        audioTimeLbl.setText(MeasureSession.formatPassLine("음향", r.getAudioPassMs(), r.getAudioJudgeMs(),
                 r.getAudioGapMs(), r.getAudioAnalysisMs()));
-        visionTimeLbl.setText(formatTimeLine("비전", r.getVisionPassMs(), r.getVisionJudgeMs(),
-                r.getVisionGapMs(), r.getVisionAnalysisMs()));
+        visionTimeLbl.setText(MeasureSession.formatPassLine("클러스터", r.getClusterPassMs(),
+            r.getClusterJudgeMs(), r.getClusterGapMs(), r.getClusterAnalysisMs()));
+        gearTimeLbl.setText(MeasureSession.formatPassLine("기어봉", r.getGearPassMs(),
+            r.getGearJudgeMs(), r.getGearGapMs(), r.getGearAnalysisMs()));
         if (r.getSyncSpreadMs() != null) {
             syncLbl.setText(String.format("동기: %.0f ms %s (≤%.0fms)",
                     r.getSyncSpreadMs().doubleValue(),
                     r.isSyncOk() ? "OK" : "FAIL",
                     MeasureSyncResult.SYNC_TOL_MS));
         } else {
-            syncLbl.setText("동기: — (PASS 시각 2개 미만)");
+            syncLbl.setText("동기: - (PASS 시각 2개 미만)");
         }
 
         audioImg = setPng(audioImgLbl, audioImg, r.getAudioPassPng());
@@ -496,23 +501,6 @@ public class ResultView extends ViewPart {
                 }
             }
         }
-    }
-
-    private static String formatTimeLine(String channel, Long passMs, Double judgeMs,
-            Double gapMs, Double analysisMs) {
-        if (passMs == null) {
-            return channel + ": FAIL (미검출)";
-        }
-        if (judgeMs != null && gapMs != null && analysisMs != null) {
-            return String.format("%s: PASS @ %d ms (자체판단 %.1f = 간격 %.1f + 분석 %.1f)",
-                    channel, passMs.longValue(),
-                    judgeMs.doubleValue(), gapMs.doubleValue(), analysisMs.doubleValue());
-        }
-        if (judgeMs != null) {
-            return String.format("%s: PASS @ %d ms (자체판단 %.1f ms)",
-                    channel, passMs.longValue(), judgeMs.doubleValue());
-        }
-        return String.format("%s: PASS @ %d ms", channel, passMs.longValue());
     }
 
     private Image setPng(Label slot, Image old, byte[] png) {

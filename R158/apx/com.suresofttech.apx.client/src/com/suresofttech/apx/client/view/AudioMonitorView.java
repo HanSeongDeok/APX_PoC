@@ -5,6 +5,7 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.audio.MatchResult;
@@ -14,31 +15,32 @@ import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 
 /**
- * 음향 모니터 — {@link AudioScope} 파형.
+ * 음향 모니터 - {@link AudioScope} 파형.
  * 초록 PASS 밴드는 블록 {@code match.isPass} 구간에 그린다.
  * <b>캡처 블록마다</b>{@link MeasureSession.Listener#onAudioTick}으로 갱신해
  * UI 폴링 간격보다 짧은 PASS도 밴드가 빠지지 않게 한다.
  *
  * <p>결과/증거 스냅샷: PASS 시작 → PASS 아닌 시점(밴드 종료)에 캡처. 중단 시 열린 밴드 flush.
- * <p>음정 추적·일치도 추이·판독값 UI는 제공하지 않는다(파형만).
+ * <p>상단 라벨에 자체 판단 속도(ms)를 표시한다. 음정 추적 / 일치도 추이 UI는 제공하지 않는다.
  */
 public class AudioMonitorView extends ViewPart {
 
     public static final String ID = "com.suresofttech.apx.client.view.audioMonitor";
 
     private AudioScope scope;
+    private Label statusLbl;
     private Display display;
     private MeasureSession.Listener tickListener;
-    /** 직전 블록의 isPass — falling edge 스냅샷용. */
+    /** 직전 블록의 isPass - falling edge 스냅샷용. */
     private boolean prevBlockPass;
 
     /**
-     * 파형 갱신 주기(ms) — 설정 화면({@code AudioMeasureBar.WAVE_POLL_MS})과 같은 방식.
+     * 파형 갱신 주기(ms) - 설정 화면({@code AudioMeasureBar.WAVE_POLL_MS})과 같은 방식.
      *
      * <p>예전에는 캡처 스레드의 블록 틱마다 {@code asyncExec} 로 파형을 밀어 넣었다.
-     * UI 스레드가 바쁘면(비전 NCC·캔버스 리페인트 등) 그 런너블이 큐에 쌓이고,
+     * UI 스레드가 바쁘면(비전 NCC / 캔버스 리페인트 등) 그 런너블이 큐에 쌓이고,
      * 나중에 실행될 때 <b>오래된 elapsedSec</b> 으로 <b>현재 버퍼</b>를 그리게 된다
-     * — 타임스탬프와 데이터가 어긋나 파형이 끊기고 멈춘 것처럼 보였다.
+     * - 타임스탬프와 데이터가 어긋나 파형이 끊기고 멈춘 것처럼 보였다.
      * 설정 화면이 멀쩡했던 이유가 여기에 있다(그쪽은 UI 스레드가 스스로 폴링한다).
      *
      * <p>이제 UI 스레드가 직접 주기적으로 버퍼와 경과시간을 <b>같은 시점에</b> 읽는다.
@@ -46,16 +48,16 @@ public class AudioMonitorView extends ViewPart {
      */
     private static final int WAVE_POLL_MS = 50;
     private boolean wavePolling;
-    /** 리빌드 중첩 방지 — 설정 화면 {@code waveBusy} 와 동일. */
+    /** 리빌드 중첩 방지 - 설정 화면 {@code waveBusy} 와 동일. */
     private boolean waveBusy;
 
-    /** 캡처 스레드가 남기는 최신 판정 — UI는 <b>낡은 값이 아니라 이것</b>을 읽는다. */
+    /** 캡처 스레드가 남기는 최신 판정 - UI는 <b>낡은 값이 아니라 이것</b>을 읽는다. */
     private volatile MatchResult latestMatch;
     private volatile double latestElapsedSec;
-    /** PASS 오버레이 UI 갱신 합침 — 블록마다 asyncExec 를 새로 만들지 않는다. */
+    /** PASS 오버레이 UI 갱신 합침 - 블록마다 asyncExec 를 새로 만들지 않는다. */
     private volatile boolean passUiScheduled;
     /**
-     * PASS 블록 구간 큐 — 합치기로 짧은 PASS가 사라지지 않게 한다.
+     * PASS 블록 구간 큐 - 합치기로 짧은 PASS가 사라지지 않게 한다.
      * (PASS 블록만 쌓이므로 큐가 커지지 않는다.)
      */
     private final java.util.List<double[]> pendingPassSpans =
@@ -66,6 +68,10 @@ public class AudioMonitorView extends ViewPart {
         display = parent.getDisplay();
         parent.setLayout(new GridLayout(1, false));
 
+        statusLbl = new Label(parent, SWT.WRAP);
+        statusLbl.setText("음향: 대기");
+        statusLbl.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         scope = new AudioScope(parent, 5000.0);
         scope.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         scope.setShowPitch(false);
@@ -73,7 +79,7 @@ public class AudioMonitorView extends ViewPart {
         scope.setTickMs(AudioScope.DEFAULT_TICK_MS); // 설정 화면과 동일 1s 눈금
     }
 
-    /** 측정 시작 시 Kickoff가 호출 — 기대 템플릿·그래프 초기화 + 블록 틱 구독. */
+    /** 측정 시작 시 Kickoff가 호출 - 기대 템플릿 / 그래프 초기화 + 블록 틱 구독. */
     public void onMeasureStarted(MeasureSession session) {
         if (scope == null || scope.isDisposed() || session == null) {
             return;
@@ -91,6 +97,7 @@ public class AudioMonitorView extends ViewPart {
         }
         startTickListener();
         startWavePoll();
+        setStatusText("음향: 측정 중");
     }
 
     public void onMeasureStopped() {
@@ -99,7 +106,7 @@ public class AudioMonitorView extends ViewPart {
     }
 
     /**
-     * 측정 중단 직전({@code session.stop} 전) — 아직 열린 PASS 밴드가 있으면 닫고 스냅샷.
+     * 측정 중단 직전({@code session.stop} 전) - 아직 열린 PASS 밴드가 있으면 닫고 스냅샷.
      * falling edge에서 이미 찍었으면 {@link MeasureEvidence#putAudioPng}가 최초만 보관.
      */
     public void flushPassSpanSnapshotIfNeeded() {
@@ -139,7 +146,7 @@ public class AudioMonitorView extends ViewPart {
                 latestMatch = match;
                 latestElapsedSec = elapsedSec;
                 if (match != null && match.isPass) {
-                    // PASS 블록은 구간을 큐에 남긴다 — UI 갱신을 합쳐도 누락되지 않는다
+                    // PASS 블록은 구간을 큐에 남긴다 - UI 갱신을 합쳐도 누락되지 않는다
                     double nowMs = elapsedSec * 1000.0;
                     double gap = match.blockGapMs > 0 ? match.blockGapMs : 0;
                     pendingPassSpans.add(new double[] { Math.max(0, nowMs - gap), nowMs });
@@ -151,6 +158,14 @@ public class AudioMonitorView extends ViewPart {
             }
 
             public void onState(boolean audioPass, boolean visionPass, boolean overallPass) {
+                if (display == null || display.isDisposed()) {
+                    return;
+                }
+                display.asyncExec(new Runnable() {
+                        public void run() {
+                            refreshStatus();
+                    }
+                });
             }
         };
         MeasureSession.get().addListener(tickListener);
@@ -163,7 +178,28 @@ public class AudioMonitorView extends ViewPart {
         }
     }
 
-    /** PASS 오버레이만 UI에 예약(합침). 파형 리빌드는 하지 않는다 — 설정 화면과 동일. */
+    private void refreshStatus() {
+        if (statusLbl == null || statusLbl.isDisposed()) {
+            return;
+        }
+        MeasureSession s = MeasureSession.get();
+        if (s.isAudioPass()) {
+            setStatusText(MeasureSession.formatPassLine("음향", s.getAudioPassMs(),
+                s.getAudioJudgeMs(), s.getAudioGapMs(), s.getAudioAnalysisMs()));
+        } else if (s.isRunning()) {
+            setStatusText("음향: 측정 중");
+        } else {
+            setStatusText("음향: FAIL (기대음 미검출)");
+        }
+    }
+
+    private void setStatusText(String text) {
+        if (statusLbl != null && !statusLbl.isDisposed()) {
+            statusLbl.setText(text);
+        }
+    }
+
+    /** PASS 오버레이만 UI에 예약(합침). 파형 리빌드는 하지 않는다 - 설정 화면과 동일. */
     private void schedulePassUi() {
         if (passUiScheduled || display == null || display.isDisposed()) {
             return;
@@ -210,7 +246,7 @@ public class AudioMonitorView extends ViewPart {
         scope.redraw();
     }
 
-    /** UI 스레드 자체 폴링 — 설정 화면과 동일 방식. 재예약을 작업 앞에 둬 예외에도 루프가 죽지 않는다. */
+    /** UI 스레드 자체 폴링 - 설정 화면과 동일 방식. 재예약을 작업 앞에 둬 예외에도 루프가 죽지 않는다. */
     private void startWavePoll() {
         if (wavePolling) {
             return;
