@@ -224,7 +224,6 @@ public final class YoloVisionJudge implements VisionJudge {
             r.canonImage = Cv.toBufferedImage(frame);
             r.roi = roi;
             r.ncc = score;    // NCC 자리에 YOLO 확률 - 기존 UI/증거가 그대로 동작
-            r.ssim = 0;
             r.psc = score;
             r.simThr = thr;
             r.hit = hit;
@@ -305,18 +304,12 @@ public final class YoloVisionJudge implements VisionJudge {
 
     // ── 프레임 간격 / 중복 프레임 판별 (NCC 판정기와 동일 규칙) ──────────────
 
+    /** 실측 프레임 도착 간격의 중앙값. 사유는 {@code RoiMatchDetector.resolveFrameGapMs} 참고. */
     private static double resolveFrameGapMs(double measuredMedianMs) {
-        double fps = 0;
-        try {
-            fps = CameraService.get().fps();
-        } catch (Throwable ignored) {
-            fps = 0;
-        }
-        double nominal = (fps > 1.0) ? (1000.0 / fps) : (1000.0 / 30.0);
-        if (measuredMedianMs >= nominal * 0.5 && measuredMedianMs <= nominal * 2.5) {
+        if (measuredMedianMs > 0.5) {
             return measuredMedianMs;
         }
-        return nominal;
+        return 1000.0 / 30.0;   // 아직 프레임 표본이 없을 때만
     }
 
     private void pushGap(double g) {

@@ -13,8 +13,15 @@ import org.opencv.imgproc.Imgproc;
  * <p>좌표계는 <b>기준 영상의 실제 픽셀 크기</b>(canonW×canonH)다. 640²로 강제하지 않는다.
  * 웹캠/기준 해상도가 바뀌면 그 크기가 곧 작업 공간이다.
  *
- * <p>기본: ORB로 프레임을 기준 좌표계로 정렬한 뒤, 고정 ROI만 NCC/SSIM 비교.
- * {@link #setAlignEnabled(false)} - 설정 탭 라이브 기준: ORB 없이 동일 해상도(다르면 ref 크기로 resize) 후 NCC.
+ * <p>판정 지표는 <b>NCC 하나</b>다({@code matchTemplate} / {@code TM_CCOEFF_NORMED}).
+ * 예전에는 SSIM을 함께 계산했으나, 판정에 쓰이지도 표시되지도 않는 값이라 제거했다.
+ * 법규 근거 자료로 쓰려면 판정 근거가 하나여야 하고 식으로 설명될 수 있어야 한다.
+ *
+ * <p><b>정렬(ORB) 경로는 사용하지 않는 것을 권장한다.</b> 기준 화면은 설정 탭에서
+ * 라이브 캡처로 잡는 것으로 클라이언트와 협의되어, 정답과 촬영이 같은 카메라·같은 위치다.
+ * 좌표를 맞출 이유가 없고, {@code aligning} 에 갇히는 실패 모드만 늘어난다.
+ * 라이브 경로는 {@link #setAlignEnabled(boolean)} 에 {@code false} 를 주면 된다
+ * (해상도만 맞춘 뒤 곧바로 NCC).
  */
 public final class RoiMatchDetector implements VisionJudge {
 
@@ -48,7 +55,6 @@ public final class RoiMatchDetector implements VisionJudge {
     private final EvidenceCapture ev = new EvidenceCapture(1, 1);
     private Mat lastReturned;
     private RoiMatchResult lastResult;
-    private double lastSsim;
 
     private static final int GAP_N = 15;
     private final double[] gapRing = new double[GAP_N];
@@ -197,21 +203,29 @@ public final class RoiMatchDetector implements VisionJudge {
     }
 
     /**
-     * 프레임 간격(ms). CameraService 실측 FPS → 1000/fps, 없으면 30fps 가정.
-     * 실측 median이 fps 주기의 0.5~2.5배면 median 채택(가변 fps 대응).
+     * 프레임 간격(ms) = <b>실측 프레임 도착 간격의 중앙값</b>.
+     *
+     * <p>{@code tPrevFrame} 은 프레임 서명이 바뀔 때만 갱신된다(같은 프레임이면 process() 가
+     * 앞에서 반환). 그래서 이 중앙값이 곧 카메라의 실제 프레임 주기다.
+     *
+     * <p>예전에는 {@code CameraService.fps()} 로 명목 주기를 만들고 실측이 그 0.5~2.5배
+     * 범위 밖이면 명목값을 썼는데, 두 가지가 틀렸다.
+     * <ul>
+     *   <li>{@code Webcam.getFPS()} 는 카메라의 촬영 주기가 아니라 <b>우리가 getImage() 를
+     *       부른 빈도</b>다. 해당 채널 화면이 안 떠 있거나 폴링이 뜸하면 몇 fps로 떨어진다.</li>
+     *   <li>{@code CameraService.get()} 은 항상 <b>클러스터</b>다. 기어봉 판정기가 남의 채널
+     *       fps 를 읽었다.</li>
+     * </ul>
+     * 그 결과 fps 가 5로 잡히면 명목 200ms 가 되고, 실측 33ms 가 [100,500] 밖이라 버려져
+     * <b>간격이 200ms 로 표시됐다</b>(30fps 인데 100ms 넘게 나오던 증상).
+     *
+     * @param measuredMedianMs 표본이 없으면 0
      */
     private static double resolveFrameGapMs(double measuredMedianMs) {
-        double fps = 0;
-        try {
-            fps = CameraService.get().fps();
-        } catch (Throwable ignored) {
-            fps = 0;
-        }
-        double nominal = (fps > 1.0) ? (1000.0 / fps) : (1000.0 / 30.0);
-        if (measuredMedianMs >= nominal * 0.5 && measuredMedianMs <= nominal * 2.5) {
+        if (measuredMedianMs > 0.5) {
             return measuredMedianMs;
         }
-        return nominal;
+        return 1000.0 / 30.0;   // 아직 프레임 표본이 없을 때만
     }
 
     private void pushGap(double g) {
@@ -291,20 +305,11 @@ public final class RoiMatchDetector implements VisionJudge {
         }
         double procMs = (now() - tArrive) * 1000.0;
 
-        double ssim;
-        if (latchNow) {
-            ssim = ssimOf(canon);
-            lastSsim = ssim;
-        } else {
-            ssim = lastSsim;
-        }
-
         RoiMatchResult r = new RoiMatchResult("ok");
         r.procMs = procMs;
         r.canonImage = Cv.toBufferedImage(canon);
         r.roi = roi;
         r.ncc = ncc;
-        r.ssim = ssim;
         r.psc = psc;
         r.simThr = simThr;
         r.hit = hit;
@@ -334,26 +339,6 @@ public final class RoiMatchDetector implements VisionJudge {
         return ncc;
     }
 
-    private double ssimOf(Mat canon) {
-        Mat live = canon.submat(roi[0], roi[1], roi[2], roi[3]);
-        Mat liveUse = live;
-        if (live.rows() != tmpl.rows() || live.cols() != tmpl.cols()) {
-            liveUse = new Mat();
-            Imgproc.resize(live, liveUse, new Size(tmpl.cols(), tmpl.rows()));
-        }
-        Mat g1 = new Mat();
-        Mat g2 = new Mat();
-        Imgproc.cvtColor(liveUse, g1, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.cvtColor(tmpl, g2, Imgproc.COLOR_BGR2GRAY);
-        double ssim = Ssim.mssim(g1, g2);
-        g1.release();
-        g2.release();
-        if (liveUse != live) {
-            liveUse.release();
-        }
-        live.release();
-        return ssim;
-    }
 
     /** 프레임 중앙 ~18.75%(구 640 기준 120px) 박스. */
     public static int[] defaultCenterRoi(int w, int h) {

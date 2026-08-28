@@ -14,8 +14,7 @@ public final class RoiMatchResult {
 
     public int[] roi;                 // {y1,y2,x1,x2}
     public double ncc;
-    public double ssim;
-    public double psc;                // max(ncc, ssim)
+    public double psc;                // 판정에 쓰는 점수 - NCC 와 같다
     public double simThr;
     public boolean hit;
 

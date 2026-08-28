@@ -18,7 +18,18 @@ import org.opencv.features2d.ORB;
 /**
  * ORB 특징점 정렬 (frame → 기준영상 좌표계 homography). 기어 / 클러스터 공용.
  * 파이썬 gear.py Aligner / cluster.py OrbAligner 이식.
+ *
+ * @deprecated <b>사용하지 않는 것을 권장한다.</b> 이 정렬은 미리 캡처한 파일을 기준 화면으로
+ *             쓸 때(= 정답과 촬영의 카메라 위치가 다를 때) 좌표를 맞추기 위한 것이다.
+ *             기준 화면은 설정 탭 <b>라이브 캡처</b>로 잡는 것으로 클라이언트와 협의되어,
+ *             정답과 촬영이 같은 카메라·같은 위치다. 맞출 좌표가 없다.
+ *             <p>켜면 손해만 있다 - 특징점이 부족한 장면에서 {@code aligning} 상태에 갇혀
+ *             판정을 못 하고, 프레임마다 변환이 미세하게 달라져 ROI 가 떠다닌다(드리프트).
+ *             판정 시간도 늘어 30ms 동기 예산을 깎는다.
+ *             <p>코드는 되돌릴 여지를 남겨 두기 위해 삭제하지 않았다.
+ *             라이브 경로는 {@code RoiMatchDetector.setAlignEnabled(false)} 다.
  */
+@Deprecated
 public final class OrbAligner {
 
     public static final int MIN_MATCH = 12;
