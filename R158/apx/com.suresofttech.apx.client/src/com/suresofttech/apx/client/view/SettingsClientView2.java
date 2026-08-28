@@ -25,6 +25,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
+import com.suresofttech.apx.ui.widget.settings.vision.RoiStyles;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
@@ -54,6 +55,8 @@ public class SettingsClientView2 extends ViewPart {
         roiStyle.drag = new RGB(0, 160, 255);
         roiStyle.roiLineWidth = 3;
         roiStyle.dragThickness = 2;
+        // 라이브 모니터도 같은 스타일로 그리도록 공용 기준에 심는다
+        RoiStyles.set(roiStyle);
 
         cameraSelect = addVisionGroup(col, "클러스터 설정", VisionChannel.CLUSTER, roiStyle);
         addVisionGroup(col, "기어봉 설정", VisionChannel.GEAR, roiStyle);

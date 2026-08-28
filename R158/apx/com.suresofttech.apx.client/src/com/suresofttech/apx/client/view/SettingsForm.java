@@ -24,6 +24,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
+import com.suresofttech.apx.ui.widget.settings.vision.RoiStyles;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
@@ -55,6 +56,8 @@ public class SettingsForm extends Composite {
         roiStyle.drag = new RGB(0, 160, 255);
         roiStyle.roiLineWidth = 3;
         roiStyle.dragThickness = 2;
+        // 라이브 모니터도 같은 스타일로 그리도록 공용 기준에 심는다
+        RoiStyles.set(roiStyle);
 
         CameraSelectBar clusterSelect = addVisionGroup(col, "클러스터 설정",
             VisionChannel.CLUSTER, roiStyle, 160);
