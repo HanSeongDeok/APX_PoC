@@ -360,7 +360,7 @@ public final class EvidenceBundle {
         FileOutputStream out = new FileOutputStream(new File(root, META_NAME));
         try {
             p.store(new OutputStreamWriter(out, "UTF-8"),
-                    "APX 측정 증거 메타 - 시간축 기준: 측정 시작 = 0 ms");
+                    "APX 측정 증거 메타 - PASS ms: 측정 시작=0 / 동기: 기어봉 R 기준 지연");
         } finally {
             out.close();
         }
