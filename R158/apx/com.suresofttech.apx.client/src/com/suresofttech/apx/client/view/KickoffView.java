@@ -7,7 +7,6 @@ import java.util.Date;
 import java.util.List;
 
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.window.Window;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
@@ -34,13 +33,14 @@ import com.suresofttech.apx.core.measure.MeasureSyncResult;
 import com.suresofttech.apx.core.rear.Verdict;
 import com.suresofttech.apx.core.rear.VerdictResult;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
+import com.suresofttech.apx.ui.widget.TestPlayerDialog;
 import com.suresofttech.apx.ui.widget.settings.audio.AudioScope;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
  * 측정 Kickoff - Start/Stop/설정.
  * 측정 중: 음향 / 비전 PASS 시각(물리지연 포함) + 자체 판단(gap+분석) 표시.
- * 중단 시: (max−min)≤30ms 동기 포함 최종 PASS/FAIL. L2 캘리브 보정 없음.
+ * 중단 시: 기어봉 R 기준 클러스터·음향 0~30ms 동기 포함 최종 PASS/FAIL. L2 캘리브 보정 없음.
  * 증거: {@link #setEvidenceDir} = 증거 <b>루트</b>, {@link #setTcId} = 측정 TC.
  * 실제 저장은 {@code <루트>/<tcId>/audio|vision|rear/} ({@link EvidenceStore}).
  * <ul>
@@ -129,7 +129,7 @@ public class KickoffView extends ViewPart {
         audioLbl = statusText(parent, "음향: -");
         visionLbl = statusText(parent, "클러스터: -");
         visionGearLbl = statusText(parent, "기어봉: -");
-        syncLbl = statusText(parent, "동기: - (≤30ms, CAN 추후)");
+        syncLbl = statusText(parent, "동기: - (기어봉 R 기준 ≤30ms)");
         overallLbl = statusText(parent, "최종: - (중단 시 판정)");
 
         evidenceLbl = readOnlyText(parent,
@@ -184,10 +184,11 @@ public class KickoffView extends ViewPart {
                     "측정 중에는 설정을 바꿀 수 없습니다. 중단 후 다시 시도하세요.");
             return;
         }
-        SettingsDialog dlg = new SettingsDialog(getSite().getShell());
-        if (dlg.open() == Window.OK) {
-            applySettingsToMonitors();
-        }
+        SettingsDialog.openNonModal(getSite().getShell(), new Runnable() {
+            public void run() {
+                applySettingsToMonitors();
+            }
+        });
     }
 
     /** 설정 확인 후 모니터 View에 현재 ApxSettings 반영. */
@@ -215,7 +216,7 @@ public class KickoffView extends ViewPart {
         audioLbl.setText("음향: 측정 중");
         visionLbl.setText("클러스터: 측정 중");
         visionGearLbl.setText("기어봉: 측정 중");
-        syncLbl.setText("동기: - (중단 시 판정, ≤30ms)");
+        syncLbl.setText("동기: - (기어봉 R 기준 ≤30ms)");
         overallLbl.setText("최종: - (중단 시 판정)");
         try {
             showMonitorViews();
@@ -224,8 +225,10 @@ public class KickoffView extends ViewPart {
             GearVisionMonitorView gearVision = ensureGearVision();
             RearMonitorView rear = ensureRear();
 
+            TestPlayerDialog.prepareClusterPopup(getSite().getShell());
             MeasureSession session = MeasureSession.get();
             session.start();
+            SettingsDialog.setEditingEnabled(false);
             // 지정 포인트를 측정중으로 - 어느 포인트가 이번 측정 대상인지는 클라 규칙이다
             applyRearVerdicts(session, buildRearVerdicts(session, Verdict.MEASURING));
 
@@ -243,6 +246,10 @@ public class KickoffView extends ViewPart {
             }
             refreshButtons();
         } catch (Exception ex) {
+            if (MeasureSession.get().isRunning()) {
+                MeasureSession.get().stop();
+            }
+            SettingsDialog.setEditingEnabled(true);
             evidenceLbl.setText("시작 실패: " + ex.getMessage());
             refreshButtons();
         }
@@ -287,6 +294,7 @@ public class KickoffView extends ViewPart {
         // 후방은 중단 시 항상 캡처(PASS/FAIL 무관) - 결과 View / 증거에 후방 스냅샷이 비지 않도록
         captureFirstPassSnapshots(session, false, sync.visionPass, true);
         session.stop();
+        SettingsDialog.setEditingEnabled(true);
 
         if (audio != null) {
             audio.onMeasureStopped();
@@ -302,14 +310,7 @@ public class KickoffView extends ViewPart {
         }
 
         refreshPassLabels(sync.audioPass, sync.visionPass, sync.audioPassMs, sync.visionPassMs);
-        if (sync.syncSpreadMs != null) {
-            syncLbl.setText(String.format("동기: %.0f ms %s (≤%.0fms, CAN 추후)",
-                    sync.syncSpreadMs.doubleValue(),
-                    sync.syncOk ? "OK" : "FAIL",
-                    MeasureSyncResult.SYNC_TOL_MS));
-        } else {
-            syncLbl.setText("동기: - (PASS 시각 2개 미만)");
-        }
+        syncLbl.setText(sync.formatLabel(false));
         overallLbl.setText("최종: " + (sync.overallPass ? "PASS" : "FAIL") + " - " + sync.summary);
 
         publishLastResult(sync, session.getEvidence());
@@ -405,17 +406,15 @@ public class KickoffView extends ViewPart {
         // 음향 스냅샷은 AudioMonitorView가 PASS→비PASS 엣지에서. 후방은 중단+overallPass만.
         captureFirstPassSnapshots(s, false, visionPass, false);
 
+        MeasureSyncResult preview = MeasureSyncResult.evaluate(
+                s.isAudioPass(), s.isClusterPass(), s.isGearPass(),
+                s.getAudioPassMs(), s.getClusterPassMs(), s.getGearPassMs(),
+                null, false);
         if (audioPass && visionPass) {
-            Long a = s.getAudioPassMs();
-            Long v = s.getVisionPassMs();
-            if (a != null && v != null) {
-                long spread = Math.abs(a.longValue() - v.longValue());
-                syncLbl.setText(String.format("동기(미리보기): %d ms (≤%.0fms, 최종은 중단 시)",
-                        spread, MeasureSyncResult.SYNC_TOL_MS));
-            }
+            syncLbl.setText(preview.formatLabel(true));
             overallLbl.setText("최종: - (중단 시 판정)");
         } else {
-            syncLbl.setText("동기: - (중단 시 판정, ≤30ms)");
+            syncLbl.setText("동기: - (기어봉 R 기준 ≤30ms)");
             overallLbl.setText("최종: - (중단 시 판정)");
         }
         relayoutStatus();
@@ -839,6 +838,10 @@ public class KickoffView extends ViewPart {
 
     @Override
     public void dispose() {
+        if (MeasureSession.get().isRunning()) {
+            MeasureSession.get().stop();
+        }
+        SettingsDialog.closeOpenDialog();
         MeasureSession.get().removeListener(sessionListener);
         super.dispose();
     }

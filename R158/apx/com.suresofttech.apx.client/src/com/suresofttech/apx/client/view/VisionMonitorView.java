@@ -18,6 +18,7 @@ import com.suresofttech.apx.core.measure.MeasureSession;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.core.vision.VisionChannel;
+import com.suresofttech.apx.ui.widget.TestPlayerDialog;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 
@@ -54,6 +55,7 @@ public class VisionMonitorView extends ViewPart {
     private boolean framePolling;
     private boolean reporting;
     private MeasureSession.Listener stateListener;
+    private MeasureSession.GearTriggerListener gearTriggerListener;
 
     public VisionMonitorView() {
         this(VisionChannel.CLUSTER);
@@ -74,6 +76,14 @@ public class VisionMonitorView extends ViewPart {
         startFramePoll();
         startStallWatchdog();
         startStateListener();
+        if (channel == VisionChannel.GEAR) {
+            gearTriggerListener = new MeasureSession.GearTriggerListener() {
+                public void onGearTrigger() {
+                    TestPlayerDialog.showClusterPopup(getSite().getShell());
+                }
+            };
+            MeasureSession.get().setGearTriggerListener(gearTriggerListener);
+        }
         MeasureSession session = MeasureSession.get();
         if (session.isRunning()) {
             onMeasureStarted(session);
@@ -108,8 +118,11 @@ public class VisionMonitorView extends ViewPart {
             }
         });
 
-        p.roiNcc = new RoiNcc(p.canvas, new RoiNcc.Style(), ch);
-        p.roiNcc.setInteractive(false);
+        // style=null → RoiStyles 공용 스타일. 설정에서 클라이언트가 넣은 ROI 색·굵기가
+        // 여기에도 그대로 반영되고, 나중에 바뀌어도 따라간다.
+        // interactive=false 는 생성자에서 줘야 한다 — 나중에 끄면 첫 구축이 이미 끝나서
+        // 모니터가 기준 프레임을 덮어쓴다.
+        p.roiNcc = new RoiNcc(p.canvas, null, ch, false);
         p.roiNcc.setMatchListener(new RoiNcc.MatchListener() {
             public void onMatch(RoiMatchResult r) {
                 if (reporting && MeasureSession.get().isRunning()) {
@@ -329,19 +342,16 @@ public class VisionMonitorView extends ViewPart {
             return;
         }
         MeasureSession s = MeasureSession.get();
-        boolean pass = p.channel == VisionChannel.GEAR ? s.isGearPass() : s.isClusterPass();
-        Long ms = p.channel == VisionChannel.GEAR ? s.getGearPassMs() : s.getClusterPassMs();
-        Double judge = p.channel == VisionChannel.GEAR ? s.getGearJudgeMs() : s.getClusterJudgeMs();
-        Double gap = p.channel == VisionChannel.GEAR ? s.getGearGapMs() : s.getClusterGapMs();
-        Double analysis = p.channel == VisionChannel.GEAR
-                ? s.getGearAnalysisMs() : s.getClusterAnalysisMs();
-        if (pass) {
-            setStatusText(p, MeasureSession.formatPassLine(p.channel.label, ms, judge, gap, analysis));
-        } else if (s.isRunning()) {
+        if (s.isRunning()) {
             MeasureConfigSnapshot snap = s.getSnapshot();
             String j = (snap != null && snap.visionJudge(p.channel) != null)
                     ? snap.visionJudge(p.channel) : "NCC";
             setStatusText(p, p.channel.label + ": 측정 중 (" + j + ")");
+            return;
+        }
+        boolean pass = p.channel == VisionChannel.GEAR ? s.isGearPass() : s.isClusterPass();
+        if (pass) {
+            setStatusText(p, p.channel.label + ": 대기");
         } else {
             setStatusText(p, p.channel.label + ": FAIL (미검출)");
         }
@@ -366,6 +376,10 @@ public class VisionMonitorView extends ViewPart {
         if (stateListener != null) {
             MeasureSession.get().removeListener(stateListener);
             stateListener = null;
+        }
+        if (gearTriggerListener != null) {
+            MeasureSession.get().clearGearTriggerListener(gearTriggerListener);
+            gearTriggerListener = null;
         }
         super.dispose();
     }

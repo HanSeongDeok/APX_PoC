@@ -183,11 +183,10 @@ public class AudioMonitorView extends ViewPart {
             return;
         }
         MeasureSession s = MeasureSession.get();
-        if (s.isAudioPass()) {
-            setStatusText(MeasureSession.formatPassLine("음향", s.getAudioPassMs(),
-                s.getAudioJudgeMs(), s.getAudioGapMs(), s.getAudioAnalysisMs()));
-        } else if (s.isRunning()) {
+        if (s.isRunning()) {
             setStatusText("음향: 측정 중");
+        } else if (s.isAudioPass()) {
+            setStatusText("음향: 대기");
         } else {
             setStatusText("음향: FAIL (기대음 미검출)");
         }

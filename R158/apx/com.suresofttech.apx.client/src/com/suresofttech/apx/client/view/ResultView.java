@@ -447,8 +447,7 @@ public class ResultView extends ViewPart {
             setTcIds(r.getRearTcIds());
         }
         if (r == null || !r.hasResult()) {
-            emptyLbl.setText("아직 측정 결과가 없습니다. Kickoff에서 측정 시작 → 중단 하면 여기에 표시됩니다."
-                    + "\n지난 TC는 아래 \"증거 폴더 열기…\"로 되짚을 수 있습니다.");
+            emptyLbl.setText("아직 측정 결과가 없습니다.");
             setVisible(true, emptyLbl);
             setVisible(false, headerLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
                     audioSnapLbl, visionSnapLbl, rearSnapLbl,
@@ -470,14 +469,10 @@ public class ResultView extends ViewPart {
             r.getClusterJudgeMs(), r.getClusterGapMs(), r.getClusterAnalysisMs()));
         gearTimeLbl.setText(MeasureSession.formatPassLine("기어봉", r.getGearPassMs(),
             r.getGearJudgeMs(), r.getGearGapMs(), r.getGearAnalysisMs()));
-        if (r.getSyncSpreadMs() != null) {
-            syncLbl.setText(String.format("동기: %.0f ms %s (≤%.0fms)",
-                    r.getSyncSpreadMs().doubleValue(),
-                    r.isSyncOk() ? "OK" : "FAIL",
-                    MeasureSyncResult.SYNC_TOL_MS));
-        } else {
-            syncLbl.setText("동기: - (PASS 시각 2개 미만)");
-        }
+        syncLbl.setText(MeasureSyncResult.evaluate(
+                r.getAudioPassMs() != null, r.getClusterPassMs() != null, r.getGearPassMs() != null,
+                r.getAudioPassMs(), r.getClusterPassMs(), r.getGearPassMs(),
+                null, false).formatLabel(false));
 
         audioImg = setPng(audioImgLbl, audioImg, r.getAudioPassPng());
         visionImg = setPng(visionImgLbl, visionImg, r.getVisionPassPng());

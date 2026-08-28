@@ -73,7 +73,7 @@ public class VisionReadout extends ReadoutBar {
         if (aligning) {
             set(simLbl, "정렬 중", STATE_BUSY);
         } else {
-            set(simLbl, vsThr(r.psc, r.simThr) + "  (NCC " + f2(r.ncc) + " / SSIM " + f2(r.ssim) + ")",
+            set(simLbl, vsThr(r.psc, r.simThr) + "  (NCC " + f2(r.ncc) + ")",
                     thrState(r.psc, r.simThr));
         }
         set(roiLbl, roiText(r.roi));
