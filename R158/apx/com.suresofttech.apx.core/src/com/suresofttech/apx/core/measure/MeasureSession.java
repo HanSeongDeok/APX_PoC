@@ -24,6 +24,7 @@ import com.suresofttech.apx.core.vision.RoiMatchResult;
 import com.suresofttech.apx.core.vision.VisionEvidenceStore;
 import com.suresofttech.apx.core.vision.VisionMatchLog;
 import com.suresofttech.apx.core.vision.VisionRecorder;
+import com.suresofttech.apx.core.vision.VisionReference;
 
 /**
  * 측정 세션 - 시작 시 설정 스냅샷 고정, 음향 / 비전 엔진 / 후방 판정 상태 / 증거 버퍼.
@@ -43,6 +44,11 @@ public final class MeasureSession {
         void onState(boolean audioPass, boolean visionPass, boolean overallPass);
     }
 
+    /** 최초 기어 R 판정 직후 실행할 시뮬레이터 출력 트리거. */
+    public interface GearTriggerListener {
+        void onGearTrigger();
+    }
+
     private static final MeasureSession INSTANCE = new MeasureSession();
 
     public static MeasureSession get() {
@@ -50,6 +56,7 @@ public final class MeasureSession {
     }
 
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<Listener>();
+    private volatile GearTriggerListener gearTriggerListener;
 
     private volatile boolean running;
     private MeasureConfigSnapshot snapshot;
@@ -102,11 +109,17 @@ public final class MeasureSession {
     /** 프레임별 ROI hit/ncc - 결과 스크럽 PASS/FAIL 색 복원. */
     private final VisionMatchLog visionMatchLog = new VisionMatchLog();
 
-    /** 비전 PASS 시 기대음 1회 재생(시뮬레이터 자동 트리거). */
+    /** 기대음 1회 재생(시뮬레이터 자극). start()에서 라인을 미리 열어 둔다. */
     private final TonePlayer expectedPlayer = new TonePlayer();
     private double[] expectedSamples;
     private int expectedSampleRate;
     private boolean expectedAutoPlayed;
+
+    /**
+     * 자극 발사 시각(기어봉 R 전환 순간). 측정 시작 기준 ms. 미발사면 null.
+     * <p>이 시각이 동기 판정의 T0 가 된다 - {@link #markStimulus()} 참고.
+     */
+    private volatile Long stimulusAtMs;
 
     private final Object rearLock = new Object();
     private Verdict[][] rearVerdicts; // [col][row], null = NONE
@@ -125,6 +138,47 @@ public final class MeasureSession {
 
     public void removeListener(Listener l) {
         listeners.remove(l);
+    }
+
+    /**
+     * <b>자극 발사</b> - 기어봉을 R로 바꾸는 순간 호출한다. 이 시각이 동기 판정의 T0.
+     *
+     * <p>여기서 <b>기대음도 같이 발사</b>한다. 화면 교체는 호출자(테스트 화면)가 바로 이어서 한다.
+     * 세 자극이 같은 순간에 나가고, 그 뒤 각 채널을 언제 다시 읽어 들이는지가 곧
+     * 그 채널의 전체 지연이다.
+     * <pre>
+     * 기어봉 지연  = 기어봉 검출  − T0     ← 기준점이 도구 자신이라 기어봉도 측정된다
+     * 클러스터 지연 = 클러스터 검출 − T0
+     * 음향 지연    = 음향 검출    − T0
+     * Sync = MAX(셋)
+     * </pre>
+     *
+     * <p>측정당 1회만 기록한다. 측정 중이 아니면 무시.
+     *
+     * @return 기록된 T0(측정 시작 기준 ms). 기록하지 않았으면 null
+     */
+    public synchronized Long markStimulus() {
+        if (!running || stimulusAtMs != null) {
+            return null;
+        }
+        stimulusAtMs = Long.valueOf(Math.round((SyncBus.now() - startNanoSec) * 1000.0));
+        playExpectedNow();
+        return stimulusAtMs;
+    }
+
+    /** 자극 발사 시각(측정 시작 기준 ms). 미발사면 null. */
+    public Long getStimulusAtMs() {
+        return stimulusAtMs;
+    }
+
+    public void setGearTriggerListener(GearTriggerListener listener) {
+        gearTriggerListener = listener;
+    }
+
+    public void clearGearTriggerListener(GearTriggerListener listener) {
+        if (gearTriggerListener == listener) {
+            gearTriggerListener = null;
+        }
     }
 
     public synchronized boolean isRunning() {
@@ -315,13 +369,20 @@ public final class MeasureSession {
 
     /**
      * 중단 시 최종 판정. CAN은 아직 미연동({@code requireCan=false}).
-     * 규칙: 음향∧비전 PASS 이고 (max−min) ≤ {@link MeasureSyncResult#SYNC_TOL_MS}.
+     *
+     * <p>기준점 T0 는 자극 발사 시각({@link #markStimulus()})을 우선 쓴다. 그 시각에
+     * 클러스터 교체와 기대음이 같이 나갔으므로 <b>기어봉을 포함한 세 채널</b>의 지연을 잰다.
+     * 자극 없이 돈 측정이면 기어봉 검출을 대타 기준점으로 쓰고 기어봉 지연은 0이 된다.
      */
     public MeasureSyncResult evaluateFinal() {
+        ApxSettings s = ApxSettings.get();
         return MeasureSyncResult.evaluate(
-                audioPass, visionPass,
-                audioPassAtMs, visionPassAtMs,
-                null, false);
+                audioPass, clusterPass, gearPass,
+                audioPassAtMs, clusterPassAtMs, gearPassAtMs,
+                null, stimulusAtMs, false,
+                s.getCalibMs(VisionChannel.GEAR),
+                s.getCalibMs(VisionChannel.CLUSTER),
+                s.getCalibAudioMs());
     }
 
     public MatchResult getLatestMatch() {
@@ -380,6 +441,7 @@ public final class MeasureSession {
         this.expectedSamples = wav.samples;
         this.expectedSampleRate = wav.sampleRate;
         this.expectedAutoPlayed = false;
+        this.stimulusAtMs = null;
         BeepMatcher bm = new BeepMatcher(wav.samples, wav.sampleRate, 150.0, 4.0,
                 snap.audioFreqThr, snap.audioWaveThr, 0.015);
         bm.arm();
@@ -438,7 +500,13 @@ public final class MeasureSession {
                 fireState();
             }
         });
-        cap.start(dev.info, bm.getSampleRate(), new AudioCapture.BlockListener() {
+        running = true;
+        try {
+            if (snap.autoPlayExpectedOnVisionPass
+                    && !expectedPlayer.prepare(wav.samples, wav.sampleRate)) {
+                throw new IllegalStateException("기대음 출력 장치를 준비할 수 없습니다");
+            }
+            cap.start(dev.info, bm.getSampleRate(), new AudioCapture.BlockListener() {
             public void onBlock(double[] block, double now) {
                 feedRec.feed(block);
                 long n = capturedSamples + block.length;
@@ -467,9 +535,11 @@ public final class MeasureSession {
                 }
                 fireAudio(mr, feedMatcher.getBuffer(), tAudio);
             }
-        });
-
-        running = true;
+            });
+        } catch (Exception ex) {
+            stop();
+            throw ex;
+        }
         fireState();
     }
 
@@ -689,7 +759,7 @@ public final class MeasureSession {
      * 채널별 최초 hit → PASS. 비전 전체 PASS는 클러스터∧기어봉.
      * 기대음 자동재생은 둘 중 먼저 PASS일 때 1회.
      */
-    private void latchVisionPass(VisionChannel ch, RoiMatchResult r) {
+    private synchronized void latchVisionPass(VisionChannel ch, RoiMatchResult r) {
         if (r == null || !r.hit) {
             return;
         }
@@ -709,6 +779,17 @@ public final class MeasureSession {
                 gearGapMs = Double.valueOf(r.frameGapMs);
                 gearAnalysisMs = r.analysisMs;
             }
+            // 자극을 이미 냈으면(markStimulus) 여기서 또 낼 필요가 없다.
+            // 자극 없이 도는 구성(테스트 화면을 안 쓰는 경우)에서만 검출로 클러스터를 띄운다.
+            if (stimulusAtMs == null) {
+                GearTriggerListener trigger = gearTriggerListener;
+                if (trigger != null) {
+                    try {
+                        trigger.onGearTrigger();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
         } else {
             clusterPass = true;
             clusterPassAtMs = Long.valueOf(ms);
@@ -718,41 +799,60 @@ public final class MeasureSession {
                 clusterAnalysisMs = r.analysisMs;
             }
         }
-        maybeAutoPlayExpected();
+        if (gear) {
+            maybeAutoPlayExpected();
+        }
         if (clusterPass && gearPass && !visionPass) {
-        visionPass = true;
+            visionPass = true;
             long both = Math.max(clusterPassAtMs.longValue(), gearPassAtMs.longValue());
             visionPassAtMs = Long.valueOf(both);
             visionJudgeMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
-            ? gearJudgeMs : clusterJudgeMs;
+                    ? gearJudgeMs : clusterJudgeMs;
             visionGapMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
-            ? gearGapMs : clusterGapMs;
+                    ? gearGapMs : clusterGapMs;
             visionAnalysisMs = gearPassAtMs.longValue() >= clusterPassAtMs.longValue()
-            ? gearAnalysisMs : clusterAnalysisMs;
-        if (evidence != null) {
+                    ? gearAnalysisMs : clusterAnalysisMs;
+            if (evidence != null) {
                 evidence.setVisionPassMs(both);
                 if (visionJudgeMs != null) {
                     evidence.setVisionJudgeMs(visionJudgeMs.doubleValue());
+                }
             }
-        }
-        recordOverallPassIfComplete();
+            recordOverallPassIfComplete();
         }
         fireState();
     }
 
     /**
-     * 시뮬레이터 자동 트리거 - 비전(R단) 최초 PASS 때 기대음을 한 번 재생한다.
-     * 수동 모드({@link MeasureConfigSnapshot#autoPlayExpectedOnVisionPass}=false)면 건너뛴다.
+     * 슬레이트 자동 트리거 - <b>기어봉 비전 PASS(T0) 시점</b>에 기대음을 한 번 발사한다.
+     *
+     * <p>영화 슬레이트와 같은 구조다. 기어봉 ROI 가 FAIL→PASS 로 바뀌는 순간이 "탁" 이고,
+     * 그 순간을 0 으로 잡아 클러스터 화면 교체(={@link GearTriggerListener})와 이 기대음을
+     * 함께 내보낸다. 그 뒤 두 채널을 각각 언제 다시 읽어 들이는지가 곧 도구의 동기 오차다.
+     * <pre>
+     * Sync = MAX(클러스터 검출 − T0, 음향 검출 − T0)
+     * </pre>
+     *
+     * <p>발사 지연을 줄이려고 {@code start()} 에서 미리 라인을 열어 둔다({@code prepare}).
+     * 준비가 안 된 상태로 play 하면 라인 오픈(수십 ms)이 그대로 음향 지연에 얹힌다.
+     *
+     * <p>수동 모드({@link MeasureConfigSnapshot#autoPlayExpectedOnVisionPass}=false)면 건너뛴다.
      */
     private void maybeAutoPlayExpected() {
         if (snapshot == null || !snapshot.autoPlayExpectedOnVisionPass) {
             return;
         }
+        playExpectedNow();
+    }
+
+    /** 기대음 1회 발사. 라인은 {@code start()} 에서 미리 열어 두었다. */
+    private void playExpectedNow() {
         if (expectedAutoPlayed || expectedSamples == null || expectedSampleRate <= 0) {
             return;
         }
-        expectedAutoPlayed = true;
-        expectedPlayer.play(expectedSamples, expectedSampleRate);
+        if (expectedPlayer.play(expectedSamples, expectedSampleRate)) {
+            expectedAutoPlayed = true;
+        }
     }
 
     /**
@@ -871,8 +971,16 @@ public final class MeasureSession {
             }
             visionDet.setSimThr(snapshot.simThr);
         } else {
-            int[] roi = snapshot.toRoiPixels(bi.getWidth(), bi.getHeight());
-            visionDet = VisionJudges.create(bi, null, roi, snapshot.simThr);
+            // 기준은 설정에서 잡아 둔 프레임 우선 — 없을 때만 지금 프레임.
+            // 시작 버튼을 누른 순간의 화면이 기준으로 바뀌어 버리는 것을 막는다.
+            BufferedImage ref = VisionReference.get(VisionChannel.CLUSTER);
+            if (ref != null && (ref.getWidth() != bi.getWidth()
+                    || ref.getHeight() != bi.getHeight())) {
+                ref = null;     // 해상도가 다르면 못 쓴다(카메라가 바뀐 경우)
+            }
+            BufferedImage base = (ref != null) ? ref : bi;
+            int[] roi = snapshot.toRoiPixels(base.getWidth(), base.getHeight());
+            visionDet = VisionJudges.create(base, null, roi, snapshot.simThr);
             visionDet.setAlignEnabled(false);
             visionDet.setSimThr(snapshot.simThr);
         }
