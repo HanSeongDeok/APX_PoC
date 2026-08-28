@@ -83,6 +83,35 @@ public final class ApxSettings {
     private double audioFreqThr = 0.90;
     private double audioWaveThr = 0.90;
 
+    /**
+     * 임계 기본값이 이미 심어졌는지 — {@code seed*} 가 기존 값을 덮지 않게 한다.
+     * 설정 View가 다시 만들어질 때마다 사용자 조정값이 날아가는 것을 막는다.
+     */
+    private boolean simThrSeeded;
+    private boolean gearSimThrSeeded;
+    private boolean audioThrSeeded;
+
+    /**
+     * 채널별 <b>물리지연 캘리브 상수</b>(ms). 0이면 보정하지 않는다.
+     *
+     * <p>자극이 실제로 나간 순간부터 도구가 그것을 검출할 때까지 걸리는, 그 리그의
+     * 거의 일정한 지연이다. 비전은 모니터 발광 + 카메라 노출/전송 + 프레임 대기 + 분석,
+     * 음향은 스피커/DAC + 공기 + 마이크 + 블록 대기 + 분석이 들어간다.
+     *
+     * <p><b>여기에 이미 프레임(블록) 대기가 포함되어 있다.</b> 그래서 보정할 때
+     * 자체판단의 {@code frameGap} 을 또 빼면 안 된다 - 같은 항을 두 번 빼게 된다.
+     * 게다가 두 값은 크기도 다르다. 캘리브의 대기 항은 <i>그 시험에서 실제로 기다린 시간</i>
+     * (0 ~ 1/fps 사이)이고, {@code frameGap} 은 <i>주기 전체</i>(1/fps)다.
+     * {@code frameGap} 은 "도구가 한 프레임을 기다리는 설계값"을 보여 주는 표시용 숫자다.
+     *
+     * <p>구하는 법: 자극과 관측을 <b>한 녹화</b>에 담아 (원본 자극 → 웹캠/마이크에 처음
+     * 나타난 시점)을 N회 재고 중앙값을 쓴다. 1회 값은 그날의 대기가 평균이 아니라 부정확하다.
+     * 리그(카메라/모니터/스피커/마이크/해상도/fps)가 바뀌면 다시 재야 한다.
+     */
+    private double calibClusterMs;
+    private double calibGearMs;
+    private double calibAudioMs;
+
     /** 후방 격자 열 / 행 (기본 4×6 프리셋). */
     private int rearCols = 4;
     private int rearRows = 6;
@@ -144,10 +173,20 @@ public final class ApxSettings {
         return ch == VisionChannel.GEAR ? gearUseReferenceImage : useReferenceImage;
     }
 
+    /**
+     * @deprecated <b>켜지 않는 것을 권장한다.</b> 기준 화면은 설정 탭에서 ROI 를 드래그할 때
+     *             라이브 캡처로 잡는 것으로 클라이언트와 협의되었다. 파일 기준을 켜면
+     *             정답과 촬영의 카메라 위치가 어긋나 ORB 정렬({@code OrbAligner})이 끌려 들어오고,
+     *             특징점이 부족한 장면에서 {@code aligning} 상태에 갇힐 수 있다.
+     *             읽기({@code isUseReferenceImage})는 내부 분기용이라 그대로 둔다.
+     */
+    @Deprecated
     public void setUseReferenceImage(boolean on) {
         setUseReferenceImage(VisionChannel.CLUSTER, on);
     }
 
+    /** @deprecated 사유는 {@link #setUseReferenceImage(boolean)} 참고. */
+    @Deprecated
     public void setUseReferenceImage(VisionChannel ch, boolean on) {
         if (ch == VisionChannel.GEAR) {
             if (this.gearUseReferenceImage == on) {
@@ -268,6 +307,11 @@ public final class ApxSettings {
     }
 
     public void setSimThr(VisionChannel ch, double simThr) {
+        if (ch == VisionChannel.GEAR) {
+            gearSimThrSeeded = true;
+        } else {
+            simThrSeeded = true;
+        }
         double v = clamp01(simThr);
         if (ch == VisionChannel.GEAR) {
             if (Math.abs(this.gearSimThr - v) < 1e-9) {
@@ -281,6 +325,26 @@ public final class ApxSettings {
         this.simThr = v;
         }
         fire();
+    }
+
+    /**
+     * 클라이언트가 준 <b>기본값</b>을 최초 1회만 심는다 — 이미 값이 정해져 있으면 건드리지 않는다.
+     *
+     * <p>임계 바는 설정 View / 설정 Dialog 양쪽에서 만들어지고, View가 다시 생성될 때마다
+     * 생성자가 돌아간다. 그때 {@link #setSimThr}로 기본값을 쓰면 <b>사용자가 조정한 임계가
+     * 매번 기본값으로 되돌아간다</b>. 그래서 씨딩과 설정을 분리한다.
+     */
+    public void seedSimThr(VisionChannel ch, double simThr) {
+        boolean seeded = (ch == VisionChannel.GEAR) ? gearSimThrSeeded : simThrSeeded;
+        if (seeded) {
+            return;
+        }
+        setSimThr(ch, simThr);
+        if (ch == VisionChannel.GEAR) {
+            gearSimThrSeeded = true;
+        } else {
+            simThrSeeded = true;
+        }
     }
 
     // ── 비전 판정 방식 ────────────────────────────────────────────────
@@ -391,6 +455,7 @@ public final class ApxSettings {
     }
 
     public void setAudioThresholds(double freq, double wave) {
+        audioThrSeeded = true;
         double f = clamp01(freq);
         double w = clamp01(wave);
         if (Math.abs(this.audioFreqThr - f) < 1e-9 && Math.abs(this.audioWaveThr - w) < 1e-9) {
@@ -399,6 +464,58 @@ public final class ApxSettings {
         this.audioFreqThr = f;
         this.audioWaveThr = w;
         fire();
+    }
+
+    // ── 물리지연 캘리브 상수 (ms) ────────────────────────────────────
+
+    /** 비전 채널 캘리브 상수(ms). 0이면 보정 안 함. */
+    public double getCalibMs(VisionChannel ch) {
+        return ch == VisionChannel.GEAR ? calibGearMs : calibClusterMs;
+    }
+
+    public void setCalibMs(VisionChannel ch, double ms) {
+        double v = Math.max(0.0, ms);
+        if (ch == VisionChannel.GEAR) {
+            if (Math.abs(gearCalibDiff(v)) < 1e-9) {
+                return;
+            }
+            calibGearMs = v;
+        } else {
+            if (Math.abs(calibClusterMs - v) < 1e-9) {
+                return;
+            }
+            calibClusterMs = v;
+        }
+        fire();
+    }
+
+    private double gearCalibDiff(double v) {
+        return calibGearMs - v;
+    }
+
+    /** 음향 채널 캘리브 상수(ms). 0이면 보정 안 함. */
+    public double getCalibAudioMs() {
+        return calibAudioMs;
+    }
+
+    public void setCalibAudioMs(double ms) {
+        double v = Math.max(0.0, ms);
+        if (Math.abs(calibAudioMs - v) < 1e-9) {
+            return;
+        }
+        calibAudioMs = v;
+        fire();
+    }
+
+    /**
+     * 음향 임계 <b>기본값</b>을 최초 1회만 심는다. 사유는 {@link #seedSimThr} 와 같다.
+     */
+    public void seedAudioThresholds(double freq, double wave) {
+        if (audioThrSeeded) {
+            return;
+        }
+        setAudioThresholds(freq, wave);
+        audioThrSeeded = true;
     }
 
     public int getRearCols() {
