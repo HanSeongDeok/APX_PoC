@@ -49,7 +49,8 @@ public class VisionThresholdBar extends Composite {
         super(parent, SWT.NONE);
         this.cfg = (cfg != null) ? cfg : new Cfg();
         this.channel = channel == null ? VisionChannel.CLUSTER : channel;
-        settings.setSimThr(this.channel, this.cfg.defaultThr);
+        // 기본값은 최초 1회만 — View/Dialog가 다시 만들어져도 사용자 조정값을 지키려면 seed 여야 한다
+        settings.seedSimThr(this.channel, this.cfg.defaultThr);
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;

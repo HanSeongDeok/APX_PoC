@@ -28,6 +28,10 @@ public class ExpectedWavBar extends Composite {
         public String titleText = "기대 경고음 (.wav)";
         public String pickText = "파일...";
         public String placeholderText = "wav 파일을 선택하세요";
+        /** 파일 선택 대화상자 제목. null 이면 OS 기본. */
+        public String dialogText = "기대 경고음 선택 (.wav)";
+        /** 파일 형식 목록에 보일 이름. */
+        public String filterName = "WAV (*.wav)";
     }
 
     private final ApxSettings settings = ApxSettings.get();
@@ -59,8 +63,11 @@ public class ExpectedWavBar extends Composite {
         pick.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 FileDialog dlg = new FileDialog(getShell(), SWT.OPEN);
+                if (ExpectedWavBar.this.cfg.dialogText != null) {
+                    dlg.setText(ExpectedWavBar.this.cfg.dialogText);
+                }
                 dlg.setFilterExtensions(new String[] { "*.wav" });
-                dlg.setFilterNames(new String[] { "WAV (*.wav)" });
+                dlg.setFilterNames(new String[] { ExpectedWavBar.this.cfg.filterName });
                 String p = dlg.open();
                 if (p != null) {
                     settings.setExpectedWavPath(p);

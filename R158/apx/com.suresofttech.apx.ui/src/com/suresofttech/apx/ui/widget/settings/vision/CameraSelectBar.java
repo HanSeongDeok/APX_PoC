@@ -16,12 +16,46 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 
 import com.suresofttech.apx.core.vision.CameraService;
+import com.suresofttech.apx.core.vision.VisionChannel;
 
 /**
  * 웹캠 콤보 + 새로고침 - {@link CameraService} 사용.
  * 화면은 공용 {@link CameraCanvas}에 {@link #setCanvas}로 연결한다 (라이브 폴링 포함).
+ *
+ * <p><b>채널을 반드시 지정하세요.</b> 인자 하나짜리 생성자는 클러스터 채널로 붙는다.
+ * 기어봉 바를 만들 때 이걸 쓰면 두 바가 같은 카메라를 잡는다.
+ * <pre>
+ * new CameraSelectBar(parent, VisionChannel.GEAR);
+ * </pre>
+ *
+ * <p><b>크기</b>는 파라미터로 받지 않는다. 두 가지로 충분하기 때문이다.
+ * <ul>
+ *   <li><b>바 전체 폭</b> - 클라이언트가 {@code setLayoutData()} 로 정한다.
+ *       단, 생성자가 심어 두는 기본값이 {@code GridData(FILL, CENTER, true, false)} 라
+ *       {@code widthHint} 만 얹으면 <b>안 먹는다</b>(FILL+grab 이 컬럼 폭으로 늘려 버린다).
+ *       줄이거나 고정하려면 정렬과 grab 을 같이 바꿔야 한다.
+ *       <pre>
+ * GridData gd = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+ * gd.widthHint = 220;
+ * bar.setLayoutData(gd);
+ *       </pre></li>
+ *   <li><b>새로고침 버튼 폭</b> - {@link Cfg#refreshText} 길이를 따라간다
+ *       (실측: "새로고침" 60px, "카메라 목록 다시 읽기" 129px). 콤보가 나머지를 가져간다.</li>
+ * </ul>
+ * 높이는 열지 않았다. Combo/Button 높이는 네이티브 위젯과 폰트가 정하는 값이라
+ * 강제하면 글자가 잘리거나 빈 공간만 생긴다.
  */
 public class CameraSelectBar extends Composite {
+
+    /** 클라이언트 주입 문구 - 기본값 유지, 필요한 것만 덮어쓴다. */
+    public static final class Cfg {
+        public String refreshText = "새로고침";
+        /** 콤보 툴팁. null 이면 툴팁 없음. */
+        public String comboTooltip =
+                "클러스터와 기어봉은 서로 다른 웹캠을 고르세요 (USB / OBS/Iriun 시뮬 / 내장)";
+        /** 새로고침 버튼 툴팁. null 이면 툴팁 없음. */
+        public String refreshTooltip;
+    }
 
     private static final int POLL_MS = 4;
 
@@ -34,12 +68,27 @@ public class CameraSelectBar extends Composite {
     private BufferedImage lastBi;
     private final CameraService.DeviceListener deviceListener;
 
+    /** 클러스터 채널. 기어봉 바는 {@link #CameraSelectBar(Composite, VisionChannel)} 를 쓸 것. */
     public CameraSelectBar(Composite parent) {
-        this(parent, CameraService.get());
+        this(parent, CameraService.get(), new Cfg());
     }
 
     public CameraSelectBar(Composite parent, CameraService cameras) {
+        this(parent, cameras, new Cfg());
+    }
+
+    /** 채널 지정 - 클러스터/기어봉이 서로 다른 카메라를 잡게 하는 정상 경로. */
+    public CameraSelectBar(Composite parent, VisionChannel channel) {
+        this(parent, CameraService.of(channel), new Cfg());
+    }
+
+    public CameraSelectBar(Composite parent, VisionChannel channel, Cfg cfg) {
+        this(parent, CameraService.of(channel), cfg);
+    }
+
+    public CameraSelectBar(Composite parent, CameraService cameras, Cfg cfg) {
         super(parent, SWT.NONE);
+        Cfg c = (cfg != null) ? cfg : new Cfg();
         this.cameras = cameras == null ? CameraService.get() : cameras;
         display = getDisplay();
         GridLayout gl = new GridLayout(2, false);
@@ -50,14 +99,19 @@ public class CameraSelectBar extends Composite {
 
         camCombo = new Combo(this, SWT.READ_ONLY | SWT.DROP_DOWN);
         camCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        camCombo.setToolTipText("클러스터와 기어봉은 서로 다른 웹캠을 고르세요 (USB / OBS/Iriun 시뮬 / 내장)");
+        if (c.comboTooltip != null) {
+            camCombo.setToolTipText(c.comboTooltip);
+        }
         camCombo.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 openSelectedCamera();
             }
         });
         Button refresh = new Button(this, SWT.PUSH);
-        refresh.setText("새로고침");
+        refresh.setText(c.refreshText);
+        if (c.refreshTooltip != null) {
+            refresh.setToolTipText(c.refreshTooltip);
+        }
         refresh.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
                 refreshCameras();

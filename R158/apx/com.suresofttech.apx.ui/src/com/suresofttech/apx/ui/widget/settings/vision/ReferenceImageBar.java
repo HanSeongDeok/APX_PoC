@@ -19,7 +19,15 @@ import com.suresofttech.apx.core.config.ApxSettings;
 
 /**
  * 기준 이미지 사용 체크 + 경로 + 파일 선택 - {@link ApxSettings} 연동.
+ *
+ * @deprecated <b>사용하지 않는 것을 권장한다.</b> 기준 화면은 설정 탭에서 ROI 를 드래그할 때
+ *             <b>라이브 캡처</b>로 잡는 것으로 클라이언트와 협의되었다. 이 바로 파일을 등록하면
+ *             정답과 촬영의 카메라 위치·각도가 어긋나 ROI 가 엉뚱한 곳을 가리키고,
+ *             그것을 보정하려고 ORB 정렬이 켜져 {@code aligning} 상태에 갇힐 수 있다.
+ *             <p>설정 화면에 이 바를 붙이지 않으면 라이브 캡처로만 동작한다.
+ *             코드는 되돌릴 여지를 남겨 두기 위해 삭제하지 않았다.
  */
+@Deprecated
 public class ReferenceImageBar extends Composite {
 
     private final ApxSettings settings = ApxSettings.get();

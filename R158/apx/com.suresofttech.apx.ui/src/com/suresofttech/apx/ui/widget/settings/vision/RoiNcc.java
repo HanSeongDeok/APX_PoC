@@ -22,6 +22,7 @@ import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.VisionJudge;
 import com.suresofttech.apx.core.vision.VisionJudges;
+import com.suresofttech.apx.core.vision.VisionReference;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
 
 /**
@@ -64,6 +65,8 @@ public final class RoiNcc {
     private final VisionChannel channel;
     private final ApxSettings settings = ApxSettings.get();
     private final ApxSettings.Listener settingsListener;
+    /** 공용 스타일을 쓰는 경우에만 non-null. */
+    private final RoiStyles.Listener styleListener;
 
     private VisionJudge det;
     private volatile RoiMatchResult last;
@@ -80,21 +83,55 @@ public final class RoiNcc {
     private FixedVisionConfig fixedConfig;
 
     public RoiNcc(CameraCanvas canvas) {
-        this(canvas, new Style(), VisionChannel.CLUSTER);
+        this(canvas, null, VisionChannel.CLUSTER);
     }
 
     public RoiNcc(CameraCanvas canvas, Style style) {
         this(canvas, style, VisionChannel.CLUSTER);
     }
 
+    /**
+     * @param style null이면 {@link RoiStyles} 공용 스타일을 쓰고, 그게 바뀌면 따라간다
+     *              (설정 화면의 커스텀 스타일이 모니터에도 그대로 반영되는 경로)
+     */
     public RoiNcc(CameraCanvas canvas, Style style, VisionChannel channel) {
+        this(canvas, style, channel, true);
+    }
+
+    /**
+     * @param interactive ROI 드래그 허용 여부. <b>생성자에서 이미 판정기를 만들기 때문에</b>
+     *                    나중에 {@link #setInteractive}로 끄면 늦다 — 그 첫 구축이
+     *                    설정 프리뷰인 척하며 기준 프레임을 덮어쓴다. 모니터는 여기서 false.
+     */
+    public RoiNcc(CameraCanvas canvas, Style style, VisionChannel channel, boolean interactive) {
         if (canvas == null) {
             throw new IllegalArgumentException("canvas");
         }
+        this.interactive = interactive;
         this.canvas = canvas;
         this.channel = channel == null ? VisionChannel.CLUSTER : channel;
         this.display = canvas.getDisplay();
-        applyStyle(style);
+        applyStyle(style != null ? style : RoiStyles.get());
+
+        if (style == null) {
+            styleListener = new RoiStyles.Listener() {
+                public void onRoiStyleChanged(final Style s) {
+                    if (canvas.isDisposed()) {
+                        return;
+                    }
+                    display.asyncExec(new Runnable() {
+                        public void run() {
+                            if (!canvas.isDisposed()) {
+                                setStyle(s);
+                            }
+                        }
+                    });
+                }
+            };
+            RoiStyles.addListener(styleListener);
+        } else {
+            styleListener = null;
+        }
 
         canvas.setOverlay(new CameraCanvas.Overlay() {
             public void paint(GC gc, double scale, int dx, int dy) {
@@ -162,6 +199,9 @@ public final class RoiNcc {
         canvas.addDisposeListener(new DisposeListener() {
             public void widgetDisposed(DisposeEvent e) {
                 settings.removeListener(settingsListener);
+                if (styleListener != null) {
+                    RoiStyles.removeListener(styleListener);
+                }
                 disposeStyleColors();
             }
         });
@@ -307,20 +347,39 @@ public final class RoiNcc {
         }
     }
 
+    /**
+     * "기준 이미지 사용" 꺼짐 — 기준이 파일이 아니라 웹캠 프레임 한 장인 경우.
+     *
+     * <p>기준을 <b>새로 잡을 수 있는 것은 설정 프리뷰({@link #interactive})뿐</b>이다.
+     * 모니터는 {@link VisionReference}에 있는 것을 가져다 쓰기만 한다. 예전에는 모니터도
+     * 재구축할 때마다 현재 프레임을 기준으로 등록해서, 측정을 <b>중지</b>하는 순간
+     * (중지 → {@code setFixedConfig(null)} → 재구축) 그때 화면이 새 기준이 되어
+     * PASS 기준이 저절로 바뀌었다.
+     *
+     * <p>단, 아직 아무 기준도 없으면(설정 화면을 한 번도 안 연 경우) 모니터가 첫 프레임으로
+     * 씨앗만 심는다. 안 그러면 재구축마다 다른 프레임을 잡아 계속 흔들린다.
+     */
     private void ensureLiveReferenceDetector() {
-        BufferedImage bi = CameraService.of(channel).latest();
-        if (bi == null) {
+        BufferedImage live = CameraService.of(channel).latest();
+        BufferedImage stored = VisionReference.get(channel);
+        BufferedImage base = interactive ? live : (stored != null ? stored : live);
+        if (base == null) {
             det = null;
             last = null;
             fireMatch(null);
             return;
         }
         try {
-            int[] roi = settings.getRoi(channel, bi.getWidth(), bi.getHeight());
-            det = VisionJudges.createFor(settings, channel, bi, null, roi, settings.getSimThr(channel));
+            int[] roi = settings.getRoi(channel, base.getWidth(), base.getHeight());
+            det = VisionJudges.createFor(settings, channel, base, null, roi,
+                    settings.getSimThr(channel));
             det.setAlignEnabled(false);
             det.setSimThr(settings.getSimThr(channel));
-            RoiMatchResult r = det.process(bi);
+            if (interactive || stored == null) {
+                // 설정에서 잡은 기준을 측정·모니터가 그대로 쓴다
+                VisionReference.set(channel, base);
+            }
+            RoiMatchResult r = det.process(live != null ? live : base);
             last = r;
             fireMatch(r);
             canvas.redraw();
@@ -332,7 +391,10 @@ public final class RoiNcc {
     }
 
     private void ensureLiveReferenceDetectorFixed(FixedVisionConfig cfg) {
-        BufferedImage bi = CameraService.of(channel).latest();
+        BufferedImage live = CameraService.of(channel).latest();
+        // 기준은 설정에서 잡아 둔 프레임 우선. 없을 때만 현재 프레임으로 떨어진다.
+        BufferedImage ref = VisionReference.get(channel);
+        BufferedImage bi = (ref != null) ? ref : live;
         if (bi == null) {
             det = null;
             last = null;
@@ -344,7 +406,7 @@ public final class RoiNcc {
             det = VisionJudges.createFor(settings, channel, bi, null, roi, cfg.simThr);
             det.setAlignEnabled(false);
             det.setSimThr(cfg.simThr);
-            RoiMatchResult r = det.process(bi);
+            RoiMatchResult r = det.process(live != null ? live : bi);
             last = r;
             fireMatch(r);
             canvas.redraw();

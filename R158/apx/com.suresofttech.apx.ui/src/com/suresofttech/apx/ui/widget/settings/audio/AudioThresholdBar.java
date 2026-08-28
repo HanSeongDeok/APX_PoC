@@ -41,7 +41,8 @@ public class AudioThresholdBar extends Composite {
     public AudioThresholdBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
         this.cfg = (cfg != null) ? cfg : new Cfg();
-        settings.setAudioThresholds(this.cfg.defaultThr, this.cfg.defaultThr);   // 주파수 / 파형 동일 기본값 시드
+        // 주파수 / 파형 동일 기본값 시드 — 최초 1회만(재생성 시 사용자 조정값 보존)
+        settings.seedAudioThresholds(this.cfg.defaultThr, this.cfg.defaultThr);
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
         gl.marginHeight = 0;

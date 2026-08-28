@@ -23,15 +23,28 @@ import com.suresofttech.apx.core.config.ApxSettings;
  */
 public class MicTestBar extends Composite {
 
+    /** 클라이언트 주입 문구 - 기본값 유지, 필요한 것만 덮어쓴다. */
+    public static final class Cfg {
+        public String levelText = "입력 레벨";
+        public String testText = "마이크 테스트 시작";
+        public String testingText = "마이크 테스트 정지";
+    }
+
     private final Display display;
     private final ApxSettings settings = ApxSettings.get();
     private final MicMeter meter = new MicMeter();
+    private final Cfg cfg;
     private final ProgressBar levelBar;
     private final Button micTestBtn;
     private boolean polling;
 
     public MicTestBar(Composite parent) {
+        this(parent, new Cfg());
+    }
+
+    public MicTestBar(Composite parent, Cfg cfg) {
         super(parent, SWT.NONE);
+        this.cfg = (cfg != null) ? cfg : new Cfg();
         display = getDisplay();
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 0;
@@ -47,14 +60,14 @@ public class MicTestBar extends Composite {
         levelRow.setLayout(levelGl);
         levelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         Label lv = new Label(levelRow, SWT.NONE);
-        lv.setText("입력 레벨");
+        lv.setText(this.cfg.levelText);
         levelBar = new ProgressBar(levelRow, SWT.HORIZONTAL | SWT.SMOOTH);
         levelBar.setMinimum(0);
         levelBar.setMaximum(100);
         levelBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         micTestBtn = new Button(this, SWT.TOGGLE);
-        micTestBtn.setText("마이크 테스트 시작");
+        micTestBtn.setText(this.cfg.testText);
         micTestBtn.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         micTestBtn.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
@@ -79,10 +92,10 @@ public class MicTestBar extends Composite {
                 return;
             }
             settings.setMicName(dev.name);
-            micTestBtn.setText("마이크 테스트 정지");
+            micTestBtn.setText(cfg.testingText);
         } else {
             meter.stop();
-            micTestBtn.setText("마이크 테스트 시작");
+            micTestBtn.setText(this.cfg.testText);
         }
     }
 
