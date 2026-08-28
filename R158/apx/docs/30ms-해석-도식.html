@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>30ms Sync 딜레이 해석 비교</title>
+  <style>
+    :root {
+      --bg: #2b3038;
+      --card: #3a414b;
+      --line: #8b93a0;
+      --text: #f2f4f7;
+      --muted: #c5cbd4;
+      --cyan: #7ec8e3;
+      --cyan-deep: #5eb4d6;
+    }
+    * { box-sizing: border-box; }
+    @page { size: A4 landscape; margin: 8mm; }
+    html, body { margin: 0; background: var(--bg); }
+    body {
+      padding: 28px 36px 36px;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      color: var(--text);
+    }
+    h1 {
+      margin: 0;
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      margin: 8px 0 22px;
+      text-align: center;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    .panel {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 16px 22px 18px;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+    .interp .head {
+      margin: 0 0 14px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .q {
+      margin: 14px 0 0;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .print-button {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      padding: 8px 14px;
+      border: 1px solid var(--cyan-deep);
+      border-radius: 5px;
+      color: #1b2430;
+      background: var(--cyan);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    svg { display: block; width: 100%; height: auto; }
+    @media print {
+      .print-button { display: none; }
+      body { padding: 0; }
+      h1 { font-size: 22px; }
+      .sub { margin: 4px 0 10px; font-size: 12px; }
+      .panel { padding: 8px 14px 9px; margin-bottom: 7px; }
+      .panel-title, .interp .head { margin-bottom: 5px; font-size: 14px; }
+      .panel > svg { max-height: 108px; }
+      .interp > svg { max-height: 58px; }
+      .q { margin-top: 4px; font-size: 11px; }
+      * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <button class="print-button" type="button" onclick="window.print()">인쇄 / PDF 저장</button>
+  <h1>30ms Sync 딜레이 해석 비교</h1>
+  <p class="sub">예시: 경고음 200ms - 팝업 210ms (R단 기준)</p>
+
+  <section class="panel">
+    <p class="panel-title">예시 상황</p>
+    <svg viewBox="0 0 1100 150" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#8b93a0"/>
+        </marker>
+      </defs>
+      <line x1="70" y1="78" x2="980" y2="78" stroke="#8b93a0" stroke-width="2" marker-end="url(#arrow)"/>
+      <circle cx="90" cy="78" r="7" fill="#7ec8e3"/>
+      <text x="90" y="48" text-anchor="middle" fill="#f2f4f7" font-size="15" font-family="Malgun Gothic, sans-serif">R단 트리거</text>
+      <text x="90" y="118" text-anchor="middle" fill="#c5cbd4" font-size="14" font-family="Malgun Gothic, sans-serif">0ms</text>
+      <text x="280" y="64" text-anchor="middle" fill="#c5cbd4" font-size="14" font-family="Malgun Gothic, sans-serif">차량 응답</text>
+      <circle cx="620" cy="78" r="7" fill="#7ec8e3"/>
+      <text x="620" y="48" text-anchor="middle" fill="#f2f4f7" font-size="15" font-family="Malgun Gothic, sans-serif">경고음 출력</text>
+      <text x="620" y="118" text-anchor="middle" fill="#c5cbd4" font-size="14" font-family="Malgun Gothic, sans-serif">200ms</text>
+      <circle cx="860" cy="78" r="7" fill="#7ec8e3"/>
+      <text x="860" y="48" text-anchor="middle" fill="#f2f4f7" font-size="15" font-family="Malgun Gothic, sans-serif">팝업 출력</text>
+      <text x="860" y="118" text-anchor="middle" fill="#c5cbd4" font-size="14" font-family="Malgun Gothic, sans-serif">210ms</text>
+      <path d="M620,132 H860" stroke="#7ec8e3" stroke-width="1.6"/>
+      <path d="M620,126 V138" stroke="#7ec8e3" stroke-width="1.6"/>
+      <path d="M860,126 V138" stroke="#7ec8e3" stroke-width="1.6"/>
+      <text x="740" y="148" text-anchor="middle" fill="#7ec8e3" font-size="13" font-family="Malgun Gothic, sans-serif">출력 간 차이 10ms</text>
+    </svg>
+  </section>
+
+  <section class="panel interp">
+    <p class="head">해석 A - 차량 출력 간 동기</p>
+    <svg viewBox="0 0 1100 88" xmlns="http://www.w3.org/2000/svg">
+      <rect x="40" y="18" width="280" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="180" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">경고음 출력 시각</text>
+      <text x="370" y="52" text-anchor="middle" fill="#7ec8e3" font-size="22">↔</text>
+      <rect x="420" y="18" width="250" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="545" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">팝업 출력 시각</text>
+      <text x="880" y="50" text-anchor="middle" fill="#7ec8e3" font-size="18" font-family="Malgun Gothic, sans-serif" font-weight="700">차이 10ms ≤ 기준 30ms</text>
+    </svg>
+    <p class="q">질문: C5의 “Sync 딜레이”는 이 출력 onset 간 차이를 의미하나요?</p>
+  </section>
+
+  <section class="panel interp">
+    <p class="head">해석 B - 도구 내부 검출시간</p>
+    <svg viewBox="0 0 1100 88" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#7ec8e3"/>
+        </marker>
+      </defs>
+      <rect x="30" y="18" width="250" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="155" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">취득 팝업</text>
+      <line x1="290" y1="44" x2="560" y2="44" stroke="#7ec8e3" stroke-width="2" marker-end="url(#arrowB)"/>
+      <text x="425" y="34" text-anchor="middle" fill="#7ec8e3" font-size="13" font-family="Malgun Gothic, sans-serif">FPS/블록 대기 + 계산</text>
+      <rect x="575" y="18" width="200" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="675" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">PASS 판정</text>
+    </svg>
+    <p class="q">질문: 장비 경로를 제외한 도구 내부 검출시간이 30ms 이하여야 하나요?</p>
+  </section>
+
+  <section class="panel interp">
+    <p class="head">해석 C - 장비를 포함한 전체 검출시간</p>
+    <svg viewBox="0 0 1100 88" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowC" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#7ec8e3"/>
+        </marker>
+      </defs>
+      <rect x="8" y="18" width="210" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="113" y="50" text-anchor="middle" fill="#f2f4f7" font-size="15" font-family="Malgun Gothic, sans-serif">실제 신호 발생</text>
+      <line x1="226" y1="44" x2="368" y2="44" stroke="#7ec8e3" stroke-width="2" marker-end="url(#arrowC)"/>
+      <text x="297" y="34" text-anchor="middle" fill="#7ec8e3" font-size="12" font-family="Malgun Gothic, sans-serif">카메라/마이크 지연</text>
+      <rect x="380" y="18" width="110" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="435" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">취득 팝업</text>
+      <line x1="498" y1="44" x2="700" y2="44" stroke="#7ec8e3" stroke-width="2" marker-end="url(#arrowC)"/>
+      <text x="599" y="34" text-anchor="middle" fill="#7ec8e3" font-size="13" font-family="Malgun Gothic, sans-serif">샘플링 + 계산</text>
+      <rect x="712" y="18" width="170" height="52" rx="8" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+      <text x="797" y="50" text-anchor="middle" fill="#f2f4f7" font-size="16" font-family="Malgun Gothic, sans-serif">PASS 판정</text>
+    </svg>
+    <p class="q">질문: 장비 지연까지 포함한 종단 검출시간이 30ms 이하여야 하나요?</p>
+  </section>
+</body>
+</html>
