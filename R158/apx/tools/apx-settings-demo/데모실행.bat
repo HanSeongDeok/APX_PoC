@@ -42,7 +42,10 @@ if not exist "%CORE%\bin\com\suresofttech\apx\core" (
   pause
   exit /b 1
 )
-if not exist "lib\org.eclipse.swt.win32.win32.x86_64.jar" (
+set "DEMO_LIB=%~dp0lib"
+set "DEMO_BIN=%~dp0bin"
+set "DEMO_SRC=%~dp0src\ApxSettingsComponentDemo.java"
+if not exist "%DEMO_LIB%\org.eclipse.swt.win32.win32.x86_64.jar" (
   echo [ERROR] Missing lib\org.eclipse.swt.win32.win32.x86_64.jar
   pause
   exit /b 1
@@ -51,7 +54,7 @@ if not exist "lib\org.eclipse.swt.win32.win32.x86_64.jar" (
 set "CP=%UI%\bin"
 set "CP=!CP!;%CORE%\bin"
 set "CP=!CP!;%CLIENT%\bin"
-set "CP=!CP!;lib\org.eclipse.swt.win32.win32.x86_64.jar"
+set "CP=!CP!;%DEMO_LIB%\org.eclipse.swt.win32.win32.x86_64.jar"
 set "CP=!CP!;%UI%\lib\ChartDirector_s.jar"
 set "CP=!CP!;%CORE%\lib\webcam-capture-0.3.12.jar"
 set "CP=!CP!;%CORE%\lib\bridj-0.7.0.jar"
@@ -63,7 +66,7 @@ set "CP=!CP!;%CORE%\lib\commons-math3-3.6.1.jar"
 
 if not exist "%UI%\bin" mkdir "%UI%\bin"
 if not exist "%CLIENT%\bin" mkdir "%CLIENT%\bin"
-if not exist bin mkdir bin
+if not exist "%DEMO_BIN%" mkdir "%DEMO_BIN%"
 
 echo [1/4] Compiling UI settings widgets into UI\bin ...
 del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\audio\MicLevelBar*.class" 2>nul
@@ -80,33 +83,36 @@ del /q "%UI%\bin\com\suresofttech\apx\ui\widget\settings\rear\RearSettingsPanel*
   "%CORE%\src\com\suresofttech\apx\core\rear\RearGrid.java" ^
   "%CORE%\src\com\suresofttech\apx\core\vision\VisionChannel.java" ^
   "%CORE%\src\com\suresofttech\apx\core\vision\CameraService.java" ^
+  "%CORE%\src\com\suresofttech\apx\core\vision\VisionReference.java" ^
   "%CORE%\src\com\suresofttech\apx\core\vision\VisionJudges.java"
 if errorlevel 1 (
-  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid VisionChannel CameraService VisionJudges
+  echo [ERROR] Core compile failed: AudioCapture ApxSettings RearGrid VisionChannel CameraService VisionReference VisionJudges
   pause
   exit /b 1
 )
 
-REM Delayed expansion so a folder name like "apx_demo (1)" does not close this block.
+REM javac @file treats \ as escapes (\t \v \a) so write forward slashes.
 set "SRCLIST=%TEMP%\apx-settings-demo-ui.sources"
-> "%SRCLIST%" (
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\CameraCanvas.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\AudioScope.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\CameraSelectBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\RoiNcc.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\ReferenceImageBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\VisionThresholdBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\vision\VisionJudgeBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\MicSelectBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\MicTestBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedWavBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\AudioMeasureBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedTonePlayBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\audio\AudioThresholdBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridCanvas.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridSizeBar.java
-  echo !UI!\src\com\suresofttech\apx\ui\widget\settings\rear\RearLegendBar.java
-)
+type nul > "%SRCLIST%"
+REM CameraCanvas 가 증거 캡처에 SwtCapture 를 쓴다 - 목록에 없으면 ui\bin 이 비었을 때 실패.
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\SwtCapture.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\CameraCanvas.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\AudioScope.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\CameraSelectBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\RoiNcc.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\RoiStyles.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\ReferenceImageBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\VisionThresholdBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vision\VisionJudgeBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\MicSelectBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\MicTestBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedWavBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\AudioMeasureBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedTonePlayBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\AudioThresholdBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridCanvas.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridSizeBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearLegendBar.java"
 
 "%JAVAC_EXE%" -encoding UTF-8 -source 1.8 -target 1.8 -cp "!CP!" -d "%UI%\bin" @"%SRCLIST%"
 if errorlevel 1 (
@@ -125,8 +131,8 @@ if errorlevel 1 (
 )
 
 echo [3/4] Compiling demo ...
-set "CP=bin;!CP!"
-"%JAVAC_EXE%" -encoding UTF-8 -source 1.8 -target 1.8 -cp "!CP!" -d bin src\ApxSettingsComponentDemo.java
+set "CP=%DEMO_BIN%;!CP!"
+"%JAVAC_EXE%" -encoding UTF-8 -source 1.8 -target 1.8 -cp "!CP!" -d "%DEMO_BIN%" "%DEMO_SRC%"
 if errorlevel 1 (
   echo [ERROR] Demo compile failed
   pause
@@ -142,6 +148,12 @@ if not "!ERR!"=="0" (
   pause
 )
 endlocal
+goto :eof
+
+:addsrc
+set "_S=%~1"
+set "_S=!_S:\=/!"
+>>"%SRCLIST%" echo "!_S!"
 goto :eof
 
 :acceptJdk
