@@ -56,8 +56,12 @@ public final class Cv {
         if (src.getType() == BufferedImage.TYPE_3BYTE_BGR) {
             // 웹캠 기본 타입 - 래스터 바이트 그대로 복사(가장 빠름)
             byte[] px = ((DataBufferByte) src.getRaster().getDataBuffer()).getData();
-            m.put(0, 0, px);
-            return m;
+            // getSubimage()는 부모 버퍼를 공유하므로 배열 길이가 ROI 크기보다 크다.
+            // 그런 경우 아래 getRGB 경로로 내려가 ROI 좌표와 stride를 정확히 반영한다.
+            if (px.length == w * h * 3) {
+                m.put(0, 0, px);
+                return m;
+            }
         }
         // 일반 타입 - ColorModel 경유 ARGB 읽어 BGR로 패킹(Graphics2D 불필요)
         int[] argb = src.getRGB(0, 0, w, h, null, 0, w);

@@ -102,7 +102,7 @@ public class SettingsDialog extends Dialog {
 
     @Override
     protected Point getInitialSize() {
-        return new Point(1100, 720);
+        return new Point(1400, 900);
     }
 
     @Override

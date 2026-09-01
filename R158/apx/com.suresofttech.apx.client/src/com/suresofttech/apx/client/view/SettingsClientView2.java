@@ -75,8 +75,7 @@ public class SettingsClientView2 extends ViewPart {
         CameraCanvas canvas = new CameraCanvas(webcam);
         canvas.setPlaceholder(title + " 웹캠을 선택하세요");
         GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = 160;
-        canvasGd.minimumHeight = 120;
+        canvasGd.minimumHeight = 320;
         canvas.setLayoutData(canvasGd);
         bar.setCanvas(canvas);
 

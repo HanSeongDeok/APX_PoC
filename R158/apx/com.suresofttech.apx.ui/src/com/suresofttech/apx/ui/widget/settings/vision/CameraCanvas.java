@@ -71,13 +71,16 @@ public class CameraCanvas extends Canvas {
         this.placeholder = text;
     }
 
-    /** 표시할 프레임 설정 → 다시 그림. null 이면 안내문. */
+    /** 표시할 프레임 설정 → 다시 그림. null 이면 안내문.
+     * 숨은 설정 탭은 NCC 구독만 건너뛴다. {@code redraw}는 항상 걸어 두어야
+     * 결과 탭처럼 나중에 보일 때도 마지막 프레임이 나온다. */
     public void setFrame(BufferedImage f) {
         this.frame = f;
-        if (!isDisposed()) {
-            redraw();
+        if (isDisposed()) {
+            return;
         }
-        if (f == null) {
+        redraw();
+        if (f == null || !isVisible()) {
             return;
         }
         if (frameListener != null) {
@@ -138,17 +141,19 @@ public class CameraCanvas extends Canvas {
             gc.drawText(placeholder, (sz.x - ext.x) / 2, (sz.y - ext.y) / 2, true);
             return;
         }
-        Image img = new Image(getDisplay(), toImageData(f));
+        int iw = f.getWidth();
+        int ih = f.getHeight();
+        double s = Math.min(sz.x / (double) iw, sz.y / (double) ih);
+        if (s <= 0) {
+            return;
+        }
+        int dw = Math.max(1, (int) (iw * s));
+        int dh = Math.max(1, (int) (ih * s));
+        int dx = (sz.x - dw) / 2;
+        int dy = (sz.y - dh) / 2;
+        Image img = new Image(getDisplay(), toImageData(f, dw, dh));
         try {
-            int iw = img.getBounds().width;
-            int ih = img.getBounds().height;
-            double s = Math.min(sz.x / (double) iw, sz.y / (double) ih);
-            int dw = Math.max(1, (int) (iw * s));
-            int dh = Math.max(1, (int) (ih * s));
-            int dx = (sz.x - dw) / 2;
-            int dy = (sz.y - dh) / 2;
-            gc.setInterpolation(SWT.HIGH);
-            gc.drawImage(img, 0, 0, iw, ih, dx, dy, dw, dh);
+            gc.drawImage(img, dx, dy);
             if (overlay != null) {
                 overlay.paint(gc, s, dx, dy);      // canon 좌표계로 박스 / HUD
             }
@@ -157,29 +162,57 @@ public class CameraCanvas extends Canvas {
         }
     }
 
-    /** AWT BufferedImage → SWT ImageData (24bit RGB). 팔레트는 R/G/B 추출.
-     *  <p>웹캠/처리 프레임은 TYPE_3BYTE_BGR - 래스터 바이트(B,G,R 순)를 직접 int로 디코드해
-     *  {@code getRGB()}의 픽셀당 ColorModel 변환(640²에서 20~40ms)을 제거한다. 그 외 타입은
-     *  안전한 getRGB 폴백. 채움은 검증된 setPixels(팔레트) 경로 그대로 사용. */
+    /** AWT BufferedImage → SWT ImageData (24bit RGB). 위젯 크기로 줄여 변환한다. */
     public static ImageData toImageData(BufferedImage bi) {
+        return toImageData(bi, bi.getWidth(), bi.getHeight());
+    }
+
+    /**
+     * {@code outW}×{@code outH}로 샘플링해 변환. 1080p 원본을 모니터 칸(≈160px)에
+     * 그릴 때 전체 픽셀을 SWT로 옮기지 않는다.
+     */
+    public static ImageData toImageData(BufferedImage bi, int outW, int outH) {
         int w = bi.getWidth();
         int h = bi.getHeight();
+        outW = Math.max(1, outW);
+        outH = Math.max(1, outH);
         PaletteData palette = new PaletteData(0xFF0000, 0x00FF00, 0x0000FF);
-        ImageData data = new ImageData(w, h, 24, palette);
-        int[] argb;
+        ImageData data = new ImageData(outW, outH, 24, palette);
+        int[] argb = new int[outW * outH];
         if (bi.getType() == BufferedImage.TYPE_3BYTE_BGR) {
             byte[] src = ((java.awt.image.DataBufferByte) bi.getRaster().getDataBuffer()).getData();
-            argb = new int[w * h];
-            for (int p = 0, i = 0; p < argb.length; p++, i += 3) {
-                argb[p] = ((src[i + 2] & 0xFF) << 16)   // R
-                        | ((src[i + 1] & 0xFF) << 8)    // G
-                        | (src[i] & 0xFF);              // B
+            if (outW == w && outH == h) {
+                for (int p = 0, i = 0; p < argb.length; p++, i += 3) {
+                    argb[p] = ((src[i + 2] & 0xFF) << 16)
+                            | ((src[i + 1] & 0xFF) << 8)
+                            | (src[i] & 0xFF);
+                }
+            } else {
+                for (int y = 0; y < outH; y++) {
+                    int sy = y * h / outH;
+                    int row = sy * w;
+                    int dst = y * outW;
+                    for (int x = 0; x < outW; x++) {
+                        int i = (row + (x * w / outW)) * 3;
+                        argb[dst + x] = ((src[i + 2] & 0xFF) << 16)
+                                | ((src[i + 1] & 0xFF) << 8)
+                                | (src[i] & 0xFF);
+                    }
+                }
             }
+        } else if (outW == w && outH == h) {
+            argb = bi.getRGB(0, 0, w, h, null, 0, w);
         } else {
-            argb = bi.getRGB(0, 0, w, h, null, 0, w);   // 임의 타입 폴백(느림)
+            for (int y = 0; y < outH; y++) {
+                int sy = Math.min(h - 1, y * h / outH);
+                int dst = y * outW;
+                for (int x = 0; x < outW; x++) {
+                    argb[dst + x] = bi.getRGB(Math.min(w - 1, x * w / outW), sy);
+                }
+            }
         }
-        for (int y = 0; y < h; y++) {
-            data.setPixels(0, y, w, argb, y * w);
+        for (int y = 0; y < outH; y++) {
+            data.setPixels(0, y, outW, argb, y * outW);
         }
         return data;
     }

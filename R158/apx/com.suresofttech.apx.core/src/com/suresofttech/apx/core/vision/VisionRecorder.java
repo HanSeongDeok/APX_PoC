@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.PrintWriter;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,6 +14,7 @@ import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
+import org.opencv.videoio.Videoio;
 import org.opencv.videoio.VideoWriter;
 
 /**
@@ -57,10 +59,10 @@ public final class VisionRecorder {
     private static final int QUEUE_CAP = 32;
 
     private static final class Job {
-        final Mat img;
+        final BufferedImage img;
         final double tMs;
 
-        Job(Mat img, double tMs) {
+        Job(BufferedImage img, double tMs) {
             this.img = img;
             this.tMs = tMs;
         }
@@ -75,6 +77,8 @@ public final class VisionRecorder {
     private VideoWriter writer;
     private PrintWriter index;
     private Thread worker;
+    private volatile CountDownLatch readyLatch = new CountDownLatch(0);
+    private volatile boolean ready;
     private int width;
     private int height;
     private volatile int frameCount;
@@ -112,6 +116,8 @@ public final class VisionRecorder {
         this.frameCount = 0;
         this.lastMs = 0;
         this.dropped = 0;
+        this.ready = false;
+        this.readyLatch = new CountDownLatch(1);
         queue.clear();
         running.set(true);
 
@@ -119,10 +125,16 @@ public final class VisionRecorder {
         final int h0 = h;
         worker = new Thread(new Runnable() {
             public void run() {
-                if (w0 > 0 && h0 > 0) {
-                    ensureSinks(w0, h0);   // 프레임이 오기 전에 미리 열어 초반 유실 방지
+                try {
+                    if (w0 > 0 && h0 > 0) {
+                        ready = ensureSinks(w0, h0);
+                    }
+                } finally {
+                    readyLatch.countDown();
                 }
-                pump();
+                if (ready) {
+                    pump();
+                }
             }
         }, "apx-vision-recorder");
         worker.setDaemon(true);
@@ -131,6 +143,12 @@ public final class VisionRecorder {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    /** VideoWriter와 인덱스 파일이 실제로 열린 상태까지 기다린다. */
+    public boolean awaitReady(long timeoutMs) throws InterruptedException {
+        CountDownLatch latch = readyLatch;
+        return latch.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS) && ready;
     }
 
     /** 큐가 가득 차 버려진 프레임 수 - 진단용. */
@@ -156,35 +174,21 @@ public final class VisionRecorder {
     }
 
     /**
-     * 프레임 투입. 호출 스레드에서는 픽셀 복사(Mat 변환)만 하고 인코딩은 워커가 한다.
+     * 프레임 투입. 카메라 서비스가 프레임마다 새 BufferedImage를 만들므로 참조만 큐에 넣고,
+     * Mat 변환과 인코딩은 모두 워커가 한다.
      * @param tMs 측정 시작 기준 경과(ms) - PASS 시각과 같은 시간축이어야 스크럽이 맞는다
      */
     public void feed(BufferedImage bi, double tMs) {
         if (!running.get() || bi == null) {
             return;
         }
-        Mat m;
-        try {
-            Cv.ensureLoaded();
-            m = Cv.toMat(bi);
-        } catch (Throwable t) {
-            return;
-        }
-        if (m == null || m.empty()) {
-            if (m != null) {
-                m.release();
-            }
-            return;
-        }
-        Job job = new Job(m, tMs);
+        Job job = new Job(bi, tMs);
         if (!queue.offer(job)) {
             Job old = queue.poll();     // 최신 우선 - 오래된 프레임을 버린다
             if (old != null) {
-                old.img.release();
                 dropped++;
             }
             if (!queue.offer(job)) {
-                m.release();
                 dropped++;
             }
         }
@@ -240,19 +244,25 @@ public final class VisionRecorder {
     }
 
     private void writeOne(Job job) {
+        Mat source = null;
         Mat fitted = null;
         try {
-            int srcW = job.img.cols();
-            int srcH = job.img.rows();
+            Cv.ensureLoaded();
+            source = Cv.toMat(job.img);
+            if (source == null || source.empty()) {
+                return;
+            }
+            int srcW = source.cols();
+            int srcH = source.rows();
             if (!ensureSinks(srcW, srcH)) {
                 return;
             }
-            Mat out = job.img;
+            Mat out = source;
             if (srcW != width || srcH != height) {
                 // 측정 도중 웹캠 교체 / 해상도 변경 - AVI 컨테이너는 프레임 크기 변경을 못 받는다.
                 // 버리면 그 뒤 구간이 통째로 사라지므로, 비율을 유지한 채 레터박스로 맞춰 넣고
                 // 원본 해상도는 frames.csv에 남겨 증거에서 변경 시점을 알 수 있게 한다.
-                fitted = letterbox(job.img, width, height);
+                fitted = letterbox(source, width, height);
                 if (fitted == null) {
                     return;
                 }
@@ -269,7 +279,9 @@ public final class VisionRecorder {
             if (fitted != null) {
                 fitted.release();
             }
-            job.img.release();
+            if (source != null) {
+                source.release();
+            }
         }
     }
 
@@ -316,7 +328,12 @@ public final class VisionRecorder {
             videoFile = new File(dir, VIDEO_NAME);
             indexFile = new File(dir, INDEX_NAME);
             int fourcc = VideoWriter.fourcc('M', 'J', 'P', 'G');
-            writer = new VideoWriter(videoFile.getAbsolutePath(), fourcc,
+            writer = new VideoWriter();
+            // CAP_ANY는 사용 가능한 인코더를 찾다가 AVI 경로를 CV_IMAGES에 넘긴다.
+            // CV_IMAGES는 "%04d.jpg" 같은 이미지 시퀀스 전용이라
+            // !filename_pattern.empty() 오류를 출력한다. OpenCV 내장 MJPEG AVI
+            // 백엔드를 지정해 코덱 설치 여부와 백엔드 탐색 순서에 영향받지 않게 한다.
+            writer.open(videoFile.getAbsolutePath(), Videoio.CAP_OPENCV_MJPEG, fourcc,
                     NOMINAL_FPS, new Size(w, h), true);
             if (!writer.isOpened()) {
                 writer.release();

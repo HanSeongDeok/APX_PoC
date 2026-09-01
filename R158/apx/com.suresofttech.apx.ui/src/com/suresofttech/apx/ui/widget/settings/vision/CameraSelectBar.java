@@ -52,12 +52,13 @@ public class CameraSelectBar extends Composite {
         public String refreshText = "새로고침";
         /** 콤보 툴팁. null 이면 툴팁 없음. */
         public String comboTooltip =
-                "클러스터와 기어봉은 서로 다른 웹캠을 고르세요 (USB / OBS/Iriun 시뮬 / 내장)";
+                "클러스터와 기어봉은 서로 다른 웹캠을 고르세요";
         /** 새로고침 버튼 툴팁. null 이면 툴팁 없음. */
         public String refreshTooltip;
     }
 
-    private static final int POLL_MS = 4;
+    private static final int POLL_MS = 16;
+    private static final int IDLE_POLL_MS = 200;
 
     private final Combo camCombo;
     private final Display display;
@@ -65,6 +66,8 @@ public class CameraSelectBar extends Composite {
     private List<CameraService.Cam> cams;
     private CameraCanvas canvas;
     private boolean polling;
+    private boolean suppressOpen;
+    private volatile boolean opening;
     private BufferedImage lastBi;
     private final CameraService.DeviceListener deviceListener;
 
@@ -114,7 +117,7 @@ public class CameraSelectBar extends Composite {
         }
         refresh.addSelectionListener(new SelectionAdapter() {
             public void widgetSelected(SelectionEvent e) {
-                refreshCameras();
+                refreshCameras(!cameras.isOpen());
             }
         });
 
@@ -150,14 +153,17 @@ public class CameraSelectBar extends Composite {
      * (인덱스는 재연결 때 바뀌므로 이름으로 찾는다).
      */
     private void onDeviceHotplug(boolean currentLost) {
+        if (cameras.isOpen() && !currentLost) {
+            return;
+        }
         String wanted = cameras.currentName();
-        refreshCameras();
+        refreshCameras(false);
         if (currentLost && canvas != null && !canvas.isDisposed()) {
             canvas.setPlaceholder("웹캠 연결이 끊어졌습니다");
             lastBi = null;
             canvas.setFrame(null);
         } else if (wanted != null && !cameras.isOpen()) {
-            cameras.reopenByName(wanted);
+            openByNameInBackground(wanted);
         }
     }
 
@@ -165,68 +171,154 @@ public class CameraSelectBar extends Composite {
     public void setCanvas(CameraCanvas canvas) {
         this.canvas = canvas;
         lastBi = null;
-        startPoll();
+        if (cameras.isOpen()) {
+            startPoll();
+        }
     }
 
     public void refreshCameras() {
-        cams = cameras.list();
-        camCombo.removeAll();
-        for (CameraService.Cam c : cams) {
-            camCombo.add(c.name);
-        }
-        if (!cams.isEmpty()) {
-            int cur = cameras.currentIndex();
-            int sel = 0;
-            for (int i = 0; i < cams.size(); i++) {
-                if (cams.get(i).index == cur) {
-                    sel = i;
-                    break;
+        refreshCameras(false);
+    }
+
+    public void refreshCameras(final boolean forceScan) {
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                List<CameraService.Cam> listed;
+                try {
+                    listed = cameras.list(forceScan);
+                } catch (Throwable e) {
+                    listed = java.util.Collections.emptyList();
                 }
+                final List<CameraService.Cam> result = listed;
+                if (display.isDisposed()) {
+                    return;
+                }
+                display.asyncExec(new Runnable() {
+                    public void run() {
+                        if (!isDisposed()) {
+                            applyCamList(result);
+                        }
+                    }
+                });
             }
-            camCombo.select(sel);
-            if (cameras.isOpen()) {
-                startPoll();
-            } else {
-                openFirstAvailable(sel);
+        }, "apx-cam-list");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void applyCamList(List<CameraService.Cam> listed) {
+        if ((listed == null || listed.isEmpty()) && cams != null && !cams.isEmpty()) {
+            return;
+        }
+        cams = listed;
+        suppressOpen = true;
+        try {
+            camCombo.removeAll();
+            for (CameraService.Cam c : cams) {
+                camCombo.add(c.name);
             }
-        } else if (canvas != null && !canvas.isDisposed()) {
-            canvas.setPlaceholder("연결된 웹캠 없음");
-            lastBi = null;
-            canvas.setFrame(null);
+            if (!cams.isEmpty()) {
+                int cur = cameras.currentIndex();
+                int sel = -1;
+                for (int i = 0; i < cams.size(); i++) {
+                    if (cams.get(i).index == cur) {
+                        sel = i;
+                        break;
+                    }
+                }
+                if (sel >= 0 && cameras.isOpen()) {
+                    camCombo.select(sel);
+                    startPoll();
+                } else {
+                    camCombo.deselectAll();
+                    if (canvas != null && !canvas.isDisposed()) {
+                        canvas.setPlaceholder("웹캠을 선택하세요");
+                    }
+                }
+            } else if (canvas != null && !canvas.isDisposed()) {
+                canvas.setPlaceholder("연결된 웹캠 없음");
+                lastBi = null;
+                canvas.setFrame(null);
+            }
+        } finally {
+            suppressOpen = false;
         }
     }
 
     public void openSelectedCamera() {
-        if (cams == null || cams.isEmpty()) {
+        if (suppressOpen || opening || cams == null || cams.isEmpty()) {
             return;
         }
-        int sel = Math.max(0, camCombo.getSelectionIndex());
-        int idx = cams.get(sel).index;
-        applyOpenResult(cameras.open(idx), idx);
+        int sel = camCombo.getSelectionIndex();
+        if (sel < 0) {
+            return;
+        }
+        openIndexInBackground(cams.get(sel).index);
     }
 
     /**
-     * 목록을 새로 채운 뒤 - 이미 연 장치가 없으면 비어 있는 웹캠부터 고른다.
-     * 클러스터가 첫 장치를 가져가면 기어봉이 같은 장치를 다시 열지 않고 다음 것으로 붙는다.
+     * 카메라 열기는 워커에서. UI에서 {@code VideoCapture}/{@code read} 하면 네이티브 행 시 화면이 멈춘다.
      */
-    private void openFirstAvailable(int preferredSel) {
-        int preferred = cams.get(Math.max(0, preferredSel)).index;
-        if (cameras.open(preferred)) {
-            applyOpenResult(true, preferred);
+    private void openIndexInBackground(final int idx) {
+        if (opening) {
             return;
         }
-        for (int i = 0; i < cams.size(); i++) {
-            int idx = cams.get(i).index;
-            if (idx == preferred) {
-                continue;
-            }
-            if (cameras.open(idx)) {
-                camCombo.select(i);
-                applyOpenResult(true, idx);
-                return;
-            }
+        opening = true;
+        if (canvas != null && !canvas.isDisposed()) {
+            canvas.setPlaceholder("웹캠 여는 중…");
         }
-        applyOpenResult(false, preferred);
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                boolean ok;
+                try {
+                    ok = cameras.open(idx);
+                } catch (Throwable e) {
+                    ok = false;
+                }
+                final boolean result = ok;
+                display.asyncExec(new Runnable() {
+                    public void run() {
+                        opening = false;
+                        if (!isDisposed()) {
+                            applyOpenResult(result, idx);
+                        }
+                    }
+                });
+            }
+        }, "apx-cam-ui-open");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void openByNameInBackground(final String name) {
+        if (opening) {
+            return;
+        }
+        opening = true;
+        if (canvas != null && !canvas.isDisposed()) {
+            canvas.setPlaceholder("웹캠 여는 중…");
+        }
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                boolean ok;
+                try {
+                    ok = cameras.reopenByName(name);
+                } catch (Throwable e) {
+                    ok = false;
+                }
+                final boolean result = ok;
+                display.asyncExec(new Runnable() {
+                    public void run() {
+                        opening = false;
+                        if (!isDisposed()) {
+                            applyOpenResult(result, cameras.currentIndex());
+                        }
+                    }
+                });
+            }
+        }, "apx-cam-ui-reopen");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void applyOpenResult(boolean ok, int idx) {
@@ -239,7 +331,7 @@ public class CameraSelectBar extends Composite {
             canvas.setPlaceholder("(신호 대기…)");
             return;
         }
-                canvas.setFrame(null);
+        canvas.setFrame(null);
         if (cameras.isHeldByOther(idx)) {
             canvas.setPlaceholder("다른 채널에서 사용 중 - 다른 웹캠을 선택하세요");
         } else {
@@ -270,9 +362,13 @@ public class CameraSelectBar extends Composite {
                     polling = false;
                     return;
                 }
-                display.timerExec(POLL_MS, this);
-                    BufferedImage bi = cameras.latest();
-                if (canvas == null || canvas.isDisposed()) {
+                boolean open = cameras.isOpen();
+                display.timerExec(open ? POLL_MS : IDLE_POLL_MS, this);
+                if (!open) {
+                    return;
+                }
+                BufferedImage bi = cameras.latest();
+                if (canvas == null || canvas.isDisposed() || !canvas.isVisible()) {
                     return;
                 }
                 if (bi == lastBi) {

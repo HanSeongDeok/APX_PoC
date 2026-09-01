@@ -1,7 +1,6 @@
 package com.suresofttech.apx.client.view;
 
 import java.awt.image.BufferedImage;
-import java.util.List;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
@@ -31,7 +30,9 @@ public class VisionMonitorView extends ViewPart {
 
     public static final String ID = "com.suresofttech.apx.client.view.visionMonitor";
 
-    private static final int FRAME_POLL_MS = 4;
+    /** 캡처는 전용 스레드. UI는 최신 프레임만 가져오면 되므로 60fps(~16ms)면 충분하다. */
+    private static final int FRAME_POLL_MS = 16;
+    private static final int IDLE_POLL_MS = 200;
     private static final int STALL_CHECK_MS = 500;
     private static final long STALL_TIMEOUT_MS = 1500;
 
@@ -72,7 +73,10 @@ public class VisionMonitorView extends ViewPart {
 
         pane = addPane(parent, channel);
 
-        ensureCameraOpen(pane);
+        // 시작 때 카메라를 열지 않는다. VideoCapture/read 가 UI에서 행하면 화면이 멈춘다.
+        if (CameraService.of(channel).isOpen()) {
+            pane.canvas.setPlaceholder("(신호 대기…)");
+        }
         startFramePoll();
         startStallWatchdog();
         startStateListener();
@@ -105,8 +109,7 @@ public class VisionMonitorView extends ViewPart {
         p.canvas = new CameraCanvas(g);
         p.canvas.setPlaceholder("설정에서 " + ch.label + " 웹캠을 연결하세요");
         GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        gd.heightHint = 160;
-        gd.minimumHeight = 120;
+        gd.minimumHeight = 320;
         p.canvas.setLayoutData(gd);
 
         final VisionChannel channel = ch;
@@ -134,7 +137,7 @@ public class VisionMonitorView extends ViewPart {
         return p;
     }
 
-    /** 설정에서 이미 연 장치를 쓰고, 없으면 아직 비어 있는 장치를 연다. */
+    /** 설정에서 이미 연 장치만 표시. 여기서는 열지 않는다. */
     private void ensureCameraOpen(Pane p) {
         if (p == null || p.canvas == null) {
             return;
@@ -142,21 +145,9 @@ public class VisionMonitorView extends ViewPart {
         CameraService svc = CameraService.of(p.channel);
         if (svc.isOpen()) {
             p.canvas.setPlaceholder("(신호 대기…)");
-            return;
+        } else {
+            p.canvas.setPlaceholder("설정에서 " + p.channel.label + " 웹캠을 연결하세요");
         }
-        String wanted = svc.currentName();
-        if (wanted != null && svc.reopenByName(wanted)) {
-            p.canvas.setPlaceholder("(신호 대기…)");
-            return;
-        }
-        List<CameraService.Cam> cams = svc.list();
-        for (int i = 0; i < cams.size(); i++) {
-            if (svc.open(cams.get(i).index)) {
-                p.canvas.setPlaceholder("(신호 대기…)");
-                return;
-            }
-        }
-        p.canvas.setPlaceholder("설정에서 " + p.channel.label + " 웹캠을 연결하세요");
     }
 
     private void startFramePoll() {
@@ -173,7 +164,8 @@ public class VisionMonitorView extends ViewPart {
                     framePolling = false;
                     return;
                 }
-                display.timerExec(FRAME_POLL_MS, this);
+                boolean open = pane != null && CameraService.of(pane.channel).isOpen();
+                display.timerExec(open ? FRAME_POLL_MS : IDLE_POLL_MS, this);
             }
         });
     }
@@ -296,6 +288,9 @@ public class VisionMonitorView extends ViewPart {
     private boolean checkStall(Pane p) {
         if (p == null || p.canvas == null || p.canvas.isDisposed()) {
             return false;
+        }
+        if (!CameraService.of(p.channel).isOpen()) {
+            return true;
         }
         long idleMs = (System.nanoTime() - p.lastFrameNanos) / 1000000L;
         if (idleMs > STALL_TIMEOUT_MS) {

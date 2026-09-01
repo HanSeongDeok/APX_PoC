@@ -60,13 +60,13 @@ public class SettingsForm extends Composite {
         RoiStyles.set(roiStyle);
 
         CameraSelectBar clusterSelect = addVisionGroup(col, "클러스터 설정",
-            VisionChannel.CLUSTER, roiStyle, 160);
-        addVisionGroup(col, "기어봉 설정", VisionChannel.GEAR, roiStyle, 160);
+            VisionChannel.CLUSTER, roiStyle);
+        addVisionGroup(col, "기어봉 설정", VisionChannel.GEAR, roiStyle);
         return clusterSelect;
     }
 
     private static CameraSelectBar addVisionGroup(Composite col, String title,
-        VisionChannel ch, RoiNcc.Style roiStyle, int canvasH) {
+        VisionChannel ch, RoiNcc.Style roiStyle) {
         Group webcam = new Group(col, SWT.NONE);
         webcam.setText(title);
         webcam.setLayout(new GridLayout(1, false));
@@ -78,8 +78,7 @@ public class SettingsForm extends Composite {
         CameraCanvas canvas = new CameraCanvas(webcam);
         canvas.setPlaceholder(title + " 웹캠을 선택하세요");
         GridData canvasGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        canvasGd.heightHint = canvasH;
-        canvasGd.minimumHeight = 120;
+        canvasGd.minimumHeight = 320;
         canvas.setLayoutData(canvasGd);
         cameraSelect.setCanvas(canvas);
 
