@@ -39,6 +39,12 @@ public final class RoiMatchDetector implements VisionJudge {
     private OrbAligner aligner;
     private int[] roi;                 // {y1,y2,x1,x2} in ref pixel coords
     private Mat tmpl;                  // refCanon[roi]
+    /** 직접 ROI 경로의 재사용 버퍼 - 프레임마다 대형 배열/Mat을 만들지 않는다. */
+    private int[] roiArgb;
+    private byte[] roiBgr;
+    private Mat roiMat;
+    /** matchTemplate 결과는 같은 크기(1x1)이므로 재사용한다. */
+    private Mat nccResult;
     private double simThr;
 
     private Mat lockedM;
@@ -55,6 +61,9 @@ public final class RoiMatchDetector implements VisionJudge {
     private final EvidenceCapture ev = new EvidenceCapture(1, 1);
     private Mat lastReturned;
     private RoiMatchResult lastResult;
+    /** process()에서 만든 입력 Mat을 증거 링이 인수했는지. */
+    private boolean inputTransferredToEvidence;
+    private VisionChannel captureChannel = VisionChannel.CLUSTER;
 
     private static final int GAP_N = 15;
     private final double[] gapRing = new double[GAP_N];
@@ -85,6 +94,13 @@ public final class RoiMatchDetector implements VisionJudge {
         this.aligner = new OrbAligner(this.refCanon);
         this.simThr = simThr;
         setRoi(roi != null ? roi : defaultCenterRoi(canonW, canonH));
+    }
+
+    /** 간격은 이 채널 {@link CameraService} grab 주기를 우선한다. */
+    public void setCaptureChannel(VisionChannel ch) {
+        if (ch != null) {
+            this.captureChannel = ch;
+        }
     }
 
     /** @deprecated 정사각 가정이 깨짐 - {@link #canonWidth()}/{@link #canonHeight()} 사용. */
@@ -135,6 +151,12 @@ public final class RoiMatchDetector implements VisionJudge {
         Mat sub = refCanon.submat(y1, y2, x1, x2);
         tmpl = sub.clone();
         sub.release();
+        roiArgb = null;
+        roiBgr = null;
+        if (roiMat != null) {
+            roiMat.release();
+            roiMat = null;
+        }
     }
 
     public void resetAlignment() {
@@ -190,42 +212,95 @@ public final class RoiMatchDetector implements VisionJudge {
         if (rawGap > 0) {
             pushGap(rawGap);
         }
-        // D_gap = 1/fps (프레임 양자화). 폴링이 카메라보다 잦으면 median이 작아지므로
-        // 실측 FPS 주기와 중앙값 중 타당한 쪽을 쓴다(미지이면 30fps→33.3ms).
         double gapMs = resolveFrameGapMs(medianGap());
+        if (!alignEnabled && bi.getWidth() == canonW && bi.getHeight() == canonH) {
+            return processDirectRoi(bi, tArrive, gapMs);
+        }
         Mat frame = Cv.toMat(bi);
+        inputTransferredToEvidence = false;
         try {
             lastResult = processMat(frame, tArrive, gapMs);
             return lastResult;
         } finally {
-            frame.release();
+            if (!inputTransferredToEvidence) {
+                frame.release();
+            }
         }
     }
 
     /**
-     * 프레임 간격(ms) = <b>실측 프레임 도착 간격의 중앙값</b>.
-     *
-     * <p>{@code tPrevFrame} 은 프레임 서명이 바뀔 때만 갱신된다(같은 프레임이면 process() 가
-     * 앞에서 반환). 그래서 이 중앙값이 곧 카메라의 실제 프레임 주기다.
-     *
-     * <p>예전에는 {@code CameraService.fps()} 로 명목 주기를 만들고 실측이 그 0.5~2.5배
-     * 범위 밖이면 명목값을 썼는데, 두 가지가 틀렸다.
-     * <ul>
-     *   <li>{@code Webcam.getFPS()} 는 카메라의 촬영 주기가 아니라 <b>우리가 getImage() 를
-     *       부른 빈도</b>다. 해당 채널 화면이 안 떠 있거나 폴링이 뜸하면 몇 fps로 떨어진다.</li>
-     *   <li>{@code CameraService.get()} 은 항상 <b>클러스터</b>다. 기어봉 판정기가 남의 채널
-     *       fps 를 읽었다.</li>
-     * </ul>
-     * 그 결과 fps 가 5로 잡히면 명목 200ms 가 되고, 실측 33ms 가 [100,500] 밖이라 버려져
-     * <b>간격이 200ms 로 표시됐다</b>(30fps 인데 100ms 넘게 나오던 증상).
-     *
-     * @param measuredMedianMs 표본이 없으면 0
+     * 정렬·리사이즈가 필요 없는 일반 웹캠 경로. 전체 FHD Mat 대신 NCC ROI만 변환한다.
+     * 전체 프레임은 BufferedImage 참조로 증거 링에 보관하고 실제 저장 시에만 Mat으로 만든다.
      */
-    private static double resolveFrameGapMs(double measuredMedianMs) {
+    private RoiMatchResult processDirectRoi(BufferedImage bi, double tArrive, double gapMs) {
+        if (lastReturned != null) {
+            lastReturned.release();
+            lastReturned = null;
+        }
+        ev.push(bi, tArrive);
+        int rw = roi[3] - roi[2];
+        int rh = roi[1] - roi[0];
+        int pixels = rw * rh;
+        if (roiArgb == null || roiArgb.length != pixels) {
+            roiArgb = new int[pixels];
+            roiBgr = new byte[pixels * 3];
+            if (roiMat != null) {
+                roiMat.release();
+            }
+            roiMat = new Mat(rh, rw, org.opencv.core.CvType.CV_8UC3);
+        }
+        bi.getRGB(roi[2], roi[0], rw, rh, roiArgb, 0, rw);
+        for (int i = 0, j = 0; i < pixels; i++) {
+            int p = roiArgb[i];
+            roiBgr[j++] = (byte) (p & 0xFF);
+            roiBgr[j++] = (byte) ((p >> 8) & 0xFF);
+            roiBgr[j++] = (byte) ((p >> 16) & 0xFF);
+        }
+        roiMat.put(0, 0, roiBgr);
+        double ncc = nccOfLive(roiMat);
+        boolean hit = ncc >= simThr;
+        boolean latchNow = hit && !latched;
+        if (latchNow) {
+            double analysisMs = (now() - tArrive) * 1000.0;
+            pass = new double[] { gapMs + analysisMs, gapMs, analysisMs };
+            latched = true;
+            ev.trigger();
+        } else if (ev.needsPostFrame()) {
+            ev.stepAfter(bi, tArrive);
+        }
+        double procMs = (now() - tArrive) * 1000.0;
+
+        RoiMatchResult r = new RoiMatchResult("ok");
+        r.procMs = procMs;
+        r.canonImage = bi;
+        r.roi = roi;
+        r.ncc = ncc;
+        r.psc = ncc;
+        r.simThr = simThr;
+        r.hit = hit;
+        r.frameGapMs = (pass != null) ? pass[1] : gapMs;
+        r.analysisMs = (pass != null) ? pass[2] : null;
+        r.passMs = (pass != null) ? pass[0] : null;
+        r.lockInliers = lockInliers;
+        r.lockAng = lockAng;
+        lastResult = r;
+        return r;
+    }
+
+    /**
+     * 프레임 간격(ms) = 캡처 {@code read()} 주기 중앙값.
+     * 판정기 쪽 실측은 같은 픽셀 서명을 건너뛰어 표본이 비는 경우가 있어
+     * 그때 30fps(33.3ms)로 위장하던 폴백은 쓰지 않는다.
+     */
+    private double resolveFrameGapMs(double measuredMedianMs) {
+        double cam = CameraService.of(captureChannel).grabGapMs();
+        if (cam > 0.5) {
+            return cam;
+        }
         if (measuredMedianMs > 0.5) {
             return measuredMedianMs;
         }
-        return 1000.0 / 30.0;   // 아직 프레임 표본이 없을 때만
+        return 0.0;
     }
 
     private void pushGap(double g) {
@@ -258,9 +333,10 @@ public final class RoiMatchDetector implements VisionJudge {
         Size refSize = new Size(canonW, canonH);
         Mat canon;
         if (!alignEnabled) {
-            // 라이브: 해상도만 맞추고(같으면 clone) NCC - 640 강제 없음
+            // 라이브: 해상도가 같으면 입력 Mat을 그대로 빌려 쓴다.
+            // caller가 processMat 반환 뒤 frame을 release하므로 여기서 FHD 전체 clone은 불필요하다.
             if (frame.cols() == canonW && frame.rows() == canonH) {
-                canon = frame.clone();
+                canon = frame;
             } else {
                 canon = new Mat();
                 Imgproc.resize(frame, canon, refSize);
@@ -287,9 +363,17 @@ public final class RoiMatchDetector implements VisionJudge {
             canon = new Mat();
             Imgproc.warpPerspective(frame, canon, lockedM, refSize);
         }
-        lastReturned = canon;
+        // resize/warp로 만든 Mat만 다음 호출에서 해제한다. frame은 process()가 소유한다.
+        lastReturned = canon == frame ? null : canon;
 
-        ev.push(canon.clone(), tArrive);
+        if (canon == frame) {
+            // 이 Mat은 process()가 이번 프레임 전용으로 생성했다. 증거 링에 소유권을
+            // 그대로 넘기면 매 프레임 FHD 전체 clone(약 6MB)을 없앨 수 있다.
+            ev.push(canon, tArrive);
+            inputTransferredToEvidence = true;
+        } else {
+            ev.push(canon.clone(), tArrive);
+        }
         double ncc = nccOf(canon);
         double psc = ncc;
         boolean hit = psc >= simThr;
@@ -300,7 +384,7 @@ public final class RoiMatchDetector implements VisionJudge {
             pass = new double[] { gapMs + analysisMs, gapMs, analysisMs };
             latched = true;
             ev.trigger();
-        } else {
+        } else if (ev.needsPostFrame()) {
             ev.stepAfter(canon.clone(), tArrive);
         }
         double procMs = (now() - tArrive) * 1000.0;
@@ -323,19 +407,27 @@ public final class RoiMatchDetector implements VisionJudge {
 
     private double nccOf(Mat canon) {
         Mat live = canon.submat(roi[0], roi[1], roi[2], roi[3]);
+        try {
+            return nccOfLive(live);
+        } finally {
+            live.release();
+        }
+    }
+
+    private double nccOfLive(Mat live) {
         Mat liveUse = live;
         if (live.rows() != tmpl.rows() || live.cols() != tmpl.cols()) {
             liveUse = new Mat();
             Imgproc.resize(live, liveUse, new Size(tmpl.cols(), tmpl.rows()));
         }
-        Mat res = new Mat();
-        Imgproc.matchTemplate(liveUse, tmpl, res, Imgproc.TM_CCOEFF_NORMED);
-        double ncc = res.get(0, 0)[0];
-        res.release();
+        if (nccResult == null) {
+            nccResult = new Mat();
+        }
+        Imgproc.matchTemplate(liveUse, tmpl, nccResult, Imgproc.TM_CCOEFF_NORMED);
+        double ncc = nccResult.get(0, 0)[0];
         if (liveUse != live) {
             liveUse.release();
         }
-        live.release();
         return ncc;
     }
 

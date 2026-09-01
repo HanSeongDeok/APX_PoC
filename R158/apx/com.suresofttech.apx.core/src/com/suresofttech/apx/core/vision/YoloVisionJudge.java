@@ -53,6 +53,7 @@ public final class YoloVisionJudge implements VisionJudge {
     private boolean haveSig;
     private double tPrevFrame;
     private RoiMatchResult lastResult;
+    private VisionChannel captureChannel = VisionChannel.CLUSTER;
     private final EvidenceCapture ev = new EvidenceCapture(1, 1);
 
     private static final int GAP_N = 15;
@@ -65,6 +66,12 @@ public final class YoloVisionJudge implements VisionJudge {
         this.thr = this.cfg.thr;
         Cv.ensureLoaded();
         loadModel();
+    }
+
+    public void setCaptureChannel(VisionChannel ch) {
+        if (ch != null) {
+            this.captureChannel = ch;
+        }
     }
 
     private void loadModel() {
@@ -214,7 +221,7 @@ public final class YoloVisionJudge implements VisionJudge {
                 pass = new double[] { gapMs + analysisMs, gapMs, analysisMs };
                 latched = true;
                 ev.trigger();
-            } else {
+            } else if (ev.needsPostFrame()) {
                 ev.stepAfter(crop.clone(), tArrive);
             }
 
@@ -304,12 +311,16 @@ public final class YoloVisionJudge implements VisionJudge {
 
     // ── 프레임 간격 / 중복 프레임 판별 (NCC 판정기와 동일 규칙) ──────────────
 
-    /** 실측 프레임 도착 간격의 중앙값. 사유는 {@code RoiMatchDetector.resolveFrameGapMs} 참고. */
-    private static double resolveFrameGapMs(double measuredMedianMs) {
+    /** 캡처 grab 주기 우선. 30fps 하드코딩 폴백 없음. */
+    private double resolveFrameGapMs(double measuredMedianMs) {
+        double cam = CameraService.of(captureChannel).grabGapMs();
+        if (cam > 0.5) {
+            return cam;
+        }
         if (measuredMedianMs > 0.5) {
             return measuredMedianMs;
         }
-        return 1000.0 / 30.0;   // 아직 프레임 표본이 없을 때만
+        return 0.0;
     }
 
     private void pushGap(double g) {

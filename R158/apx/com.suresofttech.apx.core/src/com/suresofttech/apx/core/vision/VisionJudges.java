@@ -110,9 +110,14 @@ public final class VisionJudges {
             if (roi != null) {
                 j.setRoi(roi);
             }
+            j.setCaptureChannel(ch);
             return j;
         }
-        return NCC_FACTORY.create(refImage, refPath, roi, thr);
+        VisionJudge ncc = NCC_FACTORY.create(refImage, refPath, roi, thr);
+        if (ncc instanceof RoiMatchDetector) {
+            ((RoiMatchDetector) ncc).setCaptureChannel(ch);
+        }
+        return ncc;
     }
 
     /** 팩토리로 판정기 생성 - 호출부는 어떤 구현인지 몰라도 된다. */
