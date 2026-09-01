@@ -2,7 +2,12 @@ package com.suresofttech.apx.core.measure;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.suresofttech.apx.core.audio.AudioCapture;
 import com.suresofttech.apx.core.audio.AudioRecorder;
@@ -17,7 +22,6 @@ import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.Cv;
 import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
-import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.VisionJudge;
 import com.suresofttech.apx.core.vision.VisionJudges;
 import com.suresofttech.apx.core.vision.RoiMatchResult;
@@ -59,6 +63,7 @@ public final class MeasureSession {
     private volatile GearTriggerListener gearTriggerListener;
 
     private volatile boolean running;
+    private volatile boolean preparing;
     private MeasureConfigSnapshot snapshot;
     private MeasureEvidence evidence;
 
@@ -66,6 +71,9 @@ public final class MeasureSession {
     private AudioCapture capture;
     private AudioRecorder recorder;
     private volatile long capturedSamples;
+    /** 마이크 샘플 0초가 측정 공통시계에서 시작한 위치(초). */
+    private volatile double audioTimelineOffsetSec;
+    private volatile boolean audioTimelineAligned;
     private volatile MatchResult latestMatch;
     /** 측정 중 마이크가 빠지거나 입력이 끊긴 사유. 정상이면 null. */
     private volatile String audioError;
@@ -166,6 +174,39 @@ public final class MeasureSession {
         return stimulusAtMs;
     }
 
+    /**
+     * 테스트 기어 화면이 R로 바뀐 순간. 측정 중이면 T0+기대음, 아니면 설정 기대음만 재생.
+     */
+    public void onTestGearToR() {
+        synchronized (this) {
+            if (preparing) {
+                return;
+            }
+            if (running) {
+                if (stimulusAtMs == null) {
+                    markStimulus();
+                } else {
+                    playExpectedAgain();
+                }
+                return;
+            }
+        }
+        playExpectedFromSettings();
+    }
+
+    private void playExpectedFromSettings() {
+        try {
+            String path = ApxSettings.get().getExpectedWavPath();
+            if (path == null || path.isEmpty() || !new File(path).isFile()) {
+                return;
+            }
+            WavIo.Wav wav = WavIo.load(path);
+            expectedPlayer.play(wav.samples, wav.sampleRate);
+        } catch (Exception ignored) {
+            // 테스트 화면 전환을 막지 않는다
+        }
+    }
+
     /** 자극 발사 시각(측정 시작 기준 ms). 미발사면 null. */
     public Long getStimulusAtMs() {
         return stimulusAtMs;
@@ -183,6 +224,10 @@ public final class MeasureSession {
 
     public synchronized boolean isRunning() {
         return running;
+    }
+
+    public boolean isPreparing() {
+        return preparing;
     }
 
     public synchronized MeasureConfigSnapshot getSnapshot() {
@@ -368,21 +413,32 @@ public final class MeasureSession {
     }
 
     /**
+     * 최종 한 줄 - Kickoff / 결과 탭이 같은 문구를 쓴다.
+     * 예) {@code 최종: PASS - PASS (동기 최대 12ms ≤ 30ms, 기어봉 R 검출 기준)  (2026-08-31 19:06:58)}
+     */
+    public static String formatOverallLine(boolean overallPass, String summary, long epochMs) {
+        String when = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(epochMs));
+        return String.format("최종: %s - %s  (%s)",
+                overallPass ? "PASS" : "FAIL", summary == null ? "" : summary, when);
+    }
+
+    /**
      * 중단 시 최종 판정. CAN은 아직 미연동({@code requireCan=false}).
      *
-     * <p>기준점 T0 는 자극 발사 시각({@link #markStimulus()})을 우선 쓴다. 그 시각에
-     * 클러스터 교체와 기대음이 같이 나갔으므로 <b>기어봉을 포함한 세 채널</b>의 지연을 잰다.
-     * 자극 없이 돈 측정이면 기어봉 검출을 대타 기준점으로 쓰고 기어봉 지연은 0이 된다.
+     * <p>시뮬레이터의 기준점 T0는 기어봉 R 검출 시각이며, 측정 시작 때 고정한
+     * 동기 임계값으로 클러스터·음향의 상대 지연을 판정한다.
      */
     public MeasureSyncResult evaluateFinal() {
         ApxSettings s = ApxSettings.get();
+        double tolerance = snapshot == null
+                ? MeasureSyncResult.DEFAULT_SYNC_TOL_MS : snapshot.syncToleranceMs;
         return MeasureSyncResult.evaluate(
                 audioPass, clusterPass, gearPass,
                 audioPassAtMs, clusterPassAtMs, gearPassAtMs,
                 null, stimulusAtMs, false,
                 s.getCalibMs(VisionChannel.GEAR),
                 s.getCalibMs(VisionChannel.CLUSTER),
-                s.getCalibAudioMs());
+                s.getCalibAudioMs(), tolerance);
     }
 
     public MatchResult getLatestMatch() {
@@ -422,10 +478,22 @@ public final class MeasureSession {
      * 측정 시작. 현재 {@link ApxSettings}를 스냅샷으로 고정.
      * @throws IllegalStateException 이미 실행 중, 또는 기대 WAV/마이크 불가
      */
-    public synchronized void start() throws Exception {
-        if (running) {
-            throw new IllegalStateException("이미 측정 중입니다");
+    public void start() throws Exception {
+        synchronized (this) {
+            if (running || preparing) {
+                throw new IllegalStateException("이미 측정 또는 준비 중입니다");
+            }
+            preparing = true;
         }
+        try {
+            startInternal();
+        } catch (Exception ex) {
+            cleanupFailedStart();
+            throw ex;
+        }
+    }
+
+    private void startInternal() throws Exception {
         expectedPlayer.stop();
         MeasureConfigSnapshot snap = MeasureConfigSnapshot.from(ApxSettings.get());
         if (snap.expectedWavPath == null || snap.expectedWavPath.isEmpty()
@@ -456,6 +524,8 @@ public final class MeasureSession {
         this.recorder = rec;
         this.capture = cap;
         this.capturedSamples = 0;
+        this.audioTimelineOffsetSec = 0;
+        this.audioTimelineAligned = false;
         this.latestMatch = null;
         this.audioPass = false;
         this.audioPassAtMs = null;
@@ -485,29 +555,49 @@ public final class MeasureSession {
         this.gearRecording = null;
         this.visionMatchLog.clear();
         SyncBus.get().reset();
-        this.startNanoSec = SyncBus.now();
         initRearVerdicts(snap);
-        startVisionRecording();
 
         final BeepMatcher feedMatcher = bm;
         final AudioRecorder feedRec = rec;
-        final double t0 = this.startNanoSec;
+        final CountDownLatch audioReady = new CountDownLatch(1);
+        final CountDownLatch armedReady = new CountDownLatch(1);
+        final AtomicBoolean armRequested = new AtomicBoolean(false);
+        final AtomicBoolean armed = new AtomicBoolean(false);
         this.audioError = null;
-        // 측정 도중 마이크가 빠지면 무음이 조용히 녹음된다 - 사유를 세션 상태로 올린다.
         cap.setErrorListener(new AudioCapture.ErrorListener() {
             public void onCaptureError(String reason) {
                 audioError = reason;
+                audioReady.countDown();
+                armedReady.countDown();
                 fireState();
             }
         });
-        running = true;
         try {
-            if (snap.autoPlayExpectedOnVisionPass
-                    && !expectedPlayer.prepare(wav.samples, wav.sampleRate)) {
+            startVisionRecording();
+            if (!expectedPlayer.prepare(wav.samples, wav.sampleRate)) {
                 throw new IllegalStateException("기대음 출력 장치를 준비할 수 없습니다");
             }
             cap.start(dev.info, bm.getSampleRate(), new AudioCapture.BlockListener() {
             public void onBlock(double[] block, double now) {
+                if (!armRequested.get()) {
+                    audioReady.countDown();
+                    return;                         // 준비 중 샘플은 측정에 포함하지 않는다
+                }
+                if (armed.compareAndSet(false, true)) {
+                    // 이 블록까지 버리고 경계를 T=0으로 잡는다. 다음 read 블록부터 측정 데이터다.
+                    startNanoSec = now;
+                    capturedSamples = 0;
+                    audioTimelineOffsetSec = 0;
+                    audioTimelineAligned = true;
+                    visionRecorder.feed(CameraService.of(VisionChannel.CLUSTER).latest(), 0);
+                    gearRecorder.feed(CameraService.of(VisionChannel.GEAR).latest(), 0);
+                    running = true;
+                    armedReady.countDown();
+                    return;
+                }
+                if (!running) {
+                    return;
+                }
                 feedRec.feed(block);
                 long n = capturedSamples + block.length;
                 capturedSamples = n;
@@ -521,7 +611,7 @@ public final class MeasureSession {
                     double tSec = now;
                     double judge = mr.passMs != null ? mr.passMs.doubleValue() : Double.NaN;
                     SyncBus.get().mark(SyncBus.Event.BEEP, tSec, judge);
-                    long ms = Math.round((tSec - t0) * 1000.0);
+                    long ms = Math.round((tSec - startNanoSec) * 1000.0);
                     audioPassAtMs = Long.valueOf(ms);
                     evidence.setAudioPassMs(ms);
                     if (mr.passMs != null) {
@@ -536,19 +626,50 @@ public final class MeasureSession {
                 fireAudio(mr, feedMatcher.getBuffer(), tAudio);
             }
             });
+            if (!audioReady.await(5, TimeUnit.SECONDS) || audioError != null) {
+                throw new IllegalStateException(audioError == null
+                        ? "마이크 첫 입력을 5초 안에 받지 못했습니다" : audioError);
+            }
+            armRequested.set(true);
+            if (!armedReady.await(5, TimeUnit.SECONDS) || audioError != null || !running) {
+                throw new IllegalStateException(audioError == null
+                        ? "마이크 측정 시작 경계를 만들지 못했습니다" : audioError);
+            }
+            preparing = false;
         } catch (Exception ex) {
-            stop();
             throw ex;
         }
         fireState();
     }
 
+    private void cleanupFailedStart() {
+        running = false;
+        preparing = false;
+        if (capture != null) {
+            capture.stop();
+            capture = null;
+        }
+        if (recorder != null) {
+            recorder.stop();
+        }
+        visionRecorder.stop();
+        gearRecorder.stop();
+        expectedPlayer.stop();
+        matcher = null;
+    }
+
     /** 측정 중단 - 캡처 중지, 증거 finalize. */
     public synchronized void stop() {
-        if (!running) {
+        if (!running && !preparing) {
+            return;
+        }
+        if (preparing && !running) {
+            cleanupFailedStart();
+            fireState();
             return;
         }
         running = false;
+        preparing = false;
         if (capture != null) {
             capture.stop();
             capture = null;
@@ -577,27 +698,35 @@ public final class MeasureSession {
      * 클라가 정하므로(저장 경로 버튼), 여기서는 temp에 쓰고
      * {@link #moveVisionRecordingTo}가 최종 폴더로 옮긴다.
      */
-    private void startVisionRecording() {
+    private void startVisionRecording() throws Exception {
         visionRecordDir = startRecorder(visionRecorder, CameraService.of(VisionChannel.CLUSTER));
         gearRecordDir = startRecorder(gearRecorder, CameraService.of(VisionChannel.GEAR));
+        if (!visionRecorder.awaitReady(5_000)) {
+            throw new IllegalStateException("클러스터 녹화 장치를 준비하지 못했습니다");
+        }
+        if (!gearRecorder.awaitReady(5_000)) {
+            throw new IllegalStateException("기어봉 녹화 장치를 준비하지 못했습니다");
+        }
     }
 
-    private static File startRecorder(VisionRecorder rec, CameraService cam) {
+    private static File startRecorder(VisionRecorder rec, CameraService cam) throws Exception {
         try {
             File tmp = File.createTempFile("apx-rec-", "");
             if (!tmp.delete() || !tmp.mkdirs()) {
                 return null;
             }
             tmp.deleteOnExit();
-            BufferedImage probe = cam == null ? null : cam.latest();
-            if (probe != null) {
-                rec.start(tmp, probe.getWidth(), probe.getHeight());
-            } else {
-                rec.start(tmp);
+            if (cam == null || !cam.isOpen()) {
+                throw new IllegalStateException("카메라가 열려 있지 않습니다");
             }
+            BufferedImage probe = cam == null ? null : cam.latest();
+            if (probe == null) {
+                throw new IllegalStateException("카메라의 첫 프레임을 받지 못했습니다");
+            }
+            rec.start(tmp, probe.getWidth(), probe.getHeight());
             return tmp;
         } catch (Exception ex) {
-            return null;
+            throw ex;
         }
     }
 
@@ -842,17 +971,30 @@ public final class MeasureSession {
         if (snapshot == null || !snapshot.autoPlayExpectedOnVisionPass) {
             return;
         }
+        // 측정 시작 당시 화면이 이미 R이면 첫 판정만으로 기대음이 나가면 안 된다.
+        // 테스트 화면에서 실제 P/N/D -> R 전환이 발생해 T0가 잡힌 경우에만 허용한다.
+        if (stimulusAtMs == null) {
+            return;
+        }
         playExpectedNow();
     }
 
     /** 기대음 1회 발사. 라인은 {@code start()} 에서 미리 열어 두었다. */
-    private void playExpectedNow() {
+    private synchronized void playExpectedNow() {
         if (expectedAutoPlayed || expectedSamples == null || expectedSampleRate <= 0) {
             return;
         }
         if (expectedPlayer.play(expectedSamples, expectedSampleRate)) {
             expectedAutoPlayed = true;
         }
+    }
+
+    /** 같은 측정에서 테스트 기어가 다시 R로 전환됐을 때 기대음을 다시 발사한다. */
+    private void playExpectedAgain() {
+        if (expectedSamples == null || expectedSampleRate <= 0) {
+            return;
+        }
+        expectedPlayer.play(expectedSamples, expectedSampleRate);
     }
 
     /**
@@ -913,13 +1055,19 @@ public final class MeasureSession {
         return matcher == null ? null : matcher.getBuffer().clone();
     }
 
-    /** 측정 경과(초). UI 폴링용. */
+    /** 마이크 샘플 끝을 측정 공통시계로 변환한 경과(초). UI 표시용. */
     public double getElapsedSec() {
         int sr = getAudioSampleRate();
         if (sr <= 0) {
             return 0;
         }
-        return capturedSamples / (double) sr;
+        double sampleSec = capturedSamples / (double) sr;
+        return sampleSec + (audioTimelineAligned ? audioTimelineOffsetSec : 0.0);
+    }
+
+    /** WAV 샘플 0초가 측정 공통시계에서 시작한 위치(ms). */
+    public double getAudioTimelineOffsetMs() {
+        return (audioTimelineAligned ? audioTimelineOffsetSec : 0.0) * 1000.0;
     }
 
     private void initRearVerdicts(MeasureConfigSnapshot snap) {

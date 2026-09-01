@@ -192,6 +192,12 @@ public final class EvidenceBundle {
         return getLong("visionPassMs");
     }
 
+    /** WAV 첫 샘플의 측정 공통시계 위치(ms). 구 증거는 0. */
+    public double getAudioTimelineOffsetMs() {
+        Double v = getDouble("audioTimelineOffsetMs");
+        return v == null ? 0 : Math.max(0, v.doubleValue());
+    }
+
     public Double getSyncSpreadMs() {
         return getDouble("syncSpreadMs");
     }
@@ -272,7 +278,7 @@ public final class EvidenceBundle {
      * 둘 다 없으면 PASS 시각 뒤로 1초 여유를 준다.
      */
     public double durationMs() {
-        double d = Math.max(audioDurationMs(), getRecordedDurationMs());
+        double d = Math.max(audioDurationMs() + getAudioTimelineOffsetMs(), getRecordedDurationMs());
         if (d > 0) {
             return d;
         }
@@ -328,6 +334,17 @@ public final class EvidenceBundle {
             Double syncSpreadMs, boolean syncOk, double durationMs,
             Double audioPassStartMs, Double audioPassEndMs,
             List<double[]> audioPassSpans, double[] roiNorm, double simThr) throws Exception {
+        writeMeta(root, overallPass, summary, audioPassMs, visionPassMs,
+                syncSpreadMs, syncOk, durationMs, audioPassStartMs, audioPassEndMs,
+                audioPassSpans, roiNorm, simThr, 0);
+    }
+
+    public static void writeMeta(File root, boolean overallPass, String summary,
+            Long audioPassMs, Long visionPassMs,
+            Double syncSpreadMs, boolean syncOk, double durationMs,
+            Double audioPassStartMs, Double audioPassEndMs,
+            List<double[]> audioPassSpans, double[] roiNorm, double simThr,
+            double audioTimelineOffsetMs) throws Exception {
         if (root == null) {
             return;
         }
@@ -341,6 +358,8 @@ public final class EvidenceBundle {
         putIfPresent(p, "visionPassMs", visionPassMs);
         putIfPresent(p, "audioPassStartMs", audioPassStartMs);
         putIfPresent(p, "audioPassEndMs", audioPassEndMs);
+        p.setProperty("audioTimelineOffsetMs",
+                String.valueOf(Math.max(0, audioTimelineOffsetMs)));
         String spans = formatSpans(audioPassSpans);
         if (spans != null) {
             p.setProperty("audioPassSpans", spans);

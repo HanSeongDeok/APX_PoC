@@ -43,6 +43,20 @@ public final class TestPlayerDialog {
     /** 이 기어 라벨로 바뀌는 순간이 자극 발사(T0) 시점. */
     private static final String GEAR_TRIGGER_LABEL = "R";
     private static final String CLUSTER_POPUP_LABEL = "팝업";
+    private static final String CLUSTER_NORMAL_LABEL = "일반";
+
+    /**
+     * 기어 단수 → 클러스터가 보여야 할 화면.
+     *
+     * <p>실차에서 R을 넣으면 후방 팝업이 뜨고, R을 빼면 팝업이 사라져 일반 화면으로
+     * 돌아간다. 자극 창도 같아야 한다 — R만 팝업으로 바꾸고 나머지를 그대로 두면
+     * P → R → N 으로 옮겼을 때 클러스터가 팝업에 <b>머물러</b> 실차와 달라진다.
+     *
+     * <p>여기 없는 라벨은 {@link #CLUSTER_NORMAL_LABEL}로 간다.
+     */
+    private static String clusterLabelForGear(String gearLabel) {
+        return GEAR_TRIGGER_LABEL.equals(gearLabel) ? CLUSTER_POPUP_LABEL : CLUSTER_NORMAL_LABEL;
+    }
 
     private static TestPlayerDialog clusterOpen;
     private static TestPlayerDialog gearOpen;
@@ -60,6 +74,7 @@ public final class TestPlayerDialog {
     private Image[] images;
     private Image image;
     private int index;
+    private boolean shown;
     private boolean auto;
 
     /** items: {라벨, 이미지경로} 배열. */
@@ -305,40 +320,47 @@ public final class TestPlayerDialog {
         if (items.length == 0 || i < 0) {
             return;
         }
-        index = ((i % items.length) + items.length) % items.length;
+        int nextIndex = ((i % items.length) + items.length) % items.length;
+        boolean changed = shown && nextIndex != index;
+        index = nextIndex;
         image = images != null && index < images.length ? images[index] : null;
-        boolean gearToR = (role == ROLE_GEAR) && GEAR_TRIGGER_LABEL.equals(items[index][0]);
+        shown = true;
+        boolean isGear = (role == ROLE_GEAR);
+        boolean gearToR = isGear && changed && GEAR_TRIGGER_LABEL.equals(items[index][0]);
         if (gearToR) {
-            // T0 를 먼저 찍고 기대음을 발사한다(라인은 측정 시작 때 열어 둠).
-            // 화면 그리기보다 앞에 두어야 페인트 시간이 T0 에 얹히지 않는다.
-            MeasureSession.get().markStimulus();
+            // T0 + 기대음. 화면 그리기보다 앞에 두어야 페인트가 T0에 안 얹힌다.
+            MeasureSession.get().onTestGearToR();
         }
         if (!shell.isDisposed()) {
             shell.setText(title + " - " + items[index][0]);
             view.redraw();
             view.update();      // 즉시 그린다 — 다음 프레임까지 기다리지 않게
         }
-        if (gearToR) {
-            syncCluster();      // 클러스터도 같은 순간 R 팝업으로
+        if (isGear) {
+            // 어느 단수로 옮겨도 클러스터를 같이 맞춘다. R이면 팝업, 그 외는 일반.
+            syncCluster(clusterLabelForGear(items[index][0]));
         }
     }
 
     /**
-     * 기어봉 R 전환과 <b>같은 순간</b> 클러스터를 R 팝업 화면으로 바꾼다.
+     * 기어 단수 전환과 <b>같은 순간</b> 클러스터를 해당 화면으로 바꾼다.
      *
-     * <p>실차에서 기어를 R로 넣으면 클러스터가 즉시 후방 팝업이 되는 것과 같다.
-     * 도구의 판정 결과로 띄우는 것이 아니라 <b>자극으로 함께 내보내는</b> 것이 핵심이다.
-     * 그래야 T0({@code MeasureSession.markStimulus})가 세 채널 공통의 기준점이 되고,
-     * 각 채널의 {@code 검출 − T0} 가 그 채널의 전체 지연이 된다.
+     * <p>실차에서 기어를 R로 넣으면 클러스터가 즉시 후방 팝업이 되고, R을 빼면
+     * 일반 화면으로 돌아가는 것과 같다. 도구의 판정 결과로 띄우는 것이 아니라
+     * <b>자극으로 함께 내보내는</b> 것이 핵심이다. 그래야 T0({@code
+     * MeasureSession.markStimulus})가 세 채널 공통의 기준점이 되고, 각 채널의
+     * {@code 검출 − T0} 가 그 채널의 전체 지연이 된다.
      *
-     * <p>클러스터 창이 닫혀 있으면 아무것도 하지 않는다.
+     * <p>클러스터 창이 닫혀 있거나 이미 그 화면이면 아무것도 하지 않는다.
+     *
+     * @param clusterLabel 클러스터에서 띄울 항목 라벨. 목록에 없으면 무시된다.
      */
-    private static void syncCluster() {
+    private static void syncCluster(String clusterLabel) {
         TestPlayerDialog c = clusterOpen;
         if (c == null || !c.isOpen()) {
             return;
         }
-        int idx = c.indexOfLabel(CLUSTER_POPUP_LABEL);
+        int idx = c.indexOfLabel(clusterLabel);
         if (idx < 0 || idx == c.index) {
             return;
         }
