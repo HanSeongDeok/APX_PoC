@@ -102,11 +102,11 @@ public final class Cv {
         int type = ch > 1 ? BufferedImage.TYPE_3BYTE_BGR : BufferedImage.TYPE_BYTE_GRAY;
         int w = m.cols();
         int h = m.rows();
-        byte[] data = new byte[w * h * ch];
-        m.get(0, 0, data);
         BufferedImage img = new BufferedImage(w, h, type);
         byte[] target = ((DataBufferByte) img.getRaster().getDataBuffer()).getData();
-        System.arraycopy(data, 0, target, 0, data.length);
+        // 중간 byte[]를 만들고 다시 복사하면 1080p60 두 채널에서 초당 수백 MB의
+        // 불필요한 할당이 생긴다. BufferedImage 저장소로 바로 복사해 GC 지연을 줄인다.
+        m.get(0, 0, target);
         return img;
     }
 }

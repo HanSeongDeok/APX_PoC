@@ -23,6 +23,8 @@ public final class RoiMatchResult {
     public Double analysisMs;         // 전환 순간(없으면 null)
     /** 자체 판단(ms) = frameGap(=1/fps) + analysis. 전환 확정 시에만. 물리지연(D_cap) 미포함. */
     public Double passMs;
+    /** 이 프레임이 grab된 {@code System.nanoTime}. 증거 정렬용이며 PASS @는 분석 완료 시각을 쓴다. */
+    public long grabNanos;
 
     public Integer lockInliers;
     public double[] lockAng;          // {roll, scale, persp}

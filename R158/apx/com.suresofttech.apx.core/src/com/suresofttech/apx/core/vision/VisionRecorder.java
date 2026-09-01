@@ -53,10 +53,10 @@ public final class VisionRecorder {
     /** 컨테이너에 기록할 명목 fps - 실제 시각은 frames.csv가 정답. */
     private static final double NOMINAL_FPS = 30.0;
     /**
-     * 큐 깊이 - 30fps 기준 약 1초. VideoWriter 오픈(수백 ms)이나 순간적인 인코딩 지연을
-     * 흡수하고도 프레임을 버리지 않을 만큼은 필요하다(작으면 측정 앞부분이 통째로 날아간다).
+     * FHD 한 장은 약 6MB라 32장 × 두 채널이면 프레임 참조만 약 400MB가 된다.
+     * Writer는 측정 전에 열어 두므로 짧은 최신 큐만 유지하고, 밀리면 오래된 프레임을 버린다.
      */
-    private static final int QUEUE_CAP = 32;
+    private static final int QUEUE_CAP = 4;
 
     private static final class Job {
         final BufferedImage img;

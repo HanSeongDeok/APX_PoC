@@ -108,7 +108,23 @@ public final class CameraService {
 
     private volatile boolean grabbing;
     private Thread grabThread;
+    /**
+     * 한 프레임과 그 프레임이 {@code read()} 된 시각. 둘을 같이 읽어야 PASS @ 이 다른 프레임 시각을 쓰지 않는다.
+     */
+    public static final class Grabbed {
+        public final BufferedImage image;
+        public final long nanos;
+
+        public Grabbed(BufferedImage image, long nanos) {
+            this.image = image;
+            this.nanos = nanos;
+        }
+    }
+
+    private volatile Grabbed grabbed;
     private volatile BufferedImage cachedFrame;
+    /** {@link #cachedFrame} 이 {@code read()} 로 들어온 시각({@code System.nanoTime}). */
+    private volatile long cachedFrameNanos;
     /** grab 스레드가 잰 프레임 주기(ms). 판정기 UI 폴링/서명 스킵과 무관. */
     private volatile double grabGapMs;
     private long lastGrabNanos;
@@ -442,8 +458,8 @@ public final class CameraService {
 
     /**
      * USB2에서 1080p60은 MJPEG가 아니면 대역이 안 된다. YUY2 기본은 대개 30fps.
-     * {@code set}은 DirectShow에서 수 초 걸릴 수 있어 연 직후가 아니라
-     * 첫 프레임 이후에만 호출한다(화면은 이미 떠 있음).
+     * {@code set}은 DirectShow에서 수 초 걸릴 수 있다. <b>read() 도중에 호출하면
+     * 스트림이 죽는 캠이 많다</b> — grab 루프 시작 전에만 부른다.
      */
     private static void apply1080p60(VideoCapture c) {
         c.set(Videoio.CAP_PROP_FOURCC, VideoWriter.fourcc('M', 'J', 'P', 'G'));
@@ -463,28 +479,33 @@ public final class CameraService {
         grabThread = new Thread(new Runnable() {
             public void run() {
                 Mat m = new Mat();
-                boolean modeApplied = false;
                 try {
+                    if (local != null && local.isOpened()) {
+                        apply1080p60(local);
+                    }
                     while (grabbing) {
                         if (local == null || !local.isOpened()) {
                             break;
                         }
                         try {
                             if (local.read(m) && !m.empty()) {
-                                cachedFrame = Cv.toBufferedImage(m);
-                                if (!modeApplied) {
-                                    apply1080p60(local);
-                                    lastGrabNanos = 0;
-                                    grabGapCount = 0;
-                                    grabGapHead = 0;
-                                    grabGapMs = 0;
-                                    modeApplied = true;
-                                    continue;
-                                }
+                                BufferedImage bi = Cv.toBufferedImage(m);
+                                long grabAt = System.nanoTime();
+                                grabbed = new Grabbed(bi, grabAt);
+                                cachedFrame = bi;
+                                cachedFrameNanos = grabAt;
                                 noteGrabGap();
+                            } else {
+                                Thread.sleep(5);
                             }
+                        } catch (InterruptedException e) {
+                            return;
                         } catch (Throwable t) {
-                            break;
+                            try {
+                                Thread.sleep(20);
+                            } catch (InterruptedException e) {
+                                return;
+                            }
                         }
                     }
                 } finally {
@@ -524,7 +545,19 @@ public final class CameraService {
 
     /** 최신 프레임(BGR BufferedImage). 미오픈/미수신 시 null. {@code read()} 하지 않는다. */
     public BufferedImage latest() {
-        return cachedFrame;
+        Grabbed g = grabbed;
+        return g == null ? cachedFrame : g.image;
+    }
+
+    /** {@link #latest()} 프레임이 grab된 {@code System.nanoTime}. 없으면 0. */
+    public long latestNanos() {
+        Grabbed g = grabbed;
+        return g == null ? cachedFrameNanos : g.nanos;
+    }
+
+    /** 프레임과 grab 시각을 같이 반환. 없으면 null. */
+    public Grabbed latestGrabbed() {
+        return grabbed;
     }
 
     /**
@@ -585,6 +618,8 @@ public final class CameraService {
         currentIndex = -1;
         currentName = null;
         cachedFrame = null;
+        cachedFrameNanos = 0;
+        grabbed = null;
         reportedFps = 0;
         grabGapMs = 0;
         lastGrabNanos = 0;
