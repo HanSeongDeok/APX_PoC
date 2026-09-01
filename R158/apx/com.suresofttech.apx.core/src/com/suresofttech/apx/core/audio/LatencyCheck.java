@@ -6,7 +6,7 @@ package com.suresofttech.apx.core.audio;
  * <p>두 가지를 잰다:
  * <ol>
  *   <li><b>검출 지연(오디오 타임라인)</b> - 실제 '삐'가 시작된 순간부터 알고리즘이
- *       일치를 확정한 순간까지. 블록(2048샘플) 단위 처리라 블록 크기만큼 양자화됨.</li>
+ *       일치를 확정한 순간까지. 블록(≈10ms) 단위 처리라 블록 크기만큼 양자화됨.</li>
  *   <li><b>순수 연산 비용</b> - feed() 한 블록 처리에 걸리는 실제 CPU 시간과
  *       실시간 대비 배속(1보다 작아야 실시간 처리 가능).</li>
  * </ol>
@@ -19,10 +19,9 @@ package com.suresofttech.apx.core.audio;
  */
 public final class LatencyCheck {
 
-    private static final int BLOCK = 2048;
-
     public static void main(String[] args) {
         int sr = (args.length > 0) ? Integer.parseInt(args[0]) : 44100;
+        final int BLOCK = AudioCapture.blockSamples(sr);
         double silenceSec = 0.30;                        // 배경 설정용 선행 무음
 
         // 기대음 = 근접 경고음(삐 반복). 템플릿도 이 파형으로 생성.
@@ -70,6 +69,7 @@ public final class LatencyCheck {
 
     /** 콜드스타트: 무음 없이 단일음이 블록0부터 들어옴(버튼=듣기 시작). 검출지연 = 확정 시각. */
     private static void coldStart(int sr) {
+        final int BLOCK = AudioCapture.blockSamples(sr);
         double[] tone = new double[(int) (2.0 * sr)];       // 2초 연속 2000Hz
         for (int i = 0; i < tone.length; i++) {
             tone[i] = 0.8 * Math.sin(2 * Math.PI * 2000.0 * i / sr);
@@ -100,6 +100,7 @@ public final class LatencyCheck {
     }
 
     private static void steadyStateCost(double[] warn, int sr) {
+        final int BLOCK = AudioCapture.blockSamples(sr);
         BeepMatcher wm = new BeepMatcher(warn, sr);
         // 워밍업 2회 (JIT 컴파일 유도, 측정 제외)
         for (int pass = 0; pass < 2; pass++) {

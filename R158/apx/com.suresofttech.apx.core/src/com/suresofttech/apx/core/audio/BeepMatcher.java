@@ -159,8 +159,11 @@ public final class BeepMatcher {
         return sum;
     }
 
-    private double waveSim() {
-        int segLen = Math.min(buflen, (int) (0.5 * sr));
+    private double waveSim(int blockN) {
+        // 최근 0.5초를 매 블록 NCC하면 FFT가 수십 ms가 된다.
+        // 비프는 이번 블록 안에 들어오므로 펄스 길이 + 이번 블록만 보면 된다.
+        int extra = Math.max(blockN, 1);
+        int segLen = Math.min(buflen, l + extra);
         double[] seg = Arrays.copyOfRange(buf, buflen - segLen, buflen);
         return SignalMath.nccMax(seg, tmpl);
     }
@@ -195,7 +198,7 @@ public final class BeepMatcher {
         double ratio = e / Math.max(bg, 1e-6);
         boolean hasSound = ratio >= energyFactor;
 
-        double waveSim = waveSim();
+        double waveSim = waveSim(n);
         double freqSim = freqSim();
         double combined = freqSim + waveSim;
         boolean isPass = (freqSim >= freqThr) && (waveSim >= waveThr);   // AND 조건

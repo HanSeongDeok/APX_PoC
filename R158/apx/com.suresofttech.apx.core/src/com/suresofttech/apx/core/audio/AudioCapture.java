@@ -48,6 +48,15 @@ public final class AudioCapture {
     /** 입력이 이만큼(ms) 한 블록도 안 들어오면 장치가 빠진 것으로 본다. */
     private static final long STALL_TIMEOUT_MS = 2000;
 
+    /** 자체판단 간격 목표(초). 블록 길이 = 이 값 × sampleRate ≈ 10ms. */
+    public static final double BLOCK_SEC = 0.010;
+
+    /** 캡처·매칭에 쓰는 블록 표본 수. */
+    public static int blockSamples(int sampleRate) {
+        int sr = sampleRate < 1 ? 1 : sampleRate;
+        return Math.max(1, (int) Math.round(sr * BLOCK_SEC));
+    }
+
     private TargetDataLine line;
     private Thread thread;
     private volatile boolean running;
@@ -190,10 +199,9 @@ public final class AudioCapture {
         running = true;
         lastError = null;
         lastBlockNanos = System.nanoTime();
-        // 설계값(JAVA_STACK): D_blk = 2048/sr ≈ 46ms @44.1kHz.
-        // 자체판단 passMs = blockGap(=n/sr) + analysis.
-        final int blockSamples = 2048;
-        final byte[] raw = new byte[blockSamples * 2];
+        // 자체판단 간격 = n/sr ≈ 10ms. passMs = blockGap + analysis.
+        final int nBlock = blockSamples(sampleRate);
+        final byte[] raw = new byte[nBlock * 2];
         thread = new Thread(new Runnable() {
             public void run() {
                 while (running) {
@@ -250,6 +258,21 @@ public final class AudioCapture {
 
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * OS/드라이버 입력 큐에 남은 소리를 버린다.
+     * R 전환 T0 직전에 호출해 T0 이전 블록이 측정 블록으로 판정되는 것을 막는다.
+     */
+    public void flushBufferedInput() {
+        TargetDataLine current = line;
+        if (running && current != null) {
+            try {
+                current.flush();
+            } catch (Exception ignored) {
+                // flush 미지원 장치도 다음 read는 계속한다.
+            }
+        }
     }
 
     public void stop() {

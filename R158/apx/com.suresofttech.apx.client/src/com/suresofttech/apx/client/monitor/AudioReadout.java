@@ -79,7 +79,7 @@ public class AudioReadout extends ReadoutBar {
 
     /**
      * PASS 확정 - 검출 시각과 자체 판단 분해.
-     * 검출 시각은 L2 캘리브 보정 없이 물리지연(D_mic)을 포함한 값이다.
+     * 검출 시각은 L2 캘리브 보정 없이 물리지연(D_mic)과 분석 시간을 포함한 값이다.
      */
     public void setPass(Long passAtMs, Double judgeMs, Double gapMs, Double analysisMs) {
         this.passAtMs = passAtMs;
@@ -88,7 +88,7 @@ public class AudioReadout extends ReadoutBar {
             commit();
             return;
         }
-        set(passAtLbl, passAtMs + " ms (물리지연 D_mic 포함)", STATE_PASS);
+        set(passAtLbl, passAtMs + " ms (물리지연 D_mic·분석 포함)", STATE_PASS);
         if (judgeMs != null && gapMs != null && analysisMs != null) {
             set(judgeLbl, f1(judgeMs.doubleValue()) + " ms = 간격 " + f1(gapMs.doubleValue())
                     + " + 분석 " + f1(analysisMs.doubleValue()), STATE_PASS);
