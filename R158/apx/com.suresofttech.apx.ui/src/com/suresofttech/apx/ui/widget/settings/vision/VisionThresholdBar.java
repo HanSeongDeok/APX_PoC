@@ -1,5 +1,7 @@
 package com.suresofttech.apx.ui.widget.settings.vision;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
@@ -35,7 +37,9 @@ public class VisionThresholdBar extends Composite {
     private final Label matchLabel;
     private final ApxSettings.Listener settingsListener;
     private RoiNcc roiNcc;
-    private RoiMatchResult last;
+    private volatile RoiMatchResult last;
+    /** 프레임 객체를 든 UI Runnable이 무한히 쌓이지 않도록 최신 갱신 하나만 예약. */
+    private final AtomicBoolean updatePending = new AtomicBoolean();
 
     public VisionThresholdBar(Composite parent) {
         this(parent, new Cfg(), VisionChannel.CLUSTER);
@@ -93,13 +97,7 @@ public class VisionThresholdBar extends Composite {
                 if (isDisposed()) {
                     return;
                 }
-                getDisplay().asyncExec(new Runnable() {
-                    public void run() {
-                        if (!isDisposed()) {
-                            updateMatchLabel(last);
-                        }
-                    }
-                });
+                requestMatchLabelUpdate();
             }
         };
         settings.addListener(settingsListener);
@@ -117,12 +115,27 @@ public class VisionThresholdBar extends Composite {
             roi.setMatchListener(new RoiNcc.MatchListener() {
                 public void onMatch(RoiMatchResult r) {
                     last = r;
-                    if (!isDisposed()) {
-                        updateMatchLabel(r);
-                    }
+                    requestMatchLabelUpdate();
                 }
             });
         }
+    }
+
+    private void requestMatchLabelUpdate() {
+        if (isDisposed() || !updatePending.compareAndSet(false, true)) {
+            return;
+        }
+        getDisplay().asyncExec(new Runnable() {
+            public void run() {
+                try {
+                    if (!VisionThresholdBar.this.isDisposed()) {
+                        updateMatchLabel(last);
+                    }
+                } finally {
+                    updatePending.set(false);
+                }
+            }
+        });
     }
 
     public void updateMatchLabel(RoiMatchResult r) {

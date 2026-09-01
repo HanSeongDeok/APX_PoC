@@ -2,6 +2,10 @@ package com.suresofttech.apx.ui.widget.settings.vision;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
@@ -18,7 +22,6 @@ import org.eclipse.swt.widgets.Display;
 import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.vision.CameraService;
 import com.suresofttech.apx.core.vision.EvidenceCapture;
-import com.suresofttech.apx.core.vision.RoiMatchDetector;
 import com.suresofttech.apx.core.vision.VisionChannel;
 import com.suresofttech.apx.core.vision.VisionJudge;
 import com.suresofttech.apx.core.vision.VisionJudges;
@@ -69,7 +72,13 @@ public final class RoiNcc {
     private final RoiStyles.Listener styleListener;
 
     private VisionJudge det;
+    private final Object detLock = new Object();
     private volatile RoiMatchResult last;
+    private final ExecutorService judgeExec;
+    /** NCC가 UI보다 빨라도 redraw Runnable은 하나만 대기시킨다. */
+    private final AtomicBoolean redrawPending = new AtomicBoolean();
+    private volatile long lastJudgedNanos;
+    private volatile boolean disposed;
     private boolean dragging;
     private int dragX0, dragY0, dragX1, dragY1;
     private MatchListener matchListener;
@@ -112,6 +121,18 @@ public final class RoiNcc {
         this.channel = channel == null ? VisionChannel.CLUSTER : channel;
         this.display = canvas.getDisplay();
         applyStyle(style != null ? style : RoiStyles.get());
+        this.judgeExec = Executors.newSingleThreadExecutor(new ThreadFactory() {
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "apx-ncc-" + RoiNcc.this.channel.name());
+                t.setDaemon(true);
+                return t;
+            }
+        });
+        this.judgeExec.execute(new Runnable() {
+            public void run() {
+                watchGrabbed();
+            }
+        });
 
         if (style == null) {
             styleListener = new RoiStyles.Listener() {
@@ -185,8 +206,10 @@ public final class RoiNcc {
                             return;
                         }
                         if (fp.equals(visionFingerprint)) {
-                            if (det != null) {
+                            synchronized (detLock) {
+                                if (det != null) {
                                     det.setSimThr(settings.getSimThr(channel));
+                                }
                             }
                             return;
                         }
@@ -203,6 +226,8 @@ public final class RoiNcc {
                     RoiStyles.removeListener(styleListener);
                 }
                 disposeStyleColors();
+                disposed = true;
+                judgeExec.shutdownNow();
             }
         });
 
@@ -244,14 +269,18 @@ public final class RoiNcc {
 
     /** 측정 중단 시 - post 미완이어도 pre/decide 확정. */
     public void flushEvidence() {
-        if (det != null) {
-            det.flushEvidence();
+        synchronized (detLock) {
+            if (det != null) {
+                det.flushEvidence();
+            }
         }
     }
 
     /** ±1프레임 증거 ({@code evidence_pre_-1f} 등). flush 후 호출. */
     public EvidenceCapture.Evidence getEvidence() {
-        return det == null ? null : det.getEvidence();
+        synchronized (detLock) {
+            return det == null ? null : det.getEvidence();
+        }
     }
 
     public void setStyle(Style style) {
@@ -270,6 +299,12 @@ public final class RoiNcc {
     }
 
     public void rebuildDetectorFromSettings() {
+        synchronized (detLock) {
+            rebuildDetectorFromSettingsLocked();
+        }
+    }
+
+    private void rebuildDetectorFromSettingsLocked() {
         if (fixedConfig != null) {
             rebuildFromFixed(fixedConfig);
             return;
@@ -420,35 +455,91 @@ public final class RoiNcc {
     private void onNewFrame(BufferedImage bi) {
         boolean useRef = fixedConfig != null ? fixedConfig.useReferenceImage
                 : settings.isUseReferenceImage(channel);
-        double simThr = fixedConfig != null ? fixedConfig.simThr : settings.getSimThr(channel);
-        if (!useRef && det == null && bi != null) {
-            if (fixedConfig != null) {
-                ensureLiveReferenceDetectorFixed(fixedConfig);
-            } else {
-                ensureLiveReferenceDetector();
+        synchronized (detLock) {
+            if (!useRef && det == null && bi != null) {
+                if (fixedConfig != null) {
+                    ensureLiveReferenceDetectorFixed(fixedConfig);
+                } else {
+                    ensureLiveReferenceDetector();
+                }
+                return;
             }
+            if (!useRef && det != null && bi != null
+                    && (bi.getWidth() != det.canonWidth() || bi.getHeight() != det.canonHeight())) {
+                if (fixedConfig != null) {
+                    ensureLiveReferenceDetectorFixed(fixedConfig);
+                } else {
+                    ensureLiveReferenceDetector();
+                }
+                return;
+            }
+            if (det == null || bi == null) {
+                if (last != null) {
+                    last = null;
+                    fireMatch(null);
+                    requestRedraw();
+                }
+                return;
+            }
+        }
+        // 판정은 watchGrabbed 가 grab 스레드 결과를 직접 본다. UI setFrame 을 기다리지 않는다.
+    }
+
+    /** UI 폴링과 무관하게 채널 grab 시각으로 NCC. 클러스터·기어봉이 서로 기다리지 않는다. */
+    private void watchGrabbed() {
+        while (!disposed && !Thread.currentThread().isInterrupted()) {
+            try {
+                CameraService.Grabbed g = CameraService.of(channel).latestGrabbed();
+                if (g != null && g.image != null && g.nanos != lastJudgedNanos) {
+                    lastJudgedNanos = g.nanos;
+                    double simThr = fixedConfig != null
+                            ? fixedConfig.simThr : settings.getSimThr(channel);
+                    synchronized (detLock) {
+                        if (det != null) {
+                            judgeOneLocked(g.image, g.nanos, simThr);
+                        }
+                    }
+                }
+                Thread.sleep(4);
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
+    }
+
+    /** 호출 전에 {@link #detLock} 보유. */
+    private void judgeOneLocked(BufferedImage bi, long grabNanos, double simThr) {
+        if (det == null || bi == null) {
             return;
         }
-        if (!useRef && det != null && bi != null
-                && (bi.getWidth() != det.canonWidth() || bi.getHeight() != det.canonHeight())) {
-            if (fixedConfig != null) {
-                ensureLiveReferenceDetectorFixed(fixedConfig);
-            } else {
-                ensureLiveReferenceDetector();
-            }
+        det.setSimThr(simThr);
+        RoiMatchResult r = det.process(bi);
+        if (r != null) {
+            r.grabNanos = grabNanos;
+        }
+        last = r;
+        fireMatch(r);
+        requestRedraw();
+    }
+
+    private void requestRedraw() {
+        if (canvas.isDisposed()) {
             return;
         }
-        if (det != null && bi != null) {
-            det.setSimThr(simThr);
-            RoiMatchResult r = det.process(bi);
-            last = r;
-            fireMatch(r);
-            canvas.redraw();
-        } else if (last != null) {
-            last = null;
-            fireMatch(null);
-            canvas.redraw();
+        if (!redrawPending.compareAndSet(false, true)) {
+            return;
         }
+        display.asyncExec(new Runnable() {
+            public void run() {
+                try {
+                    if (!canvas.isDisposed()) {
+                        canvas.redraw();
+                    }
+                } finally {
+                    redrawPending.set(false);
+                }
+            }
+        });
     }
 
     private void commitRoiFromDrag() {
@@ -480,13 +571,15 @@ public final class RoiNcc {
         int[] roi = new int[] { y1, y2, x1, x2 };
         settings.setRoi(channel, roi, disp.getWidth(), disp.getHeight());
 
-        if (!settings.isUseReferenceImage(channel)) {
-            ensureLiveReferenceDetector();
-            if (det != null) {
-                det.setRoi(roi);
+        synchronized (detLock) {
+            if (!settings.isUseReferenceImage(channel)) {
+                ensureLiveReferenceDetector();
+                if (det != null) {
+                    det.setRoi(roi);
+                }
+            } else if (det != null) {
+                det.setRoi(settings.getRoi(channel, det.canonWidth(), det.canonHeight()));
             }
-        } else if (det != null) {
-            det.setRoi(settings.getRoi(channel, det.canonWidth(), det.canonHeight()));
         }
         canvas.redraw();
         fireMatch(last);
