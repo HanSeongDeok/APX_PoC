@@ -81,6 +81,11 @@ public class AudioScope extends Canvas {
     private final double[] eLo = new double[ENV_CAP];
     private int eHead, eCount;
     private double eLast = -1;
+    private int lastPlotW;
+    /** showWindow 캐시가 어느 WAV 샘플로 만들어졌는지 식별한다. */
+    private double[] lastWindowSamples;
+    private int lastWindowSampleRate;
+    private double lastWindowSampleOffsetMs;
 
     // 음정 추적(시간축 ms) - 라이브 지배 주파수(Hz)
     private final double[] pT = new double[CAP_M];
@@ -306,7 +311,12 @@ public class AudioScope extends Canvas {
             eCount = 0;
             eLast = -1;
         }
-        double newMs = (eLast < 0) ? ENV_COL_MS : Math.min(elapsedMs - eLast, 500.0);
+        // 첫 UI 렌더가 늦어져도 matcher 링에 실제로 남아 있는 초기 파형은 모두 채운다.
+        // 예전에는 첫 호출에서 마지막 4ms만 넣어 결과 WAV와 비교할 때 앞부분이 비어 보였다.
+        double bufferedMs = w.length * 1000.0 / sr;
+        double newMs = (eLast < 0)
+                ? Math.min(elapsedMs, bufferedMs)
+                : Math.min(elapsedMs - eLast, bufferedMs);
         int ncols = Math.max(1, (int) Math.round(newMs / ENV_COL_MS));
         int colLen = Math.max(1, (int) (ENV_COL_MS / 1000.0 * sr));
         int take = Math.min(w.length, ncols * colLen);
@@ -396,6 +406,15 @@ public class AudioScope extends Canvas {
      * @param cursorMs 커서 위치(창 밖이면 안 그림). 음수면 커서 없음
      */
     public void showWindow(double[] samples, int sr, double startMs, double endMs, double cursorMs) {
+        showWindow(samples, sr, startMs, endMs, cursorMs, 0);
+    }
+
+    /**
+     * 저장 WAV를 측정 공통시계에 맞춰 표시한다.
+     * @param sampleOffsetMs WAV 첫 샘플의 측정 시작 기준 위치(ms)
+     */
+    public void showWindow(double[] samples, int sr, double startMs, double endMs,
+            double cursorMs, double sampleOffsetMs) {
         if (samples == null || sr <= 0 || endMs <= startMs) {
             return;
         }
@@ -411,11 +430,15 @@ public class AudioScope extends Canvas {
         }
         double span = hi0 - lo0;
 
-        // 창이 그대로면 커서만 옮긴다 - 포락선 재계산과 리빌드를 아예 건너뛴다.
-        // 스크럽 드래그에서 표시 구간이 바뀌지 않는 동안(예: 0~10s 구간 안에서 이동)
-        // 매 이벤트마다 수십만 샘플을 다시 스캔하고 차트를 다시 그리던 낭비를 없앤다.
-        // 커서는 paintOverlays 가 그리므로 redraw 만으로 충분하다.
+        boolean sourceChanged = lastWindowSamples != samples || lastWindowSampleRate != sr
+                || Math.abs(lastWindowSampleOffsetMs - sampleOffsetMs) > 1e-6;
+
+        // 같은 WAV에서 창과 그릴 폭도 그대로일 때만 커서만 옮긴다.
+        // TC가 바뀌어도 길이/축/폭이 같을 수 있으므로 샘플 식별을 빼면 이전 측정 파형이 남는다.
+        int plotW = Math.max(2, Math.max(120, getClientArea().width) - PLOT_L - PLOT_R_PLAIN);
         if (eCount > 0
+                && !sourceChanged
+                && lastPlotW == plotW
                 && Math.abs(winMin - lo0) < 1e-6
                 && Math.abs(winMax - hi0) < 1e-6) {
             this.cursorMs = cursorMs;
@@ -433,15 +456,17 @@ public class AudioScope extends Canvas {
         mHead = 0;
         mCount = 0;
 
-        // 열 개수는 플롯 <b>픽셀 폭</b>에 맞춘다. 예전엔 ENV_CAP(약 3100) 기준이라
-        // 화면 폭의 4~5배를 계산 / 전달했다 - 눈에 보이지 않는 낭비였고 스크럽이 느렸다.
-        int plotW = Math.max(1, Math.max(120, getClientArea().width) - PLOT_L - PLOT_R_PLAIN);
+        // 열 개수는 플롯 픽셀 폭에 맞춘다.
         int cols = Math.max(2, Math.min(ENV_CAP - 8, plotW));
+        lastWindowSamples = samples;
+        lastWindowSampleRate = sr;
+        lastWindowSampleOffsetMs = sampleOffsetMs;
+        lastPlotW = plotW;
         double colMs = span / cols;
         for (int c = 0; c < cols && eCount < ENV_CAP; c++) {
             double t0 = lo0 + c * colMs;
-            int s0 = (int) Math.round(t0 / 1000.0 * sr);
-            int s1 = (int) Math.round((t0 + colMs) / 1000.0 * sr);
+            int s0 = (int) Math.round((t0 - sampleOffsetMs) / 1000.0 * sr);
+            int s1 = (int) Math.round((t0 + colMs - sampleOffsetMs) / 1000.0 * sr);
             s0 = Math.max(0, Math.min(samples.length, s0));
             s1 = Math.max(s0, Math.min(samples.length, s1));
             double hi = 0;
@@ -467,7 +492,12 @@ public class AudioScope extends Canvas {
         this.cursorMs = cursorMs;
         // 라이브 setData 와 동일 - tickMs 그리드(floor/ceil). exact면 짧은 wav에서 0~4.5s처럼 줄어듦
         this.exactXAxis = false;
-        rebuildAndRedraw();
+        if (sourceChanged) {
+            // 새 측정 결과는 스로틀 대기 없이 즉시 보여준다.
+            rebuildNow();
+        } else {
+            rebuildAndRedraw();
+        }
     }
 
     /** 스크럽 커서만 이동(파형 창은 그대로). 음수면 커서 제거. */
@@ -493,6 +523,9 @@ public class AudioScope extends Canvas {
         mHead = 0;
         mCount = 0;
         mLast = -1;
+        lastWindowSamples = null;
+        lastWindowSampleRate = 0;
+        lastWindowSampleOffsetMs = 0;
         winMin = 0;
         winMax = MATCH_WIN_MS;
         exactXAxis = false;

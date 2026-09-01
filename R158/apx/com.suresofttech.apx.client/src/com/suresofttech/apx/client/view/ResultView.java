@@ -2,13 +2,13 @@ package com.suresofttech.apx.client.view;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.ScrolledComposite;
+import org.eclipse.swt.events.ControlAdapter;
+import org.eclipse.swt.events.ControlEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Image;
@@ -23,6 +23,7 @@ import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbenchPage;
@@ -48,7 +49,6 @@ public class ResultView extends ViewPart {
     private ScrolledComposite scroll;
     private Composite body;
     private Label emptyLbl;
-    private Label headerLbl;
     private Label audioTimeLbl;
     private Label visionTimeLbl;
     private Label gearTimeLbl;
@@ -63,6 +63,10 @@ public class ResultView extends ViewPart {
     private Image audioImg;
     private Image visionImg;
     private Image rearImg;
+    private byte[] lastAudioPng;
+    private byte[] lastVisionPng;
+    private byte[] lastRearPng;
+    private boolean imagesInitialized;
 
     // 전 구간 다시 보기(스크럽)
     private Label scrubSectionLbl;
@@ -70,6 +74,7 @@ public class ResultView extends ViewPart {
     private Button openDirBtn;
     private EvidenceScrubber scrubber;
     private File openedEvidenceDir;
+    private int evidenceOpenToken;
 
     // 후방 스냅샷 조회 API 테스트
     private org.eclipse.swt.widgets.List tcIdList;
@@ -95,7 +100,6 @@ public class ResultView extends ViewPart {
         scroll.setContent(body);
 
         emptyLbl = label(body, "아직 측정 결과가 없습니다. Kickoff에서 측정 시작 → 중단 하면 여기에 표시됩니다.");
-        headerLbl = label(body, "");
         audioTimeLbl = label(body, "");
         visionTimeLbl = label(body, "");
         gearTimeLbl = label(body, "");
@@ -125,6 +129,21 @@ public class ResultView extends ViewPart {
         };
         LastMeasureResult.get().addListener(resultListener);
         refresh(LastMeasureResult.get());
+
+        // 폴더 탭으로 숨겨진 채 만들어지면 minSize가 0이라 내용이 안 보인다.
+        parent.addControlListener(new ControlAdapter() {
+            public void controlResized(ControlEvent e) {
+                layoutScroll();
+            }
+        });
+        parent.addListener(SWT.Show, new Listener() {
+            public void handleEvent(org.eclipse.swt.widgets.Event event) {
+                layoutScroll();
+                if (scrubber != null && !scrubber.isDisposed()) {
+                    scrubber.refreshView();
+                }
+            }
+        });
     }
 
     /**
@@ -184,6 +203,7 @@ public class ResultView extends ViewPart {
         if (scrubber == null || scrubber.isDisposed()) {
             return false;
         }
+        evidenceOpenToken++;
         boolean ok = scrubber.openTc(store, tcId);
         File dir = (ok && store != null) ? store.tcDir(tcId) : null;
         openedEvidenceDir = ok ? dir : null;
@@ -196,14 +216,12 @@ public class ResultView extends ViewPart {
         return ok;
     }
 
-    /** 증거 폴더(TC 폴더)를 스크럽에 물린다(같은 폴더면 다시 열지 않음). */
+    /** 증거 폴더(TC 폴더)를 스크럽에 물린다. 같은 경로라도 디스크가 갱신됐을 수 있어 다시 연다. */
     private void openEvidence(File dir) {
         if (dir == null || scrubber == null || scrubber.isDisposed()) {
             return;
         }
-        if (dir.equals(openedEvidenceDir)) {
-            return;
-        }
+        evidenceOpenToken++;
         boolean ok = scrubber.open(dir);
         openedEvidenceDir = ok ? dir : null;
         scrubPathLbl.setText(ok ? dir.getAbsolutePath()
@@ -438,9 +456,9 @@ public class ResultView extends ViewPart {
         }
         // 스크럽 / 조회 섹션은 결과 유무와 무관하게 늘 열려 있다 - 지난 TC 폴더를 직접 열 수 있어야 하므로
         if (r != null && r.getEvidenceDir() != null) {
-            openEvidence(r.getEvidenceDir());
+            scheduleEvidenceOpen(r.getEvidenceDir());
             if (r.getMeasureTcId() != null && scrubPathLbl != null && !scrubPathLbl.isDisposed()
-                    && openedEvidenceDir != null) {
+                    && r.getEvidenceDir().equals(openedEvidenceDir)) {
                 scrubPathLbl.setText("[" + r.getMeasureTcId() + "] "
                         + openedEvidenceDir.getAbsolutePath());
             }
@@ -449,35 +467,69 @@ public class ResultView extends ViewPart {
         if (r == null || !r.hasResult()) {
             emptyLbl.setText("아직 측정 결과가 없습니다.");
             setVisible(true, emptyLbl);
-            setVisible(false, headerLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
+            setVisible(false, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
                     audioSnapLbl, visionSnapLbl, rearSnapLbl,
                     audioImgLbl, visionImgLbl, rearImgLbl);
             layoutScroll();
             return;
         }
         setVisible(false, emptyLbl);
-        setVisible(true, headerLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
+        setVisible(true, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
                 audioSnapLbl, visionSnapLbl, rearSnapLbl,
                 audioImgLbl, visionImgLbl, rearImgLbl);
 
-        String when = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(r.getStoppedAtEpochMs()));
-        headerLbl.setText(String.format("최종: %s - %s  (%s)",
-                r.isOverallPass() ? "PASS" : "FAIL", r.getSummary(), when));
         audioTimeLbl.setText(MeasureSession.formatPassLine("음향", r.getAudioPassMs(), r.getAudioJudgeMs(),
                 r.getAudioGapMs(), r.getAudioAnalysisMs()));
         visionTimeLbl.setText(MeasureSession.formatPassLine("클러스터", r.getClusterPassMs(),
             r.getClusterJudgeMs(), r.getClusterGapMs(), r.getClusterAnalysisMs()));
         gearTimeLbl.setText(MeasureSession.formatPassLine("기어봉", r.getGearPassMs(),
             r.getGearJudgeMs(), r.getGearGapMs(), r.getGearAnalysisMs()));
-        syncLbl.setText(MeasureSyncResult.evaluate(
-                r.getAudioPassMs() != null, r.getClusterPassMs() != null, r.getGearPassMs() != null,
-                r.getAudioPassMs(), r.getClusterPassMs(), r.getGearPassMs(),
-                null, false).formatLabel(false));
+        String savedSyncLabel = r.getSyncLabel();
+        syncLbl.setText(savedSyncLabel == null || savedSyncLabel.isEmpty()
+                ? MeasureSyncResult.evaluate(
+                        r.getAudioPassMs() != null, r.getClusterPassMs() != null,
+                        r.getGearPassMs() != null,
+                        r.getAudioPassMs(), r.getClusterPassMs(), r.getGearPassMs(),
+                        null, false).formatLabel(false)
+                : savedSyncLabel);
 
-        audioImg = setPng(audioImgLbl, audioImg, r.getAudioPassPng());
-        visionImg = setPng(visionImgLbl, visionImg, r.getVisionPassPng());
-        rearImg = setPng(rearImgLbl, rearImg, r.getRearPassPng());
+        byte[] audioPng = r.getAudioPassPng();
+        byte[] visionPng = r.getVisionPassPng();
+        byte[] rearPng = r.getRearPassPng();
+        if (!imagesInitialized || !Arrays.equals(lastAudioPng, audioPng)) {
+            audioImg = setPng(audioImgLbl, audioImg, audioPng);
+            lastAudioPng = audioPng;
+        }
+        if (!imagesInitialized || !Arrays.equals(lastVisionPng, visionPng)) {
+            visionImg = setPng(visionImgLbl, visionImg, visionPng);
+            lastVisionPng = visionPng;
+        }
+        if (!imagesInitialized || !Arrays.equals(lastRearPng, rearPng)) {
+            rearImg = setPng(rearImgLbl, rearImg, rearPng);
+            lastRearPng = rearPng;
+        }
+        imagesInitialized = true;
         layoutScroll();
+    }
+
+    /**
+     * 결과 텍스트와 스냅샷을 먼저 그린 뒤 디스크 증거를 연다.
+     * 긴 WAV/AVI를 같은 UI 이벤트에서 열면 결과 View 전체가 늦게 나타난다.
+     */
+    private void scheduleEvidenceOpen(final File dir) {
+        if (dir == null || dir.equals(openedEvidenceDir)) {
+            return;
+        }
+        final int token = ++evidenceOpenToken;
+        scrubPathLbl.setText("증거 불러오는 중: " + dir.getAbsolutePath());
+        display.timerExec(50, new Runnable() {
+            public void run() {
+                if (token != evidenceOpenToken || body == null || body.isDisposed()) {
+                    return;
+                }
+                openEvidence(dir);
+            }
+        });
     }
 
     private void layoutScroll() {

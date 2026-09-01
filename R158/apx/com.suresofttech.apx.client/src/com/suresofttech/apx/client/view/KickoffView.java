@@ -1,12 +1,16 @@
 package com.suresofttech.apx.client.view;
 
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jface.dialogs.ProgressMonitorDialog;
+import org.eclipse.jface.operation.IRunnableWithProgress;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
@@ -16,6 +20,8 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbenchPage;
@@ -24,6 +30,7 @@ import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.part.ViewPart;
 
 import com.suresofttech.apx.core.audio.MatchResult;
+import com.suresofttech.apx.core.config.ApxSettings;
 import com.suresofttech.apx.core.measure.EvidenceBundle;
 import com.suresofttech.apx.core.measure.EvidenceStore;
 import com.suresofttech.apx.core.measure.MeasureConfigSnapshot;
@@ -39,8 +46,7 @@ import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
  * 측정 Kickoff - Start/Stop/설정.
- * 측정 중: 음향 / 비전 PASS 시각(물리지연 포함) + 자체 판단(gap+분석) 표시.
- * 중단 시: 기어봉 R 기준 클러스터·음향 0~30ms 동기 포함 최종 PASS/FAIL. L2 캘리브 보정 없음.
+ * 측정 중·중단: 음향 / 클러스터 / 기어봉 PASS 시각 + 자체 판단(gap+분석)만 표시.
  * 증거: {@link #setEvidenceDir} = 증거 <b>루트</b>, {@link #setTcId} = 측정 TC.
  * 실제 저장은 {@code <루트>/<tcId>/audio|vision|rear/} ({@link EvidenceStore}).
  * <ul>
@@ -60,12 +66,10 @@ public class KickoffView extends ViewPart {
     private Button stopBtn;
     private Button settingsBtn;
     private Button evidenceDirBtn;
+    private Spinner syncToleranceSpinner;
     private Text audioLbl;
     private Text visionLbl;
     private Text visionGearLbl;
-    private Text syncLbl;
-    private Text overallLbl;
-    private Text evidenceLbl;
 
     /** 이번 측정에서 저장된 후방 셀 스냅샷 id - 결과 탭 조회 테스트로 넘긴다. */
     private final List<String> lastRearTcIds = new ArrayList<String>();
@@ -125,19 +129,26 @@ public class KickoffView extends ViewPart {
             }
         });
 
-        // 한 줄씩: 음향 → 비전 → 동기 → 최종 → 증거 (4열 그리드에서 가로로 붙지 않게 span=4)
+        Composite syncRow = new Composite(parent, SWT.NONE);
+        syncRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 4, 1));
+        syncRow.setLayout(new GridLayout(3, false));
+        new Label(syncRow, SWT.NONE).setText("동기 PASS 임계값");
+        syncToleranceSpinner = new Spinner(syncRow, SWT.BORDER);
+        syncToleranceSpinner.setMinimum(1);
+        syncToleranceSpinner.setMaximum(1000);
+        syncToleranceSpinner.setSelection(
+                (int) Math.round(ApxSettings.get().getSyncToleranceMs()));
+        syncToleranceSpinner.setToolTipText("기어봉 R PASS 기준 클러스터·음향 절대 편차(±ms)");
+        syncToleranceSpinner.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                ApxSettings.get().setSyncToleranceMs(syncToleranceSpinner.getSelection());
+            }
+        });
+        new Label(syncRow, SWT.NONE).setText("ms (1~1000)");
+
         audioLbl = statusText(parent, "음향: -");
         visionLbl = statusText(parent, "클러스터: -");
         visionGearLbl = statusText(parent, "기어봉: -");
-        syncLbl = statusText(parent, "동기: - (기어봉 R 기준 ≤30ms)");
-        overallLbl = statusText(parent, "최종: - (중단 시 판정)");
-
-        evidenceLbl = readOnlyText(parent,
-            "증거: (중단 시 저장) / 루트: ~/apx-evidence/<tcId>/");
-        GridData eg = new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1);
-        eg.widthHint = 280;
-        evidenceLbl.setLayoutData(eg);
-
 
         sessionListener = new MeasureSession.Listener() {
             public void onAudioTick(MatchResult match, double[] waveBuf, double elapsedSec) {
@@ -206,18 +217,15 @@ public class KickoffView extends ViewPart {
         if (rear != null) {
             rear.applyFromSettings();
         }
-        evidenceLbl.setText("설정 적용됨 (다음 측정 시작 시 스냅샷)");
     }
 
     private void doStart() {
         visionSnapTaken = false;
         rearSnapTaken = false;
-        evidenceLbl.setText("증거: (측정 중)");
-        audioLbl.setText("음향: 측정 중");
-        visionLbl.setText("클러스터: 측정 중");
-        visionGearLbl.setText("기어봉: 측정 중");
-        syncLbl.setText("동기: - (기어봉 R 기준 ≤30ms)");
-        overallLbl.setText("최종: - (중단 시 판정)");
+        ApxSettings.get().setSyncToleranceMs(syncToleranceSpinner.getSelection());
+        audioLbl.setText("음향: 준비 중");
+        visionLbl.setText("클러스터: 준비 중");
+        visionGearLbl.setText("기어봉: 준비 중");
         try {
             showMonitorViews();
             AudioMonitorView audio = ensureAudio();
@@ -226,9 +234,23 @@ public class KickoffView extends ViewPart {
             RearMonitorView rear = ensureRear();
 
             TestPlayerDialog.prepareClusterPopup(getSite().getShell());
-            MeasureSession session = MeasureSession.get();
-            session.start();
+            final MeasureSession session = MeasureSession.get();
             SettingsDialog.setEditingEnabled(false);
+            ProgressMonitorDialog preparing = new ProgressMonitorDialog(getSite().getShell());
+            preparing.run(true, false, new IRunnableWithProgress() {
+                public void run(IProgressMonitor monitor)
+                        throws InvocationTargetException, InterruptedException {
+                    monitor.beginTask("음향·카메라·녹화 장치를 준비하고 있습니다",
+                            IProgressMonitor.UNKNOWN);
+                    try {
+                        session.start();
+                    } catch (Exception ex) {
+                        throw new InvocationTargetException(ex);
+                    } finally {
+                        monitor.done();
+                    }
+                }
+            });
             // 지정 포인트를 측정중으로 - 어느 포인트가 이번 측정 대상인지는 클라 규칙이다
             applyRearVerdicts(session, buildRearVerdicts(session, Verdict.MEASURING));
 
@@ -244,13 +266,20 @@ public class KickoffView extends ViewPart {
             if (rear != null) {
                 rear.onMeasureStarted(session);
             }
+            audioLbl.setText("음향: 측정 중");
+            visionLbl.setText("클러스터: 측정 중");
+            visionGearLbl.setText("기어봉: 측정 중");
             refreshButtons();
         } catch (Exception ex) {
             if (MeasureSession.get().isRunning()) {
                 MeasureSession.get().stop();
             }
             SettingsDialog.setEditingEnabled(true);
-            evidenceLbl.setText("시작 실패: " + ex.getMessage());
+            Throwable cause = ex instanceof InvocationTargetException
+                    && ((InvocationTargetException) ex).getCause() != null
+                    ? ((InvocationTargetException) ex).getCause() : ex;
+            MessageDialog.openError(getSite().getShell(), "시작 실패",
+                    cause.getMessage() == null ? "측정을 시작하지 못했습니다." : cause.getMessage());
             refreshButtons();
         }
     }
@@ -310,20 +339,12 @@ public class KickoffView extends ViewPart {
         }
 
         refreshPassLabels(sync.audioPass, sync.visionPass, sync.audioPassMs, sync.visionPassMs);
-        syncLbl.setText(sync.formatLabel(false));
-        overallLbl.setText("최종: " + (sync.overallPass ? "PASS" : "FAIL") + " - " + sync.summary);
-
         publishLastResult(sync, session.getEvidence());
 
         String path = saveEvidence(session.getEvidence(), rear, sync);
         if (path != null) {
-            String tc = lastMeasureTcId == null ? "" : lastMeasureTcId;
-            evidenceLbl.setText("증거 저장 [" + tc + "]: " + path);
-            // 결과 탭이 이 TC 폴더로 전 구간 스크럽을 물린다
             LastMeasureResult.get().publishEvidence(
                     new File(path), lastMeasureTcId, lastRearTcIds);
-        } else {
-            evidenceLbl.setText("증거: 저장 실패 또는 없음");
         }
         relayoutStatus();
         refreshButtons();
@@ -382,10 +403,6 @@ public class KickoffView extends ViewPart {
             return;
         }
         evidenceDir = new File(picked);
-        if (evidenceLbl != null && !evidenceLbl.isDisposed()) {
-            evidenceLbl.setText("증거 루트: " + evidenceDir.getAbsolutePath()
-                    + " (저장 시 <tcId>/ 하위)");
-        }
         // 실제 rear/ 는 stop 시 TC 폴더 아래로 지정된다(resolveEvidenceDir)
     }
 
@@ -405,18 +422,6 @@ public class KickoffView extends ViewPart {
         refreshPassLabels(audioPass, visionPass, s.getAudioPassMs(), s.getVisionPassMs());
         // 음향 스냅샷은 AudioMonitorView가 PASS→비PASS 엣지에서. 후방은 중단+overallPass만.
         captureFirstPassSnapshots(s, false, visionPass, false);
-
-        MeasureSyncResult preview = MeasureSyncResult.evaluate(
-                s.isAudioPass(), s.isClusterPass(), s.isGearPass(),
-                s.getAudioPassMs(), s.getClusterPassMs(), s.getGearPassMs(),
-                null, false);
-        if (audioPass && visionPass) {
-            syncLbl.setText(preview.formatLabel(true));
-            overallLbl.setText("최종: - (중단 시 판정)");
-        } else {
-            syncLbl.setText("동기: - (기어봉 R 기준 ≤30ms)");
-            overallLbl.setText("최종: - (중단 시 판정)");
-        }
         relayoutStatus();
     }
 
@@ -472,7 +477,8 @@ public class KickoffView extends ViewPart {
         } else if (s.isRunning()) {
             audioLbl.setText("음향: 측정 중");
         } else {
-            audioLbl.setText(audioPass ? "음향: PASS" : "음향: FAIL");
+            audioLbl.setText(MeasureSession.formatPassLine("음향", audioMs, s.getAudioJudgeMs(),
+                    s.getAudioGapMs(), s.getAudioAnalysisMs()));
         }
         setVisionLine(visionLbl, "클러스터", s.isClusterPass(), s.getClusterPassMs(),
             s.getClusterJudgeMs(), s.getClusterGapMs(), s.getClusterAnalysisMs(), s.isRunning());
@@ -490,7 +496,7 @@ public class KickoffView extends ViewPart {
         } else if (running) {
             lbl.setText(name + ": 측정 중");
         } else {
-            lbl.setText(pass ? name + ": PASS" : name + ": FAIL");
+            lbl.setText(MeasureSession.formatPassLine(name, ms, judgeMs, gapMs, analysisMs));
         }
     }
 
@@ -539,7 +545,7 @@ public class KickoffView extends ViewPart {
                 s.getAudioJudgeMs(), s.getVisionJudgeMs(),
                 s.getAudioGapMs(), s.getVisionGapMs(),
                 s.getAudioAnalysisMs(), s.getVisionAnalysisMs(),
-                sync.syncSpreadMs, sync.syncOk,
+                sync.syncSpreadMs, sync.syncOk, sync.formatLabel(false),
                 audioPng, visionPng, rearPng);
         LastMeasureResult.get().setVisionChannelTimes(
             s.getClusterPassMs(), s.getGearPassMs(),
@@ -602,6 +608,15 @@ public class KickoffView extends ViewPart {
         MeasureConfigSnapshot snap = MeasureSession.get().getSnapshot();
         double[] roiNorm = snap == null ? null : snap.roiNorm;
         double simThr = snap == null ? 0 : snap.simThr;
+        double audioOffsetMs = MeasureSession.get().getAudioTimelineOffsetMs();
+        Double passStartMs = ev.getAudioPassStartMs();
+        Double passEndMs = ev.getAudioPassEndMs();
+        if (passStartMs != null) {
+            passStartMs = Double.valueOf(passStartMs.doubleValue() + audioOffsetMs);
+        }
+        if (passEndMs != null) {
+            passEndMs = Double.valueOf(passEndMs.doubleValue() + audioOffsetMs);
+        }
         EvidenceBundle.writeMeta(dir,
                 sync != null && sync.overallPass,
                 sync == null ? "" : sync.summary,
@@ -609,8 +624,9 @@ public class KickoffView extends ViewPart {
                 sync == null ? null : sync.syncSpreadMs,
                 sync != null && sync.syncOk,
                 durationMs,
-                ev.getAudioPassStartMs(), ev.getAudioPassEndMs(),
-                audioSpans, roiNorm, simThr);
+                passStartMs, passEndMs,
+                audioSpans, roiNorm, simThr,
+                audioOffsetMs);
     }
 
     /** 마지막으로 증거를 저장한 폴더 - 결과 탭이 바로 열 수 있게. */
@@ -647,7 +663,11 @@ public class KickoffView extends ViewPart {
                 }
             }
         }
-        ev.setAudioPassSpan(chosen[0], chosen[1]);
+        // scope 밴드는 공통시계, WAV clip 인덱스는 샘플 0초 기준이다.
+        double offsetMs = MeasureSession.get().getAudioTimelineOffsetMs();
+        ev.setAudioPassSpan(
+                Math.max(0, chosen[0] - offsetMs),
+                Math.max(0, chosen[1] - offsetMs));
     }
 
     /** 비전 증거 PNG - OpenCV는 {@link MeasureSession#saveVisionFrameEvidenceTo} (core). */
@@ -798,6 +818,9 @@ public class KickoffView extends ViewPart {
         }
         if (settingsBtn != null && !settingsBtn.isDisposed()) {
             settingsBtn.setEnabled(!running);
+        }
+        if (syncToleranceSpinner != null && !syncToleranceSpinner.isDisposed()) {
+            syncToleranceSpinner.setEnabled(!running);
         }
     }
 

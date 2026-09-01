@@ -42,6 +42,7 @@ public final class LastMeasureResult {
     private volatile Double gearAnalysisMs;
     private volatile Double syncSpreadMs;
     private volatile boolean syncOk;
+    private volatile String syncLabel = "";
     private volatile byte[] audioPassPng;
     private volatile byte[] visionPassPng;
     private volatile byte[] rearPassPng;
@@ -153,6 +154,10 @@ public final class LastMeasureResult {
         return syncOk;
     }
 
+    public String getSyncLabel() {
+        return syncLabel;
+    }
+
     public byte[] getAudioPassPng() {
         return audioPassPng == null ? null : audioPassPng.clone();
     }
@@ -174,7 +179,7 @@ public final class LastMeasureResult {
             Double audioJudgeMs, Double visionJudgeMs,
             Double audioGapMs, Double visionGapMs,
             Double audioAnalysisMs, Double visionAnalysisMs,
-            Double syncSpreadMs, boolean syncOk,
+            Double syncSpreadMs, boolean syncOk, String syncLabel,
             byte[] audioPassPng, byte[] visionPassPng, byte[] rearPassPng) {
         this.hasResult = true;
         this.stoppedAtEpochMs = System.currentTimeMillis();
@@ -190,6 +195,7 @@ public final class LastMeasureResult {
         this.visionAnalysisMs = visionAnalysisMs;
         this.syncSpreadMs = syncSpreadMs;
         this.syncOk = syncOk;
+        this.syncLabel = syncLabel == null ? "" : syncLabel;
         this.audioPassPng = audioPassPng == null ? null : audioPassPng.clone();
         this.visionPassPng = visionPassPng == null ? null : visionPassPng.clone();
         this.rearPassPng = rearPassPng == null ? null : rearPassPng.clone();

@@ -137,7 +137,8 @@ public class EvidenceScrubber extends Composite {
             return false;
         }
         boolean hasVideo = vision.open(bundle.getVisionDir());
-        boolean hasAudio = audio.open(bundle.getFullWav());
+        boolean hasAudio = audio.open(
+                bundle.getFullWav(), bundle.getAudioTimelineOffsetMs());
         // ROI 좌표 / 임계 - 스크럽 시 PASS/FAIL 색 박스
         vision.setRoiConfig(bundle.getRoiNorm(), bundle.getSimThr());
         // 라이브 모니터와 동일: 저장된 PASS 초록 밴드 복원
@@ -150,13 +151,24 @@ public class EvidenceScrubber extends Composite {
         timeline.setDuration(duration);
         timeline.setMarkers(bundle.getAudioPassMs(), bundle.getVisionPassMs(),
                 audioSpans, visionSpans);
-        headerLbl.setText(buildHeader(hasVideo, hasAudio));
+        String head = buildHeader(hasVideo, hasAudio);
+        headerLbl.setText(head);
+        headerLbl.setVisible(!head.isEmpty());
+        ((GridData) headerLbl.getLayoutData()).exclude = head.isEmpty();
 
         if (duration > 0) {
             // 처음엔 PASS 시각으로 보내면 바로 판정 순간을 본다
             timeline.setCurrentMs(initialCursorMs(), false);
         }
         return hasVideo || hasAudio;
+    }
+
+    /** 탭이 다시 보일 때 - 숨은 채로 연 파형/프레임을 현재 크기로 다시 그린다. */
+    public void refreshView() {
+        if (isDisposed() || bundle == null) {
+            return;
+        }
+        applySeek(timeline.getCurrentMs());
     }
 
     /** 현재 열려 있는 증거. 없으면 null. */
@@ -187,21 +199,15 @@ public class EvidenceScrubber extends Composite {
     }
 
     private String buildHeader(boolean hasVideo, boolean hasAudio) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(bundle.isOverallPass() ? "PASS" : "FAIL");
-        String summary = bundle.getSummary();
-        if (summary != null && !summary.isEmpty()) {
-            sb.append(" - ").append(summary);
+        if (hasVideo && hasAudio) {
+            return "";
         }
-        sb.append(" / ").append(bundle.getRoot().getName());
-        if (!hasVideo || !hasAudio) {
-            sb.append(" / 없는 자료: ");
-            if (!hasVideo) {
-                sb.append("비전 녹화본 ");
-            }
-            if (!hasAudio) {
-                sb.append("음향 녹음 ");
-            }
+        StringBuilder sb = new StringBuilder("없는 자료: ");
+        if (!hasVideo) {
+            sb.append("비전 녹화본 ");
+        }
+        if (!hasAudio) {
+            sb.append("음향 녹음 ");
         }
         return sb.toString();
     }

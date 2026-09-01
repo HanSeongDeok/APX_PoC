@@ -31,6 +31,9 @@ public class AudioScrubPanel extends Composite {
     private double[] samples;
     private int sampleRate;
     private double durationMs;
+    private double timelineOffsetMs;
+    /** 재생 버튼을 누를 때만 Clip으로 여는 최신 full.wav. */
+    private File sourceWav;
     /** 라이브 {@link AudioScope#MATCH_WIN_MS} 와 동일. */
     private double windowMs = AudioScope.MATCH_WIN_MS;
 
@@ -68,9 +71,15 @@ public class AudioScrubPanel extends Composite {
      * @return 열렸으면 true
      */
     public boolean open(File fullWav) {
+        return open(fullWav, 0);
+    }
+
+    public boolean open(File fullWav, double timelineOffsetMs) {
         samples = null;
         sampleRate = 0;
         durationMs = 0;
+        this.timelineOffsetMs = Math.max(0, timelineOffsetMs);
+        sourceWav = null;
         player.close();
         // 이전에 열어둔 TC의 PASS 밴드를 반드시 지운다 -
         // 남아 있으면 다른 측정의 초록 구간을 이 측정의 증거로 잘못 읽는다.
@@ -85,11 +94,11 @@ public class AudioScrubPanel extends Composite {
             samples = w.samples;
             sampleRate = w.sampleRate;
             durationMs = sampleRate <= 0 ? 0 : samples.length * 1000.0 / sampleRate;
+            sourceWav = fullWav;
         } catch (Exception ex) {
             infoLbl.setText("녹음 파일을 읽지 못했습니다: " + ex.getMessage());
             return false;
         }
-        player.open(fullWav);
         infoLbl.setText(String.format("%.2f s / %d Hz / wav 재렌더(저장본 없음)",
                 Double.valueOf(durationMs / 1000.0), Integer.valueOf(sampleRate)));
         showAt(0);
@@ -129,7 +138,7 @@ public class AudioScrubPanel extends Composite {
     }
 
     public double durationMs() {
-        return durationMs;
+        return timelineOffsetMs + durationMs;
     }
 
     public boolean hasAudio() {
@@ -157,13 +166,16 @@ public class AudioScrubPanel extends Composite {
         if (end <= start) {
             end = start + 1;
         }
-        scope.showWindow(samples, sampleRate, start, end, tMs);
+        scope.showWindow(samples, sampleRate, start, end, tMs, timelineOffsetMs);
     }
 
     /** 그 시각부터 실제 녹음 재생. */
     public void play(double fromMs) {
+        if (!player.isOpen() && sourceWav != null) {
+            player.open(sourceWav);
+        }
         if (player.isOpen()) {
-            player.play(fromMs);
+            player.play(Math.max(0, fromMs - timelineOffsetMs));
         }
     }
 
@@ -182,7 +194,7 @@ public class AudioScrubPanel extends Composite {
 
     /** 재생 위치(ms) - 타임라인이 폴링해 슬라이더를 따라 움직인다. */
     public double playbackPositionMs() {
-        return player.getPositionMs();
+        return timelineOffsetMs + player.getPositionMs();
     }
 
     public AudioScope getScope() {

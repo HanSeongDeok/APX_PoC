@@ -26,13 +26,13 @@ public class ClientPerspective implements IPerspectiveFactory {
         layout.setEditorAreaVisible(false);
 
         // 상단: Kickoff
-        layout.addView(VIEW_KICKOFF, IPageLayout.TOP, 0.18f, editor);
+        layout.addView(VIEW_KICKOFF, IPageLayout.TOP, 0.14f, editor);
 
-        // Kickoff 아래: 음향 | 클러스터 | 기어봉 | 후방
-        layout.addView(VIEW_AUDIO, IPageLayout.BOTTOM, 0.72f, VIEW_KICKOFF);
-        layout.addView(VIEW_CLUSTER, IPageLayout.RIGHT, 0.25f, VIEW_AUDIO);
-        layout.addView(VIEW_GEAR, IPageLayout.RIGHT, 0.33f, VIEW_CLUSTER);
-        layout.addView(VIEW_REAR, IPageLayout.RIGHT, 0.5f, VIEW_GEAR);
+        // Kickoff 아래: 음향 | 클러스터 | 기어봉 | 후방 — 비전 웹캠이 거의 같게 넓다
+        layout.addView(VIEW_AUDIO, IPageLayout.BOTTOM, 0.78f, VIEW_KICKOFF);
+        layout.addView(VIEW_CLUSTER, IPageLayout.RIGHT, 0.78f, VIEW_AUDIO);
+        layout.addView(VIEW_GEAR, IPageLayout.RIGHT, 0.64f, VIEW_CLUSTER);
+        layout.addView(VIEW_REAR, IPageLayout.RIGHT, 0.44f, VIEW_GEAR);
 
         // 결과 / 설정 - 하단 폴더(탭)
         IFolderLayout bottom = layout.createFolder(
