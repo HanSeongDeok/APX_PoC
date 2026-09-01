@@ -32,7 +32,6 @@ import org.eclipse.ui.part.ViewPart;
 import com.suresofttech.apx.client.result.EvidenceScrubber;
 import com.suresofttech.apx.core.measure.EvidenceStore;
 import com.suresofttech.apx.core.measure.MeasureSession;
-import com.suresofttech.apx.core.measure.MeasureSyncResult;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 
 /**
@@ -49,10 +48,10 @@ public class ResultView extends ViewPart {
     private ScrolledComposite scroll;
     private Composite body;
     private Label emptyLbl;
+    private Label triggerTimeLbl;
     private Label audioTimeLbl;
     private Label visionTimeLbl;
     private Label gearTimeLbl;
-    private Label syncLbl;
     private Label audioSnapLbl;
     private Label visionSnapLbl;
     private Label rearSnapLbl;
@@ -100,10 +99,10 @@ public class ResultView extends ViewPart {
         scroll.setContent(body);
 
         emptyLbl = label(body, "아직 측정 결과가 없습니다. Kickoff에서 측정 시작 → 중단 하면 여기에 표시됩니다.");
+        triggerTimeLbl = label(body, "");
         audioTimeLbl = label(body, "");
         visionTimeLbl = label(body, "");
         gearTimeLbl = label(body, "");
-        syncLbl = label(body, "");
 
         buildScrubSection(body);
         buildSnapshotQueryGroup(body);
@@ -467,31 +466,24 @@ public class ResultView extends ViewPart {
         if (r == null || !r.hasResult()) {
             emptyLbl.setText("아직 측정 결과가 없습니다.");
             setVisible(true, emptyLbl);
-            setVisible(false, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
+            setVisible(false, triggerTimeLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl,
                     audioSnapLbl, visionSnapLbl, rearSnapLbl,
                     audioImgLbl, visionImgLbl, rearImgLbl);
             layoutScroll();
             return;
         }
         setVisible(false, emptyLbl);
-        setVisible(true, audioTimeLbl, visionTimeLbl, gearTimeLbl, syncLbl,
+        setVisible(true, triggerTimeLbl, audioTimeLbl, visionTimeLbl, gearTimeLbl,
                 audioSnapLbl, visionSnapLbl, rearSnapLbl,
                 audioImgLbl, visionImgLbl, rearImgLbl);
 
+        triggerTimeLbl.setText(MeasureSession.formatTriggerLine(r.getStimulusMs()));
         audioTimeLbl.setText(MeasureSession.formatPassLine("음향", r.getAudioPassMs(), r.getAudioJudgeMs(),
-                r.getAudioGapMs(), r.getAudioAnalysisMs()));
+                r.getAudioGapMs(), r.getAudioAnalysisMs(), r.getAudioDelayMs()));
         visionTimeLbl.setText(MeasureSession.formatPassLine("클러스터", r.getClusterPassMs(),
-            r.getClusterJudgeMs(), r.getClusterGapMs(), r.getClusterAnalysisMs()));
+            r.getClusterJudgeMs(), r.getClusterGapMs(), r.getClusterAnalysisMs(), r.getClusterDelayMs()));
         gearTimeLbl.setText(MeasureSession.formatPassLine("기어봉", r.getGearPassMs(),
-            r.getGearJudgeMs(), r.getGearGapMs(), r.getGearAnalysisMs()));
-        String savedSyncLabel = r.getSyncLabel();
-        syncLbl.setText(savedSyncLabel == null || savedSyncLabel.isEmpty()
-                ? MeasureSyncResult.evaluate(
-                        r.getAudioPassMs() != null, r.getClusterPassMs() != null,
-                        r.getGearPassMs() != null,
-                        r.getAudioPassMs(), r.getClusterPassMs(), r.getGearPassMs(),
-                        null, false).formatLabel(false)
-                : savedSyncLabel);
+            r.getGearJudgeMs(), r.getGearGapMs(), r.getGearAnalysisMs(), r.getGearDelayMs()));
 
         byte[] audioPng = r.getAudioPassPng();
         byte[] visionPng = r.getVisionPassPng();

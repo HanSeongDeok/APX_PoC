@@ -43,6 +43,10 @@ public final class LastMeasureResult {
     private volatile Double syncSpreadMs;
     private volatile boolean syncOk;
     private volatile String syncLabel = "";
+    private volatile Long stimulusMs;
+    private volatile Double audioDelayMs;
+    private volatile Double clusterDelayMs;
+    private volatile Double gearDelayMs;
     private volatile byte[] audioPassPng;
     private volatile byte[] visionPassPng;
     private volatile byte[] rearPassPng;
@@ -158,6 +162,22 @@ public final class LastMeasureResult {
         return syncLabel;
     }
 
+    public Long getStimulusMs() {
+        return stimulusMs;
+    }
+
+    public Double getAudioDelayMs() {
+        return audioDelayMs;
+    }
+
+    public Double getClusterDelayMs() {
+        return clusterDelayMs;
+    }
+
+    public Double getGearDelayMs() {
+        return gearDelayMs;
+    }
+
     public byte[] getAudioPassPng() {
         return audioPassPng == null ? null : audioPassPng.clone();
     }
@@ -180,6 +200,7 @@ public final class LastMeasureResult {
             Double audioGapMs, Double visionGapMs,
             Double audioAnalysisMs, Double visionAnalysisMs,
             Double syncSpreadMs, boolean syncOk, String syncLabel,
+            Long stimulusMs,
             byte[] audioPassPng, byte[] visionPassPng, byte[] rearPassPng) {
         this.hasResult = true;
         this.stoppedAtEpochMs = System.currentTimeMillis();
@@ -196,6 +217,10 @@ public final class LastMeasureResult {
         this.syncSpreadMs = syncSpreadMs;
         this.syncOk = syncOk;
         this.syncLabel = syncLabel == null ? "" : syncLabel;
+        this.stimulusMs = stimulusMs;
+        this.audioDelayMs = null;
+        this.clusterDelayMs = null;
+        this.gearDelayMs = null;
         this.audioPassPng = audioPassPng == null ? null : audioPassPng.clone();
         this.visionPassPng = visionPassPng == null ? null : visionPassPng.clone();
         this.rearPassPng = rearPassPng == null ? null : rearPassPng.clone();
@@ -218,6 +243,15 @@ public final class LastMeasureResult {
         this.gearGapMs = gearGapMs;
         this.clusterAnalysisMs = clusterAnalysisMs;
         this.gearAnalysisMs = gearAnalysisMs;
+        fire();
+    }
+
+    /** R 전환 t(0) 기준 채널 지연. {@link #setVisionChannelTimes} 직후 호출. */
+    public synchronized void setSyncDelays(Double audioDelayMs, Double clusterDelayMs,
+            Double gearDelayMs) {
+        this.audioDelayMs = audioDelayMs;
+        this.clusterDelayMs = clusterDelayMs;
+        this.gearDelayMs = gearDelayMs;
         fire();
     }
 

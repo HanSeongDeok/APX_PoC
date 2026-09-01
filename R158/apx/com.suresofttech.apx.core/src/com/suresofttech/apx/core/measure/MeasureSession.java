@@ -64,6 +64,9 @@ public final class MeasureSession {
 
     private volatile boolean running;
     private volatile boolean preparing;
+    private CountDownLatch armedReady;
+    private AtomicBoolean armRequested;
+    private AtomicBoolean armed;
     private MeasureConfigSnapshot snapshot;
     private MeasureEvidence evidence;
 
@@ -128,6 +131,8 @@ public final class MeasureSession {
      * <p>이 시각이 동기 판정의 T0 가 된다 - {@link #markStimulus()} 참고.
      */
     private volatile Long stimulusAtMs;
+    /** 준비 중에 R을 누르면 T=0 이후에 자극으로 반영한다. */
+    private volatile boolean pendingGearToR;
 
     private final Object rearLock = new Object();
     private Verdict[][] rearVerdicts; // [col][row], null = NONE
@@ -169,8 +174,14 @@ public final class MeasureSession {
         if (!running || stimulusAtMs != null) {
             return null;
         }
+        // 드라이버에 쌓인 T0 이전 블록이 즉시 반환되어 PASS @ 1ms처럼 찍히지 않게 한다.
+        // 이후 read()가 실제 T0 이후 입력을 기다리므로 블록 간격이 벽시계에도 반영된다.
+        if (capture != null) {
+            capture.flushBufferedInput();
+        }
         stimulusAtMs = Long.valueOf(Math.round((SyncBus.now() - startNanoSec) * 1000.0));
         playExpectedNow();
+        fireState();
         return stimulusAtMs;
     }
 
@@ -180,6 +191,7 @@ public final class MeasureSession {
     public void onTestGearToR() {
         synchronized (this) {
             if (preparing) {
+                pendingGearToR = true;
                 return;
             }
             if (running) {
@@ -228,6 +240,28 @@ public final class MeasureSession {
 
     public boolean isPreparing() {
         return preparing;
+    }
+
+    /**
+     * 준비된 장치를 공통시계 경계에서 실행한다.
+     * 음향 모니터가 리스너를 연결한 뒤 호출해야 0ms부터 라이브 파형을 놓치지 않는다.
+     */
+    public void begin() throws Exception {
+        if (!preparing || armRequested == null || armedReady == null) {
+            throw new IllegalStateException("측정 장치가 준비되지 않았습니다");
+        }
+        armRequested.set(true);
+        if (!armedReady.await(5, TimeUnit.SECONDS) || audioError != null || !running) {
+            cleanupFailedStart();
+            throw new IllegalStateException(audioError == null
+                    ? "마이크 측정 시작 경계를 만들지 못했습니다" : audioError);
+        }
+        preparing = false;
+        if (pendingGearToR) {
+            pendingGearToR = false;
+            markStimulus();
+        }
+        fireState();
     }
 
     public synchronized MeasureConfigSnapshot getSnapshot() {
@@ -392,24 +426,40 @@ public final class MeasureSession {
     }
 
     /**
-     * PASS 한 줄: 물리지연 포함 검출시각 + 자체 판단(간격+분석).
-     * 예) {@code 음향: PASS @ 1030 ms (자체판단 20.1 = 간격 14.0 + 분석 6.1)}
+     * PASS 한 줄: 검출시각 + R 전환 t(0) 지연 + 자체 판단(간격+분석).
+     * 예) {@code 음향: PASS @ 1030 ms (t(0) +12ms) (자체판단 20.1 = 간격 10.0 + 분석 6.1)}
+     * {@code t0DelayMs} 가 없으면 {@code t(0) -} (아직 R 전환이 없거나 폴백 기준).
      */
     public static String formatPassLine(String channel, Long passAtMs,
         Double judgeMs, Double gapMs, Double analysisMs) {
+        return formatPassLine(channel, passAtMs, judgeMs, gapMs, analysisMs, null);
+    }
+
+    public static String formatPassLine(String channel, Long passAtMs,
+        Double judgeMs, Double gapMs, Double analysisMs, Double t0DelayMs) {
         if (passAtMs == null) {
             return channel + ": FAIL (미검출)";
         }
+        String t0 = t0DelayMs == null
+                ? "t(0) -"
+                : String.format("t(0) %+.0fms", t0DelayMs.doubleValue());
         if (judgeMs != null && gapMs != null && analysisMs != null) {
-            return String.format("%s: PASS @ %d ms (자체판단 %.1f = 간격 %.1f + 분석 %.1f)",
-                channel, passAtMs.longValue(),
+            return String.format("%s: PASS @ %d ms (%s) (자체판단 %.1f = 간격 %.1f + 분석 %.1f)",
+                channel, passAtMs.longValue(), t0,
                 judgeMs.doubleValue(), gapMs.doubleValue(), analysisMs.doubleValue());
         }
         if (judgeMs != null) {
-            return String.format("%s: PASS @ %d ms (자체판단 %.1f ms)",
-                channel, passAtMs.longValue(), judgeMs.doubleValue());
+            return String.format("%s: PASS @ %d ms (%s) (자체판단 %.1f ms)",
+                channel, passAtMs.longValue(), t0, judgeMs.doubleValue());
         }
-        return String.format("%s: PASS @ %d ms", channel, passAtMs.longValue());
+        return String.format("%s: PASS @ %d ms (%s)", channel, passAtMs.longValue(), t0);
+    }
+
+    /** 측정 시작 시계에서 R 전환 트리거가 발생한 시각. 이 지점이 동기 비교의 t(0). */
+    public static String formatTriggerLine(Long stimulusAtMs) {
+        return stimulusAtMs == null
+                ? "기어 R 트리거: - (대기)"
+                : String.format("기어 R 트리거: @ %d ms (t(0))", stimulusAtMs.longValue());
     }
 
     /**
@@ -425,8 +475,8 @@ public final class MeasureSession {
     /**
      * 중단 시 최종 판정. CAN은 아직 미연동({@code requireCan=false}).
      *
-     * <p>시뮬레이터의 기준점 T0는 기어봉 R 검출 시각이며, 측정 시작 때 고정한
-     * 동기 임계값으로 클러스터·음향의 상대 지연을 판정한다.
+     * <p>시뮬레이터의 기준점 T0는 R 전환 트리거이며, 측정 시작 때 고정한
+     * 동기 임계값으로 기어봉·클러스터·음향의 상대 지연을 판정한다.
      */
     public MeasureSyncResult evaluateFinal() {
         ApxSettings s = ApxSettings.get();
@@ -510,6 +560,7 @@ public final class MeasureSession {
         this.expectedSampleRate = wav.sampleRate;
         this.expectedAutoPlayed = false;
         this.stimulusAtMs = null;
+        this.pendingGearToR = false;
         BeepMatcher bm = new BeepMatcher(wav.samples, wav.sampleRate, 150.0, 4.0,
                 snap.audioFreqThr, snap.audioWaveThr, 0.015);
         bm.arm();
@@ -560,9 +611,9 @@ public final class MeasureSession {
         final BeepMatcher feedMatcher = bm;
         final AudioRecorder feedRec = rec;
         final CountDownLatch audioReady = new CountDownLatch(1);
-        final CountDownLatch armedReady = new CountDownLatch(1);
-        final AtomicBoolean armRequested = new AtomicBoolean(false);
-        final AtomicBoolean armed = new AtomicBoolean(false);
+        armedReady = new CountDownLatch(1);
+        armRequested = new AtomicBoolean(false);
+        armed = new AtomicBoolean(false);
         this.audioError = null;
         cap.setErrorListener(new AudioCapture.ErrorListener() {
             public void onCaptureError(String reason) {
@@ -606,9 +657,9 @@ public final class MeasureSession {
                 latestMatch = mr;
                 if (mr != null && mr.isPass && !audioPass) {
                     audioPass = true;
-                    // 공통시계(캡처 콜백 now = nanoTime 초) - 샘플경과와 별개로 동기 비교용
-                    // L2 캘리브 없이 검출 시각 그대로(물리지연 D_mic 포함)
-                    double tSec = now;
+                    // 비전과 같이 매칭 직후 공통시계. PC가 느리면 분석 지연이 PASS @에 포함된다.
+                    // L2 캘리브 없이 검출 시각 그대로(물리지연 D_mic + 분석 포함)
+                    double tSec = SyncBus.now();
                     double judge = mr.passMs != null ? mr.passMs.doubleValue() : Double.NaN;
                     SyncBus.get().mark(SyncBus.Event.BEEP, tSec, judge);
                     long ms = Math.round((tSec - startNanoSec) * 1000.0);
@@ -630,16 +681,9 @@ public final class MeasureSession {
                 throw new IllegalStateException(audioError == null
                         ? "마이크 첫 입력을 5초 안에 받지 못했습니다" : audioError);
             }
-            armRequested.set(true);
-            if (!armedReady.await(5, TimeUnit.SECONDS) || audioError != null || !running) {
-                throw new IllegalStateException(audioError == null
-                        ? "마이크 측정 시작 경계를 만들지 못했습니다" : audioError);
-            }
-            preparing = false;
         } catch (Exception ex) {
             throw ex;
         }
-        fireState();
     }
 
     private void cleanupFailedStart() {
@@ -896,6 +940,8 @@ public final class MeasureSession {
         if (gear ? gearPass : clusterPass) {
             return;
         }
+        // NCC 분석이 끝난 시각. PC 처리 성능까지 PASS @와 t(0) 지연에 포함한다.
+        // grab 시각을 쓰면 r.analysisMs가 표시에는 있어도 PASS 시각에는 빠지게 된다.
         double tSec = SyncBus.now();
         double judge = r.passMs != null ? r.passMs.doubleValue() : Double.NaN;
         SyncBus.get().mark(gear ? SyncBus.Event.GEAR_R : SyncBus.Event.CLUSTER_POPUP, tSec, judge);

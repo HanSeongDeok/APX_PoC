@@ -95,20 +95,41 @@ public final class TestPlayerDialog {
                 "클러스터 테스트 화면", clusterItems(), ROLE_CLUSTER);
     }
 
+    /** 기어 테스트 화면이 지금 R인가. 측정 시작 때 이미 R이면 T0를 그때 찍는다. */
+    public static boolean isGearShowingR() {
+        TestPlayerDialog g = gearOpen;
+        if (g == null || !g.isOpen() || !g.shown || g.items == null) {
+            return false;
+        }
+        if (g.index < 0 || g.index >= g.items.length || g.items[g.index] == null) {
+            return false;
+        }
+        return GEAR_TRIGGER_LABEL.equals(g.items[g.index][0]);
+    }
+
     /** 기어봉 P/R/N/D. 이미 열려 있으면 앞으로. */
     public static void openGear(Shell parent) {
         gearOpen = openOrRaise(gearOpen, parent,
                 "기어 테스트 화면", gearItems(), ROLE_GEAR);
     }
 
-    /** 측정 시작 전에 클러스터 창과 이미지를 준비하고 일반 화면을 표시한다. */
+    /**
+     * 측정 시작 전 클러스터 창을 연다.
+     * 기어가 이미 R이면 팝업을 맞춰 두고, 아니면 일반 화면으로 둔다.
+     * 항상 일반으로 되돌리면 R인 채로 시작해도 클러스터만 늦게 뜬다.
+     */
     public static void prepareClusterPopup(Shell parent) {
         if (parent == null || parent.isDisposed()) {
             return;
         }
         ensureCluster(parent);
         clusterOpen.setAuto(false);
-        clusterOpen.show(0);
+        if (isGearShowingR()) {
+            int popup = clusterOpen.indexOfLabel(CLUSTER_POPUP_LABEL);
+            clusterOpen.show(popup >= 0 ? popup : 0);
+        } else {
+            clusterOpen.show(0);
+        }
     }
 
     /**

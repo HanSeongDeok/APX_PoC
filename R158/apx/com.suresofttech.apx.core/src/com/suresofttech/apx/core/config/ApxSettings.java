@@ -111,7 +111,7 @@ public final class ApxSettings {
     private double calibClusterMs;
     private double calibGearMs;
     private double calibAudioMs;
-    /** 기어봉 PASS 기준 동기 절대 편차 허용값(±ms). Kickoff 기본값 30ms. */
+    /** 동기 T0 기준 채널별 절대 편차 허용값(±ms). Kickoff 기본값 30ms. */
     private double syncToleranceMs = 30.0;
 
     /** 후방 격자 열 / 행 (기본 4×6 프리셋). */

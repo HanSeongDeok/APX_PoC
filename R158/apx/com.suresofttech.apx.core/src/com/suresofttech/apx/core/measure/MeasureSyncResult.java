@@ -6,13 +6,16 @@ package com.suresofttech.apx.core.measure;
  * <p>T0 는 우선순위로 정해진다.
  * <ol>
  *   <li><b>R변속 CAN 수신</b> - {@code requireCan} (실차)</li>
- *   <li><b>기어봉 R 검출</b> - 시뮬레이터. 기어봉을 0ms 기준 채널로 두고
- *       클러스터와 음향 PASS가 얼마나 뒤에 검출됐는지 비교한다.</li>
+ *   <li><b>기어 R 전환</b> - 시뮬레이터. 테스트 화면이 R로 바뀐 순간.
+ *       기어봉 카메라 PASS 시각이 아니다.</li>
  * </ol>
  *
  * <pre>
- * Sync = MAX(클러스터 PASS − 기어봉 PASS, 음향 PASS − 기어봉 PASS)
- * PASS = Sync ≤ 사용자 설정 임계값 (기본 30ms)
+ * 기어봉 지연   = 기어봉 PASS − T0
+ * 클러스터 지연 = 클러스터 PASS − T0
+ * 음향 지연    = 음향 PASS − T0
+ * 음향−기어봉  = 음향 PASS − 기어봉 PASS
+ * PASS = 각 |지연| ≤ 사용자 설정 임계값 (기본 30ms)
  * </pre>
  */
 public final class MeasureSyncResult {
@@ -51,8 +54,10 @@ public final class MeasureSyncResult {
     public final boolean syncOk;
     public final boolean overallPass;
     public final String summary;
-    /** {@code 기어봉 R 검출} / {@code R변속 CAN}. */
+    /** {@code R변속 CAN} / {@code 기어 R 전환}. */
     public final String t0Name;
+    /** T0가 트리거/CAN이면 기어봉도 측정 채널이다. */
+    public final boolean gearMeasured;
 
     public MeasureSyncResult(boolean audioPass, boolean visionPass, boolean canPass,
             Long audioPassMs, Long visionPassMs, Long clusterPassMs, Long gearPassMs, Long canPassMs,
@@ -60,7 +65,8 @@ public final class MeasureSyncResult {
             Double gearRawDelayMs, Double clusterRawDelayMs, Double audioRawDelayMs,
             double gearCalibMs, double clusterCalibMs, double audioCalibMs,
             Double syncSpreadMs, double syncToleranceMs,
-            boolean syncOk, boolean overallPass, String summary, String t0Name) {
+            boolean syncOk, boolean overallPass, String summary, String t0Name,
+            boolean gearMeasured) {
         this.gearRawDelayMs = gearRawDelayMs;
         this.clusterRawDelayMs = clusterRawDelayMs;
         this.audioRawDelayMs = audioRawDelayMs;
@@ -85,6 +91,7 @@ public final class MeasureSyncResult {
         this.overallPass = overallPass;
         this.summary = summary;
         this.t0Name = t0Name;
+        this.gearMeasured = gearMeasured;
     }
 
     /** 자극 시각·캘리브 없이(구 호출부) - 기준점은 CAN 또는 기어봉 <b>검출</b>. */
@@ -97,7 +104,7 @@ public final class MeasureSyncResult {
 
     /**
      * @param stimulusMs 도구가 자극(기어봉 R 전환 + 클러스터 교체 + 기대음)을 낸 시각.
-     *                   자극 이력으로 기록하며, 시뮬레이터 동기 T0는 기어봉 검출 시각이다.
+     *                   시뮬레이터에서는 이 트리거 시각을 동기 T0로 사용한다.
      * @param requireCan true면 기준점 = R변속 CAN (실차).
      * @param gearCalib 채널별 물리지연 캘리브 상수(ms). 0이면 보정하지 않는다.
      *                  <b>자체판단의 frameGap 은 여기에 더하거나 빼지 않는다</b> -
@@ -125,8 +132,7 @@ public final class MeasureSyncResult {
         boolean canPresent = canPassMs != null;
         boolean canOk = !requireCan || canPresent;
 
-        // T0 우선순위: R변속 CAN(실차) > 기어봉 R 검출(시뮬).
-        // stimulusMs는 자극 발사 이력이며, 상대 동기는 기어봉 PASS를 0ms 기준으로 계산한다.
+        // T0: 실차=R변속 CAN, 시뮬=기어 R 전환. 기어봉 카메라 PASS는 T0가 아니다.
         String t0Name;
         Long t0Ms;
         boolean gearMeasured;
@@ -135,26 +141,21 @@ public final class MeasureSyncResult {
             t0Ms = canPassMs;
             gearMeasured = true;
         } else {
-            t0Name = "기어봉 R 검출";
-            t0Ms = gearPassMs;
-            gearMeasured = false;   // 기어봉이 기준점 - 자기 지연은 정의상 0
+            t0Name = "기어 R 전환";
+            t0Ms = stimulusMs;
+            gearMeasured = true;
         }
 
         // 원 지연 = 검출 − T0. 여기엔 리그 물리지연과 그날의 프레임/블록 대기가 다 들어 있다.
         Double clusterRaw = delayFrom(clusterPassMs, t0Ms);
         Double audioRaw = delayFrom(audioPassMs, t0Ms);
-        Double gearRaw = gearMeasured ? delayFrom(gearPassMs, t0Ms) : Double.valueOf(0.0);
+        Double gearRaw = delayFrom(gearPassMs, t0Ms);
 
         // 보정 = 원 지연 − 캘리브 상수. 상수에 프레임 대기가 이미 포함되어 있으므로
         // 자체판단의 frameGap 은 여기서 다시 빼지 않는다.
-        double appliedGearCalib = gearMeasured ? gearCalib : 0;
-        // 기어봉 PASS 기준에서는 이미 raw에 기어봉 물리지연이 빠져 있다.
-        // 따라서 절대 캘리브 상수가 아니라 채널 간 상수 차이만 빼야 한다.
-        double appliedClusterCalib = gearMeasured ? clusterCalib : clusterCalib - gearCalib;
-        double appliedAudioCalib = gearMeasured ? audioCalib : audioCalib - gearCalib;
-        Double clusterDelay = minus(clusterRaw, appliedClusterCalib);
-        Double audioDelay = minus(audioRaw, appliedAudioCalib);
-        Double gearDelay = gearMeasured ? minus(gearRaw, appliedGearCalib) : Double.valueOf(0.0);
+        Double clusterDelay = minus(clusterRaw, clusterCalib);
+        Double audioDelay = minus(audioRaw, audioCalib);
+        Double gearDelay = minus(gearRaw, gearCalib);
 
         Double spread = null;
         if (clusterDelay != null && audioDelay != null) {
@@ -181,8 +182,8 @@ public final class MeasureSyncResult {
                 audioPassMs, visionPassMs, clusterPassMs, gearPassMs, canPassMs,
                 stimulusMs, gearDelay, clusterDelay, audioDelay,
                 gearRaw, clusterRaw, audioRaw,
-                appliedGearCalib, appliedClusterCalib, appliedAudioCalib,
-                spread, tolerance, syncOk, overall, summary, t0Name);
+                gearCalib, clusterCalib, audioCalib,
+                spread, tolerance, syncOk, overall, summary, t0Name, gearMeasured);
     }
 
     private static Double minus(Double v, double calibMs) {
@@ -218,24 +219,26 @@ public final class MeasureSyncResult {
 
     public String formatLabel(boolean preview) {
         String prefix = preview ? "동기(미리보기): " : "동기: ";
-        if (clusterDelayMs == null || audioDelayMs == null) {
-            return prefix + "- (" + t0Name + " 기준 ±" + ((int) syncToleranceMs) + "ms)";
+        if (stimulusMs == null && canPassMs == null) {
+            return prefix + "트리거 없음 — 측정 중 P→R 로 바꾸세요";
         }
-        StringBuilder sb = new StringBuilder(prefix);
-        // 테스트 자극 이력이 있으면 기준 채널인 기어봉 0ms도 함께 표시한다.
-        if (stimulusMs != null || canPassMs != null) {
-            if (gearDelayMs != null) {
-                sb.append(String.format("기어봉 %+.0fms, ", gearDelayMs.doubleValue()));
-            }
+        if (gearDelayMs == null || audioDelayMs == null) {
+            return prefix + "- (" + t0Name + " t0, 기어봉·음향 PASS 대기)";
         }
-        sb.append(String.format("클러스터 %+.0fms, 음향 %+.0fms %s (%s 기준 ±%.0fms%s)",
-                clusterDelayMs.doubleValue(),
+        double audioMinusGear = audioDelayMs.doubleValue() - gearDelayMs.doubleValue();
+        String clusterPart = clusterDelayMs == null
+                ? ""
+                : String.format("클러스터 %+.0fms, ", clusterDelayMs.doubleValue());
+        return prefix + String.format(
+                "기어봉 %+.0fms, %s음향 %+.0fms, 음향−기어봉 %+.0fms %s (%s t0 ±%.0fms%s)",
+                gearDelayMs.doubleValue(),
+                clusterPart,
                 audioDelayMs.doubleValue(),
+                audioMinusGear,
                 syncOk ? "OK" : "FAIL",
                 t0Name,
                 syncToleranceMs,
-                hasCalibration() ? ", 캘리브 보정" : ""));
-        return sb.toString();
+                hasCalibration() ? ", 캘리브 보정" : "");
     }
 
     private static Double delayFrom(Long tMs, Long t0Ms) {
