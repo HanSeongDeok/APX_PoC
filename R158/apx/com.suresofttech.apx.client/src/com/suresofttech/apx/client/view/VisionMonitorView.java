@@ -293,7 +293,7 @@ public class VisionMonitorView extends ViewPart {
             return true;
         }
         long idleMs = (System.nanoTime() - p.lastFrameNanos) / 1000000L;
-        if (idleMs > STALL_TIMEOUT_MS) {
+        if (p.lastBi != null && idleMs > STALL_TIMEOUT_MS) {
             if (!p.stallReported) {
                 p.canvas.setPlaceholder("입력 끊김 - 마지막 프레임 "
                         + (idleMs / 1000) + "초 전");
