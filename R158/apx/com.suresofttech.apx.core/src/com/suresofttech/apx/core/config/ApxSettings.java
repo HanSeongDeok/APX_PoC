@@ -111,6 +111,8 @@ public final class ApxSettings {
     private double calibClusterMs;
     private double calibGearMs;
     private double calibAudioMs;
+    /** 기어봉 PASS 기준 동기 절대 편차 허용값(±ms). Kickoff 기본값 30ms. */
+    private double syncToleranceMs = 30.0;
 
     /** 후방 격자 열 / 행 (기본 4×6 프리셋). */
     private int rearCols = 4;
@@ -504,6 +506,19 @@ public final class ApxSettings {
             return;
         }
         calibAudioMs = v;
+        fire();
+    }
+
+    public double getSyncToleranceMs() {
+        return syncToleranceMs;
+    }
+
+    public void setSyncToleranceMs(double ms) {
+        double v = Math.max(1.0, Math.min(1000.0, ms));
+        if (Math.abs(syncToleranceMs - v) < 1e-9) {
+            return;
+        }
+        syncToleranceMs = v;
         fire();
     }
 

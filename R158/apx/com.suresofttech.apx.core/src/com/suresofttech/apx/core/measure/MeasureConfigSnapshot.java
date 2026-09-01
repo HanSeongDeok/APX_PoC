@@ -17,6 +17,7 @@ public final class MeasureConfigSnapshot {
     public final String expectedWavPath;
     public final double audioFreqThr;
     public final double audioWaveThr;
+    public final double syncToleranceMs;
 
     public final boolean useReferenceImage;
     public final String visionRefPath;
@@ -37,7 +38,7 @@ public final class MeasureConfigSnapshot {
     public final List<int[]> rearSelectedPoints;
 
     public MeasureConfigSnapshot(String micName, String expectedWavPath,
-            double audioFreqThr, double audioWaveThr,
+            double audioFreqThr, double audioWaveThr, double syncToleranceMs,
             boolean useReferenceImage, String visionRefPath, double[] roiNorm, double simThr,
         String visionJudge, boolean autoPlayExpectedOnVisionPass,
         boolean gearUseReferenceImage, String gearVisionRefPath, double[] gearRoiNorm,
@@ -47,6 +48,7 @@ public final class MeasureConfigSnapshot {
         this.expectedWavPath = expectedWavPath;
         this.audioFreqThr = audioFreqThr;
         this.audioWaveThr = audioWaveThr;
+        this.syncToleranceMs = syncToleranceMs;
         this.useReferenceImage = useReferenceImage;
         this.visionRefPath = visionRefPath;
         this.roiNorm = roiNorm == null ? null : roiNorm.clone();
@@ -73,6 +75,7 @@ public final class MeasureConfigSnapshot {
                 s.getExpectedWavPath(),
                 s.getAudioFreqThr(),
                 s.getAudioWaveThr(),
+                s.getSyncToleranceMs(),
             s.isUseReferenceImage(VisionChannel.CLUSTER),
             s.getVisionRefPath(VisionChannel.CLUSTER),
             s.getRoiNorm(VisionChannel.CLUSTER),
