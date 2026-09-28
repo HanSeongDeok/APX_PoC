@@ -57,7 +57,7 @@ public final class AudioCapture {
         return Math.max(1, (int) Math.round(sr * BLOCK_SEC));
     }
 
-    private TargetDataLine line;
+    private volatile TargetDataLine line;
     private Thread thread;
     private volatile boolean running;
     private volatile ErrorListener errorListener;
@@ -187,51 +187,83 @@ public final class AudioCapture {
     /** 캡처 시작. device=null 이면 시스템 기본 입력. */
     public void start(Mixer.Info device, int sampleRate, final BlockListener listener)
             throws LineUnavailableException {
-        AudioFormat fmt = new AudioFormat(sampleRate, 16, 1, true, false);  // 16bit mono LE
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, fmt);
-        if (device != null) {
-            line = (TargetDataLine) AudioSystem.getMixer(device).getLine(info);
-        } else {
-            line = (TargetDataLine) AudioSystem.getLine(info);
+        start(device, sampleRate, 1, listener);
+    }
+
+    /**
+     * 채널 수를 지정해 캡처 시작. 다채널 입력은 채널 평균으로 mono 블록을 전달한다.
+     * 기존 호출자는 {@link #start(Mixer.Info, int, BlockListener)}의 mono 계약을 그대로 쓴다.
+     */
+    public void start(Mixer.Info device, int sampleRate, final int channels,
+            final BlockListener listener) throws LineUnavailableException {
+        if (channels < 1) {
+            throw new IllegalArgumentException("channels must be at least 1");
         }
-        line.open(fmt);
-        line.start();
+        AudioFormat fmt = new AudioFormat(sampleRate, 16, channels, true, false);
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, fmt);
+        TargetDataLine opened = null;
+        try {
+            if (device != null) {
+                opened = (TargetDataLine) AudioSystem.getMixer(device).getLine(info);
+            } else {
+                opened = (TargetDataLine) AudioSystem.getLine(info);
+            }
+            opened.open(fmt);
+            opened.start();
+        } catch (LineUnavailableException e) {
+            closeQuiet(opened);
+            throw e;
+        } catch (RuntimeException e) {
+            closeQuiet(opened);
+            throw e;
+        }
+        final TargetDataLine activeLine = opened;
+        line = activeLine;
         running = true;
         lastError = null;
         lastBlockNanos = System.nanoTime();
         // 자체판단 간격 = n/sr ≈ 10ms. passMs = blockGap + analysis.
         final int nBlock = blockSamples(sampleRate);
-        final byte[] raw = new byte[nBlock * 2];
+        final int frameSize = channels * 2;
+        final byte[] raw = new byte[nBlock * frameSize];
         thread = new Thread(new Runnable() {
             public void run() {
-                while (running) {
+                while (running && line == activeLine) {
                     int read;
                     try {
-                        read = line.read(raw, 0, raw.length);
+                        read = activeLine.read(raw, 0, raw.length);
                     } catch (Exception ex) {
                         // 측정 중 마이크 분리 - 드라이버가 예외를 던지는 경로
-                        fail("마이크 입력 오류: " + ex.getMessage());
+                        fail("마이크 입력 오류: " + ex.getMessage(), activeLine);
                         return;
                     }
                     if (read < 0) {
-                        fail("마이크 입력이 종료되었습니다 (장치 분리)");
+                        fail("마이크 입력이 종료되었습니다 (장치 분리)", activeLine);
                         return;
                     }
                     if (read == 0) {
                         // 0을 계속 돌려주는 장치가 있다 - 바쁜 대기 대신 끊김으로 판정
                         if (elapsedSinceBlockMs() > STALL_TIMEOUT_MS) {
-                            fail("마이크 입력이 " + STALL_TIMEOUT_MS + "ms 이상 들어오지 않습니다");
+                            fail("마이크 입력이 " + STALL_TIMEOUT_MS
+                                    + "ms 이상 들어오지 않습니다", activeLine);
                             return;
                         }
                         sleep(5);
                         continue;
                     }
                     lastBlockNanos = System.nanoTime();
-                    double[] block = new double[read / 2];
+                    int frames = read / frameSize;
+                    double[] block = new double[frames];
                     for (int i = 0; i < block.length; i++) {
-                        int lo = raw[2 * i] & 0xff;
-                        int hi = raw[2 * i + 1];
-                        block[i] = (short) ((hi << 8) | lo) / 32768.0;
+                        double sum = 0;
+                        int frame = i * frameSize;
+                        for (int ch = 0; ch < channels; ch++) {
+                            int at = frame + ch * 2;
+                            int lo = raw[at] & 0xff;
+                            int hi = raw[at + 1];
+                            sum += (short) ((hi << 8) | lo) / 32768.0;
+                        }
+                        block[i] = sum / channels;
                     }
                     listener.onBlock(block, System.nanoTime() / 1e9);
                 }
@@ -281,8 +313,8 @@ public final class AudioCapture {
     }
 
     /** 캡처 스레드에서 치명적 상황 - 라인을 닫고 위로 알린다. */
-    private void fail(String reason) {
-        if (!running) {
+    private void fail(String reason, TargetDataLine expectedLine) {
+        if (!running || line != expectedLine) {
             return;
         }
         running = false;
@@ -307,6 +339,18 @@ public final class AudioCapture {
                 // 무시
             }
             line = null;
+        }
+    }
+
+    private static void closeQuiet(TargetDataLine target) {
+        if (target == null) {
+            return;
+        }
+        try {
+            target.stop();
+            target.close();
+        } catch (Exception ignored) {
+            // 열기 실패 정리
         }
     }
 
