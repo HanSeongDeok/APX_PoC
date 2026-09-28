@@ -21,6 +21,7 @@ import com.suresofttech.apx.ui.widget.settings.audio.MicTestBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
+import com.suresofttech.apx.ui.widget.settings.vibration.VibrationProbe;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraCanvas;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
@@ -29,9 +30,10 @@ import com.suresofttech.apx.ui.widget.settings.vision.VisionJudgeBar;
 import com.suresofttech.apx.ui.widget.settings.vision.VisionThresholdBar;
 
 /**
- * 설정 UI 조립(비전 / 음향 / 후방). View / Dialog 공용.
+ * 설정 UI 조립(비전 / 음향 / 진동 / 후방). View / Dialog 공용.
  * 커스텀 파라미터(Style/Cfg/스코프/범례/프리셋)는 {@link SettingsClientView2}와 동일하게 주입한다.
- * 값은 {@link ApxSettings}에 바로 반영된다.
+ * 기존 설정값은 {@link ApxSettings}에 바로 반영된다. 진동 프로브의 장치 선택과
+ * 기대 WAV는 현재 화면 수명 동안 유지하며, 녹화한 기대 WAV 파일은 별도로 저장된다.
  */
 public class SettingsForm extends Composite {
 
@@ -39,9 +41,10 @@ public class SettingsForm extends Composite {
 
     public SettingsForm(Composite parent) {
         super(parent, SWT.NONE);
-        setLayout(new GridLayout(4, true));
+        setLayout(new GridLayout(5, true));
         cameraSelect = buildVisionColumn(this);
         buildAudioColumn(this);
+        buildVibrationColumn(this);
         buildRearColumn(this);
     }
 
@@ -135,6 +138,7 @@ public class SettingsForm extends Composite {
         toneCfg.playingText = "재생 정지";
         ExpectedTonePlayBar playBar = new ExpectedTonePlayBar(measureBar.getActionRow(), toneCfg);
         playBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        measureBar.enableExpectedRecording();
 
         // 파형 스코프 표출 스타일 커스텀 (X축 틱 / PASS 색/투명도 / 제목)
         AudioScope scope = new AudioScope(expected, 5000.0);
@@ -148,6 +152,7 @@ public class SettingsForm extends Composite {
         scopeGd.minimumHeight = 160;
         scope.setLayoutData(scopeGd);
         measureBar.setScope(scope);
+        measureBar.addVerdictLabel(expected);
 
         // 음향 임계 기본값 / step / 라벨 커스텀
         AudioThresholdBar.Cfg aThr = new AudioThresholdBar.Cfg();
@@ -159,6 +164,14 @@ public class SettingsForm extends Composite {
         new AudioThresholdBar(expected, aThr);
 
         micBar.refreshMics();
+    }
+
+    private static void buildVibrationColumn(Composite parent) {
+        Composite col = new Composite(parent, SWT.NONE);
+        col.setLayout(new GridLayout(1, false));
+        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        new VibrationProbe(col);
     }
 
     private static void buildRearColumn(Composite parent) {

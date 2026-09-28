@@ -23,6 +23,7 @@ import com.suresofttech.apx.ui.widget.settings.audio.MicTestBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridCanvas;
 import com.suresofttech.apx.ui.widget.settings.rear.RearGridSizeBar;
 import com.suresofttech.apx.ui.widget.settings.rear.RearLegendBar;
+import com.suresofttech.apx.ui.widget.settings.vibration.VibrationProbe;
 import com.suresofttech.apx.ui.widget.settings.vision.CameraSelectBar;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiNcc;
 import com.suresofttech.apx.ui.widget.settings.vision.RoiStyles;
@@ -38,9 +39,10 @@ public class SettingsClientView2 extends ViewPart {
 
     @Override
     public void createPartControl(Composite parent) {
-        parent.setLayout(new GridLayout(4, true));
+        parent.setLayout(new GridLayout(5, true));
         buildVisionColumn(parent);
         buildAudioColumn(parent);
+        buildVibrationColumn(parent);
         buildRearColumn(parent);
     }
 
@@ -130,6 +132,7 @@ public class SettingsClientView2 extends ViewPart {
         toneCfg.playingText = "재생 정지";
         ExpectedTonePlayBar playBar = new ExpectedTonePlayBar(measureBar.getActionRow(), toneCfg);
         playBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        measureBar.enableExpectedRecording();
 
         AudioScope scope = new AudioScope(expected, 5000.0);
         scope.setShowPitch(false);
@@ -142,6 +145,7 @@ public class SettingsClientView2 extends ViewPart {
         scopeGd.minimumHeight = 180;
         scope.setLayoutData(scopeGd);
         measureBar.setScope(scope);
+        measureBar.addVerdictLabel(expected);
 
         AudioThresholdBar.Cfg aThr = new AudioThresholdBar.Cfg();
         aThr.defaultThr = 0.90;
@@ -153,6 +157,14 @@ public class SettingsClientView2 extends ViewPart {
 
 
         micBar.refreshMics();
+    }
+
+    private void buildVibrationColumn(Composite parent) {
+        Composite col = new Composite(parent, SWT.NONE);
+        col.setLayout(new GridLayout(1, false));
+        col.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        new VibrationProbe(col);
     }
 
     private void buildRearColumn(Composite parent) {

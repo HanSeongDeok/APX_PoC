@@ -15,4 +15,5 @@ Bundle-ActivationPolicy: lazy
 Export-Package: com.suresofttech.apx.ui.widget,
  com.suresofttech.apx.ui.widget.settings.vision,
  com.suresofttech.apx.ui.widget.settings.audio,
+ com.suresofttech.apx.ui.widget.settings.vibration,
  com.suresofttech.apx.ui.widget.settings.rear

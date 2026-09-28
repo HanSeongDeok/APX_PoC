@@ -104,6 +104,7 @@ call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedWav
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\AudioMeasureBar.java"
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\ExpectedTonePlayBar.java"
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\audio\AudioThresholdBar.java"
+call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\vibration\VibrationProbe.java"
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridCanvas.java"
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearGridSizeBar.java"
 call :addsrc "%UI%\src\com\suresofttech\apx\ui\widget\settings\rear\RearLegendBar.java"
