@@ -71,6 +71,14 @@ public class ExpectedTonePlayBar extends Composite {
         startSyncPoll();
     }
 
+    /** 기대음 녹음 시작 전 재생음을 캡처하지 않도록 즉시 정지한다. */
+    public void stopPlayback() {
+        tonePlayer.stop();
+        if (playBtn != null && !playBtn.isDisposed()) {
+            playBtn.setSelection(false);
+            playBtn.setText(cfg.playText);
+        }
+    }
 
     private void onPlay(boolean on) {
         if (on) {
